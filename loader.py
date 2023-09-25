@@ -64,6 +64,26 @@ class BaseLoader:
             
         return non_matching_lines_df, non_matching_lines_count, matching_lines_df, matching_lines_count 
 
+    def reduce_dataframes(self, frac=0.5):
+        """
+        Reduce the size of df_sequences by the specified fraction (if present) and update df accordingly.
+        
+        Parameters:
+        - fraction: The fraction of rows to retain. Default is 0.5 (50%).
+        """
+        
+        # If df_sequences is present, reduce its size
+        if hasattr(self, 'df_sequences'):
+            self.df_sequences = self.df_sequences.sample(fraction=frac)
+            # Update df to include only the rows that have seq_id values present in the filtered df_sequences
+            self.df = self.df.filter(pl.col("seq_id").is_in(self.df_sequences["seq_id"]))
+        else:
+            # If df_sequences is not present, just reduce df
+            self.df = self.df.sample(fraction=frac)
+
+        return self.df
+
+
 
             
 # Processor for the Pro log file

@@ -98,6 +98,16 @@ class SequenceEnricher:
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
+    
+    def enrich_sequence_events(self):
+        # Aggregate event ids into a list for each seq_id
+        df_temp = self.df.group_by('seq_id').agg(
+                event_list = pl.col('e_event_id')
+            )
+        # Join this result with df_sequences on seq_id
+        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
+        return self.df_sequences
+
 
     def enrich_sequence_duration(self):
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
