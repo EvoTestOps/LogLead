@@ -3,7 +3,7 @@ from collections import Counter
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-
+from scipy.sparse import hstack
 
 
 class EventAnomalyDetection:
@@ -51,35 +51,60 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SeqAnomalyDetection:
-    def __init__(self, df_seq):
+    def __init__(self, df_seq, event_col=None, numeric_cols=None):
         self.df_train = df_seq
-        #Preparate training data
-        self.events, self.labels = self._prepare_data(self.df_train)
+        self.event_col = event_col
+        self.numeric_cols = numeric_cols if numeric_cols else []
+        self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
 
     def _prepare_data(self, df):
-        events = df.select(pl.col("event_list")).to_series().to_list()
+        # Extract events
+        events = []
+        if self.event_col:
+            events = df.select(pl.col(self.event_col)).to_series().to_list()
+            events = [' '.join(e) for e in events]
+
+
         labels = df.select(pl.col("normal")).to_series().to_list()
-        # Convert lists of events to space-separated strings
-        events = [' '.join(e) for e in events]
-        return events, labels
         
-    def train_LR (self):
-        self.lr_vectorizer = CountVectorizer()
-        events_vec =  self.lr_vectorizer.fit_transform(self.events)
+        # Extract additional predictors
+        additional_features = []
+        if self.numeric_cols:
+            additional_features = df.select(self.numeric_cols).to_pandas().values
+        
+        return events, labels, additional_features
+        
+    def train_LR(self):
+        X_train = None
+        if self.event_col:
+            self.lr_vectorizer = CountVectorizer()
+            events_vec = self.lr_vectorizer.fit_transform(self.events)
+            X_train = events_vec
+        
+        if self.numeric_cols:
+            X_train = hstack([X_train, self.additional_features]) if X_train is not None else self.additional_features
+        
         self.lr = LogisticRegression(max_iter=1000)
-        # Train the model
-        self.lr.fit(events_vec, self.labels)
+        self.lr.fit(X_train, self.labels)
         
-    def predict_LR (self, df_seq, print_scores = True):
-        events, labels = self._prepare_data(df_seq)
-        events_vec =  self.lr_vectorizer.transform(events)
-        predictions = self.lr.predict(events_vec)
-        # Attach predictions to the df_seq Polars DataFrame
+    def predict_LR(self, df_seq, print_scores=True):
+        events, labels, additional_features = self._prepare_data(df_seq)
+        
+        X_test = None
+        if self.event_col:
+            events_vec = self.lr_vectorizer.transform(events)
+            X_test = events_vec
+        
+        if self.numeric_cols:
+            X_test = hstack([X_test, additional_features]) if X_test is not None else additional_features
+        
+        predictions = self.lr.predict(X_test)
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
-        if (print_scores):
+        
+        if print_scores:
             self._print_evaluation_scores(labels, predictions)
         return df_seq
-    
+
     def _print_evaluation_scores(self, y_test, y_pred):
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -99,4 +124,21 @@ class SeqAnomalyDetection:
         f1 = f1_score(y_test, y_pred)
         # Print the F1 score
         print(f"F1 Score: {f1:.2f}")
+
+        # Print feature importance
+        if hasattr(self, 'lr_vectorizer') and self.lr_vectorizer:
+            event_features = self.lr_vectorizer.get_feature_names_out()
+            event_features = list(event_features)
+        else:
+            event_features = []
+
+        all_features = event_features + self.numeric_cols
+        feature_importance = abs(self.lr.coef_[0])
+        sorted_idx = feature_importance.argsort()[::-1]  # Sort in descending order
+
+        print("\nTop Important Predictors:")
+        for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
+            print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
+
+
             

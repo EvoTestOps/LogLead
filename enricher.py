@@ -112,7 +112,8 @@ class SequenceEnricher:
     def enrich_sequence_duration(self):
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
         df_temp = self.df.group_by('seq_id').agg(
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('seq_time')
+            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('seq_time'),
+            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('seq_dur_sec')
         )
         
         # Join this result with df_sequences on seq_id
