@@ -3,8 +3,8 @@ import loader as load, enricher as er, anomaly_detection as ad
 
 
 #Which one to run. Only one true. 
-b_hadoop = False
-b_hdfs = True
+b_hadoop = True
+b_hdfs = False
 b_profilence = False
 
 
@@ -44,12 +44,12 @@ df = enricher_hdfs.length()
 df = enricher_hdfs.parse_drain()
 #Collect events to sequence level as list[str]
 seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
-seq_enricher.enrich_sequence_events()
-seq_enricher.enrich_event_length()
-seq_enricher.enrich_start_time()
-seq_enricher.enrich_end_time()
-seq_enricher.enrich_sequence_length()
-seq_enricher.enrich_sequence_duration()
+seq_enricher.events()
+seq_enricher.eve_len()
+seq_enricher.start_time()
+seq_enricher.end_time()
+seq_enricher.seq_len()
+seq_enricher.duration()
 
 #Split
 df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.5)
@@ -57,13 +57,13 @@ df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_
 #Anomaly detection with Logstic Regression----------------------------------------------
 
 # Using only numeric columns:
-numeric_cols = ["seq_len", "event_max_len", "seq_dur_sec", "events_over_1_line"]
+numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1"]
 
 ad_seq = ad.SeqAnomalyDetection(df_seq_train, numeric_cols=numeric_cols)
 # Using only event column:
-ad_seq =  ad.SeqAnomalyDetection(df_seq_train, event_col="event_list")
+ad_seq =  ad.SeqAnomalyDetection(df_seq_train, event_col="events")
 #using both
-ad_seq =  ad.SeqAnomalyDetection(df_seq_train, event_col="event_list", numeric_cols=numeric_cols)
+ad_seq =  ad.SeqAnomalyDetection(df_seq_train, event_col="events", numeric_cols=numeric_cols)
 #------------------------
 ad_seq.train_LR()
 df_seq_test = ad_seq.predict_LR(df_seq_test, print_scores = True)
