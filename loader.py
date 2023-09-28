@@ -38,13 +38,12 @@ class BaseLoader:
             null_count = self.df.filter(self.df[col].is_null()).shape[0]
             if null_count > 0:
                 null_counts[col] = null_count
-
         # Print the results
         if null_counts:
             for col, count in null_counts.items():
                 print(f"WARNING! Column '{col}' has {count} null values. This can cause problems during analysis. ")
                 print(f"To investigate: <DF_NAME>.filter(<DF_NAME>['{col}'].is_null())")
-
+                
     def check_mandatory_columns(self):
         missing_columns = [col for col in self._mandatory_columns if col not in self.df.columns]
         if missing_columns:
@@ -234,6 +233,7 @@ class HadoopLoader(BaseLoader):
         #Merge the stored columns back to self.df
         self.df = pl.concat([self.df, df_store_cols], how="horizontal")
         self._parse_datetimes()
+        self.df = self.df.with_columns(pl.col("m_message").fill_null("<EMPTY LOG MESSAGE>"))
         #Aggregate labels to sequence dataframe info that is at Application ID level
         self.df_sequences = self.df.select(pl.col("seq_id")).unique() #sequence level dataframe
         label_df = self._parse_labels() #parse labels

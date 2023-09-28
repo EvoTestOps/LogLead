@@ -60,7 +60,14 @@ class EventLogEnricher:
             # 'template_mined': 'session closed for user root',
             # 'cluster_count': 1}
             self.tm = TemplateMiner()#we store template for later use.
-            self.df = self.df.with_columns(drain = pl.col("m_message").map_elements(lambda x: self.tm.add_log_message(x)))
+            
+            # We might have multiline log message, i.e. log_message + stack trace. 
+            #Use only first line of log message for parsing
+            self.df = self.df.with_columns(
+                message_trimmed = pl.col("m_message").str.split("\n").list.first()
+            )
+            self.df = self.df.with_columns(drain = pl.col("message_trimmed").map_elements(lambda x: self.tm.add_log_message(x)))
+            #self.df = self.df.with_columns(drain = pl.col("m_message").map_elements(lambda x: self.tm.add_log_message(x)))
             #tm.drain.print_tree()
             self.df = self.df.with_columns(
                 e_event_id=pl.lit("e") + pl.col("drain").struct.field("cluster_id").cast(pl.Utf8),#extra thing ensure we e1 e2 instead of 1 2
@@ -126,7 +133,7 @@ class SequenceEnricher:
             eve_len_min = pl.col('e_message_len_char').min(),
             eve_len_avg = pl.col('e_message_len_char').mean(),
             eve_len_med = pl.col('e_message_len_char').median(),
-            eve_len_over1 = (pl.col('e_message_len_char') > 0).sum()
+            eve_len_over1 = (pl.col('e_message_len_char') > 1).sum()
             )
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
