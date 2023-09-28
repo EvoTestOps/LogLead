@@ -7,7 +7,10 @@ from collections import Counter
 
 # Base class
 class BaseLoader:
-    _csv_separator = "\a"
+    #This should be csv separator nowhere. 
+    #We try to prevent polars from trying to do csv spltting
+    #Instead we do it manually. 
+    _csv_separator = "\a" 
     _mandatory_columns = ["m_message", "m_timestamp"]
     
     def __init__(self, filename, df=None, df_sequences=None):
@@ -25,9 +28,23 @@ class BaseLoader:
         if self.df is None:
             self.load()
         self.preprocess()
+        self.check_for_nulls() 
         self.check_mandatory_columns()
         return self.df
     
+    def check_for_nulls(self):
+        null_counts = {}  # Dictionary to store count of nulls for each column
+        for col in self.df.columns:
+            null_count = self.df.filter(self.df[col].is_null()).shape[0]
+            if null_count > 0:
+                null_counts[col] = null_count
+
+        # Print the results
+        if null_counts:
+            for col, count in null_counts.items():
+                print(f"WARNING! Column '{col}' has {count} null values. This can cause problems during analysis. ")
+                print(f"To investigate: <DF_NAME>.filter(<DF_NAME>['{col}'].is_null())")
+
     def check_mandatory_columns(self):
         missing_columns = [col for col in self._mandatory_columns if col not in self.df.columns]
         if missing_columns:
@@ -52,13 +69,11 @@ class BaseLoader:
 
         # Filter lines that do not start with the pattern.
         non_matching_lines_df = self.df.filter(~pl.col("column_1").str.contains(pattern))
-        
         # Filter lines that do start with the pattern.
         matching_lines_df = self.df.filter(pl.col("column_1").str.contains(pattern))
         
         # Get the number of lines that do not start with the pattern.
         non_matching_lines_count = non_matching_lines_df.shape[0]
-        
         # Get the number of lines that do start with the pattern.
         matching_lines_count = matching_lines_df.shape[0]
             
@@ -66,7 +81,7 @@ class BaseLoader:
 
     def reduce_dataframes(self, frac=0.5):
         """
-        Reduce the size of df_sequences by the specified fraction (if present) and update df accordingly.
+        Reduce the size of and update df accordingly.
         
         Parameters:
         - fraction: The fraction of rows to retain. Default is 0.5 (50%).
@@ -159,7 +174,7 @@ class HadoopLoader(BaseLoader):
             # Iterate over all files in the subdirectory that match the given pattern
             for file in glob.glob(file_pattern):
                 try:
-                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator)
+                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator, row_count_name="row_nr")
                     q = q.with_columns(
                         pl.lit(seq_id).alias('seq_id'), #Folder is seq_id
                         pl.lit(os.path.basename(file)).alias('seq_id_sub') #File is seq_id_sub
@@ -172,24 +187,29 @@ class HadoopLoader(BaseLoader):
     
     #Occasionally multiline entries exists, e.g. log message followed by stack trace here we merge them to one log event. 
     def _merge_multiline_entries(self):
+         # Sort the dataframe by "seq_id_sub" and "row_nr" to ensure correct lines are merged together
+        self.df = self.df.sort(["seq_id_sub", "row_nr"])
+        
         # Create a flag column that determines if the row starts with the pattern.
-        self.df = self.df.with_columns(pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).alias("flag"))
-        # Debug line: count and print the number of lines that do not start with a valid entry.
-        #invalid_entries_count = self.df.filter(pl.col("flag").is_not()).select(pl.count())
-        #print(f"Number of lines that do not start with a valid entry: {invalid_entries_count}")
-        # Generate groups by taking a cumulative sum over the flag. This will group multi-line entries together.
+        #self.df = self.df.with_columns(pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).alias("flag"))
+        #The above should work but for some reason there are some nulls. Force the nulls to False
+        self.df = self.df.with_columns(
+                pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).fill_null(False).alias("flag")
+        )
+
+
         # Generate groups by taking a cumulative sum over the flag. This will group multi-line entries together.
         self.df = self.df.with_columns(pl.col("flag").cumsum().alias("group"))
-
         # Calculate number of lines in each group
-        group_counts = self.df.groupby("group").agg(pl.count("column_1").alias("lines_in_group"))
 
         # Merge the entries in each group
         df_grouped = self.df.groupby("group").agg(
             pl.col("column_1").str.concat("\n").alias("column_1"),
             pl.col("seq_id").first().alias("seq_id"),
-            pl.col("seq_id_sub").first().alias("seq_id_sub")
+            pl.col("seq_id_sub").first().alias("seq_id_sub"),
+            pl.col("row_nr").first().alias("row_nr")
         )
+        self.df = df_grouped
         #Debug
         #df_grouped = df_grouped.with_columns(pl.col("column_1").str.n_chars().alias("entry_length"))
         # Find the entry with the longest length
@@ -204,14 +224,11 @@ class HadoopLoader(BaseLoader):
         #print(longest_entry_content)
         return self.df
 
-
-
-
     def preprocess(self):    
         self._merge_multiline_entries()
         self._extract_process()
         #Store columns 
-        df_store_cols = self.df.select(pl.col("seq_id","seq_id_sub", "process"))
+        df_store_cols = self.df.select(pl.col("seq_id","seq_id_sub", "process","row_nr", "column_1"))
         #This method splits the string and overwrite self.df
         self._split_and_unnest(["date", "time","level", "component","m_message"])
         #Merge the stored columns back to self.df
