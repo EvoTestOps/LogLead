@@ -82,55 +82,52 @@ class SequenceEnricher:
         self.df = df
         self.df_sequences = df_sequences
 
-    def enrich_start_time(self):
+    def start_time(self):
         df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').min().alias('start_time'))
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
 
-    def enrich_end_time(self):
+    def end_time(self):
         df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').max().alias('end_time'))
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
 
-    def enrich_sequence_length(self):
+    def seq_len(self):
         # Count the number of rows for each seq_id
         df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
     
-    def enrich_sequence_events(self):
+    def events(self):
         # Aggregate event ids into a list for each seq_id
         df_temp = self.df.group_by('seq_id').agg(
-                event_list = pl.col('e_event_id')
+                events = pl.col('e_event_id')
             )
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
 
 
-    def enrich_sequence_duration(self):
+    def duration(self):
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
         df_temp = self.df.group_by('seq_id').agg(
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('seq_time'),
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('seq_dur_sec')
+            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('duration'),
+            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('duration_sec')
         )
-        
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
         
-    def enrich_event_length(self):
+    def eve_len(self):
         # Count the number of rows for each seq_id
         df_temp = self.df.group_by('seq_id').agg(
-            event_max_len = pl.col('e_message_len_char').max(),
-            event_min_len = pl.col('e_message_len_char').min(),
-            event_avg_len = pl.col('e_message_len_char').mean(),
-            event_med_len = pl.col('e_message_len_char').median(),
-            events_over_1_line = (pl.col('e_message_len_char') > 0).sum()
+            eve_len_max = pl.col('e_message_len_char').max(),
+            eve_len_min = pl.col('e_message_len_char').min(),
+            eve_len_avg = pl.col('e_message_len_char').mean(),
+            eve_len_med = pl.col('e_message_len_char').median(),
+            eve_len_over1 = (pl.col('e_message_len_char') > 0).sum()
             )
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences    
-    
-#Lisää length in events, lenght in time, etc...
