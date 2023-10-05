@@ -249,7 +249,9 @@ Time manage dfs for ad: 221.34 seconds
 Time ad: 263.08 seconds
 Time eval: 5.01 seconds
 
-Output:
+Note: A lot of the functions are from previous implementation and there might be faster polars options available.
+
+Example output:
 
 Mode           Thresh.   TP    FP    TN        FN    Precision Recall    Accuracy  F1 Score  
 ---------------------------------------------------------------------------------------------
@@ -273,3 +275,129 @@ max_ano_score  550.000   10346 181   278930    6492  0.9828    0.6144    0.9775 
 max_ano_score  555.000   10346 181   278930    6492  0.9828    0.6144    0.9775    0.7561    
 
 """
+
+#Trigram prediction for BGL. This is a first version with a simple approach:
+#1. Preprocess (incl. normalize)
+#2. Split between training (normal) and test (ano + normal) sets
+#3. Create a training vocabulary of most common trigrams 
+#4. Calculate ano score with the rarity function for each trigram
+#5. Compare scores of maximum score trigram of the event for normal and ano events
+#6. Results:
+#Statistics for scores_norm:
+#Mean: 10.378, Median: 10.322, Standard Deviation: 1.647, Min: 6.016, Max: 18.458
+#Statistics for scores_ano:
+#Mean: 16.288, Median: 16.260, Standard Deviation: 1.536, Min: 6.981, Max: 18.458
+
+
+
+prevtime =  time.time()
+
+#PREPROCESS
+
+preprocessor = load.BGLLoader(filename="../../../Datasets/bgl/BGL.log")
+
+df = preprocessor.execute()
+enricher = er.EventLogEnricher(df)
+df = enricher.trigrams()
+df = df.with_columns(
+    pl.when(df['label'] == "-").then(True).otherwise(False).alias("normal")
+)
+
+print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+ 
+def normalize_message(value):
+    line = re.sub(r'\d', '0', value)
+    line = line.lower()
+    line = re.sub('0+', '0', line)
+    return line
+
+df = df.with_columns(
+    pl.col("m_message").apply(normalize_message)
+)
+
+print(f'Time normalize: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+#SPLIT
+
+normal_data = df.filter(df['normal'])
+anomalous_data = df.filter(~df['normal'])
+
+df_train, df_normal_test = ad.test_train_split(normal_data, test_frac=0.5)
+df_test = pl.concat([df_normal_test, anomalous_data], how="vertical")
+
+print(f'Time split: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+#CREATE NORMAL COUNTER AND DF
+
+df_train = df_train.with_columns(pl.col("e_cgrams").fill_null([]))
+e_cgrams_data = df_train["e_cgrams"] # if null values inside lists: [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+# Now flatten the list
+all_trigrams = list(chain.from_iterable(e_cgrams_data))
+
+trigram_counts = Counter(all_trigrams)
+# Create a new DataFrame with the trigrams and their counts
+df_ngram_counts = pl.DataFrame({
+    'ngram': list(trigram_counts.keys()),
+    'count': list(trigram_counts.values())
+})
+
+frequent_ngrams_count=400
+
+# Count the frequency of ngrams in the training set
+total_ngrams = df_ngram_counts['count'].sum()
+train_ngrams_set = set(df_ngram_counts.sort(pl.col('count')).limit(frequent_ngrams_count)['ngram'])
+
+print(f'Time create normal set: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+#TEST
+
+# Replace None sublists with empty lists
+df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
+
+# Replace None elements with empty strings within each sublist
+e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+
+scores = []
+for event_ngrams in df_test["e_cgrams"]:
+    event_ngrams_set = set(event_ngrams)
+    event_ano_scores = [rarity_score(ngram, trigram_counts, total_ngrams) for ngram in event_ngrams_set]
+    scores.append(event_ano_scores)
+    
+max_scores = [max(score_list) for score_list in scores if score_list]
+
+#the scores are arranged so that normal ones comes first
+scores_norm = max_scores[:2199751]
+scores_ano = max_scores[2199751:]
+
+print(f'Time test: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+# ROUGH EVALUATION
+
+import numpy as np
+
+scores_norm_np = np.array(scores_norm)
+scores_ano_np = np.array(scores_ano)
+
+mean_norm = np.mean(scores_norm_np)
+median_norm = np.median(scores_norm_np)
+std_dev_norm = np.std(scores_norm_np)
+min_value_norm = np.min(scores_norm_np)
+max_value_norm = np.max(scores_norm_np)
+
+mean_ano = np.mean(scores_ano_np)
+median_ano = np.median(scores_ano_np)
+std_dev_ano = np.std(scores_ano_np)
+min_value_ano = np.min(scores_ano_np)
+max_value_ano = np.max(scores_ano_np)
+
+print(f'Statistics for scores_norm:')
+print(f'Mean: {mean_norm:.3f}, Median: {median_norm:.3f}, Standard Deviation: {std_dev_norm:.3f}, Min: {min_value_norm:.3f}, Max: {max_value_norm:.3f}')
+
+print(f'\nStatistics for scores_ano:')
+print(f'Mean: {mean_ano:.3f}, Median: {median_ano:.3f}, Standard Deviation: {std_dev_ano:.3f}, Min: {min_value_ano:.3f}, Max: {max_value_ano:.3f}')
+
