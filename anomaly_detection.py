@@ -2,6 +2,7 @@ import polars as pl
 from collections import Counter
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn import tree
 from sklearn.metrics import accuracy_score
 from scipy.sparse import hstack
 
@@ -51,11 +52,10 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SeqAnomalyDetection:
-    def __init__(self, df_seq, event_col=None, numeric_cols=None):
-        self.df_train = df_seq
+    def __init__(self, event_col=None, numeric_cols=None):
         self.event_col = event_col
         self.numeric_cols = numeric_cols if numeric_cols else []
-        self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
+        #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
 
     def _prepare_data(self, df):
         # Extract events
@@ -63,7 +63,6 @@ class SeqAnomalyDetection:
         if self.event_col:
             events = df.select(pl.col(self.event_col)).to_series().to_list()
             events = [' '.join(e) for e in events]
-
 
         labels = df.select(pl.col("normal")).to_series().to_list()
         
@@ -73,39 +72,50 @@ class SeqAnomalyDetection:
             additional_features = df.select(self.numeric_cols).to_pandas().values
         
         return events, labels, additional_features
-        
-    def train_LR(self):
-        X_train = None
+    
+    def sklearn_vectorization (self, train, df_seq): 
+        events, labels, additional_features = self._prepare_data(df_seq)
+        X = None
         if self.event_col:
-            self.lr_vectorizer = CountVectorizer()
-            events_vec = self.lr_vectorizer.fit_transform(self.events)
-            X_train = events_vec
+            if train:
+                self.vectorizer = CountVectorizer() 
+                events_vec = self.vectorizer.fit_transform(events)
+            else: 
+                events_vec = self.vectorizer.transform(events)
+            X = events_vec
         
         if self.numeric_cols:
-            X_train = hstack([X_train, self.additional_features]) if X_train is not None else self.additional_features
+            X = hstack([X, additional_features]) if X is not None else additional_features
         
+        return X, labels
+    
+    def train_LR(self, df_seq):
+        X_train, labels = self.sklearn_vectorization(train=True, df_seq=df_seq)
         self.lr = LogisticRegression(max_iter=1000)
-        self.lr.fit(X_train, self.labels)
+        self.lr.fit(X_train, labels)
         
     def predict_LR(self, df_seq, print_scores=True):
-        events, labels, additional_features = self._prepare_data(df_seq)
-        
-        X_test = None
-        if self.event_col:
-            events_vec = self.lr_vectorizer.transform(events)
-            X_test = events_vec
-        
-        if self.numeric_cols:
-            X_test = hstack([X_test, additional_features]) if X_test is not None else additional_features
-        
+        X_test, labels = self.sklearn_vectorization(train=False, df_seq=df_seq)
         predictions = self.lr.predict(X_test)
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
-        
         if print_scores:
-            self._print_evaluation_scores(labels, predictions)
+            self._print_evaluation_scores(labels, predictions, self.lr)
+        return df_seq
+    
+    def train_DT(self, df_seq):
+        X_train, labels = self.sklearn_vectorization(train=True, df_seq=df_seq)
+        self.dt = tree.DecisionTreeClassifier()
+        self.dt.fit(X_train, labels)
+
+    def predict_DT(self, df_seq, print_scores=True):
+        X_test, labels = self.sklearn_vectorization(train=False, df_seq=df_seq)
+        predictions = self.dt.predict(X_test)
+        df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
+        if print_scores:
+            self._print_evaluation_scores(labels, predictions, self.dt)
         return df_seq
 
-    def _print_evaluation_scores(self, y_test, y_pred):
+    def _print_evaluation_scores(self, y_test, y_pred, model):
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
         print(f"Accuracy: {accuracy:.2f}")
@@ -126,14 +136,19 @@ class SeqAnomalyDetection:
         print(f"F1 Score: {f1:.2f}")
 
         # Print feature importance
-        if hasattr(self, 'lr_vectorizer') and self.lr_vectorizer:
-            event_features = self.lr_vectorizer.get_feature_names_out()
+        if hasattr(self, 'vectorizer') and self.vectorizer:
+            event_features = self.vectorizer.get_feature_names_out()
             event_features = list(event_features)
         else:
             event_features = []
 
         all_features = event_features + self.numeric_cols
-        feature_importance = abs(self.lr.coef_[0])
+        if isinstance(model, LogisticRegression):
+            feature_importance = abs(model.coef_[0])
+        elif isinstance(model, tree.DecisionTreeClassifier):
+            feature_importance = model.feature_importances_
+        else:
+            raise ValueError("Model type not supported for feature importance extraction")
         sorted_idx = feature_importance.argsort()[::-1]  # Sort in descending order
 
         print("\nTop Important Predictors:")
