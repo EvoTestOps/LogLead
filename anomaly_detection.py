@@ -6,6 +6,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
 from sklearn.metrics import accuracy_score
 from scipy.sparse import hstack
@@ -155,10 +157,24 @@ class SeqAnomalyDetection:
         self.train_model (df_seq, IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination))
 
-    def _print_evaluation_scores(self, y_test, y_pred, model):
+    def train_RF(self, df_seq):
+        self.train_model(df_seq, RandomForestClassifier())
+
+    def train_XGB(self, df_seq):
+        self.train_model(df_seq, XGBClassifier())
+
+    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
+        print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
         print(f"Accuracy: {accuracy:.2f}")
+        
+        from sklearn.metrics import f1_score
+        # Compute the F1 score
+        f1 = f1_score(y_test, y_pred)
+        # Print the F1 score
+        print(f"F1 Score: {f1:.2f}")
+
 
         # Compute the confusion matrix--------------------------------------------------
         from sklearn.metrics import confusion_matrix
@@ -169,30 +185,26 @@ class SeqAnomalyDetection:
         print("Confusion Matrix:")
         print(cm)
         #F1--------------------------------------------------------
-        from sklearn.metrics import f1_score
-        # Compute the F1 score
-        f1 = f1_score(y_test, y_pred)
-        # Print the F1 score
-        print(f"F1 Score: {f1:.2f}")
 
         # Print feature importance
-        if hasattr(self, 'vectorizer') and self.vectorizer:
-            event_features = self.vectorizer.get_feature_names_out()
-            event_features = list(event_features)
-        else:
-            event_features = []
+        if (f_importance):
+            if hasattr(self, 'vectorizer') and self.vectorizer:
+                event_features = self.vectorizer.get_feature_names_out()
+                event_features = list(event_features)
+            else:
+                event_features = []
 
-        all_features = event_features + self.numeric_cols
-        if isinstance(model, (LogisticRegression, LinearSVC)):
-            feature_importance = abs(model.coef_[0])
-        elif isinstance(model, DecisionTreeClassifier):
-            feature_importance = model.feature_importances_
-        else:
-            print("Model type not supported for feature importance extraction")
-            return
-        sorted_idx = feature_importance.argsort()[::-1]  # Sort in descending order
+            all_features = event_features + self.numeric_cols
+            if isinstance(model, (LogisticRegression, LinearSVC)):
+                feature_importance = abs(model.coef_[0])
+            elif isinstance(model, DecisionTreeClassifier):
+                feature_importance = model.feature_importances_
+            else:
+                print("Model type not supported for feature importance extraction")
+                return
+            sorted_idx = feature_importance.argsort()[::-1]  # Sort in descending order
 
-        print("\nTop Important Predictors:")
-        for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
-            print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
-            
+            print("\nTop Important Predictors:")
+            for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
+                print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
+                

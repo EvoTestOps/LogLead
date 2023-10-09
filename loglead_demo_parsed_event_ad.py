@@ -32,8 +32,8 @@ elif (b_profilence):
        preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
 
 df = preprocessor.execute()
-if (not b_hadoop):
-    df = preprocessor.reduce_dataframes(frac=0.02)
+#if (not b_hadoop):
+#    df = preprocessor.reduce_dataframes(frac=0.02)
 df_seq = preprocessor.df_sequences
 
   
@@ -52,7 +52,7 @@ seq_enricher.seq_len()
 seq_enricher.duration()
 
 #Split
-df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.5)
+df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.995)
 
 #Anomaly detection with Logstic Regression and DT----------------------------------------------
 
@@ -69,6 +69,11 @@ ad_seq.train_SVM(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
 ad_seq.train_IsolationForest(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_RF(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_XGB(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+
 
 # AD using only event column:
 ad_seq =  ad.SeqAnomalyDetection(event_col="events")
@@ -80,6 +85,11 @@ ad_seq.train_SVM(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
 ad_seq.train_IsolationForest(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_RF(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_XGB(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+
 
 # AD using both
 ad_seq =  ad.SeqAnomalyDetection(event_col="events", numeric_cols=numeric_cols)
@@ -90,4 +100,8 @@ df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
 ad_seq.train_SVM(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
 ad_seq.train_IsolationForest(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_RF(df_seq_train)
+df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
+ad_seq.train_XGB(df_seq_train)
 df_seq_test = ad_seq.predict(df_seq_test, print_scores = True)
