@@ -10,6 +10,18 @@ import time;
 prevtime = time.time() 
 
 
+def rarity_score(ngram, train_ngrams_counter, total_ngrams, threshold = 0.05):
+    ngram_freq = train_ngrams_counter.get(ngram, 0)
+    # If the ngram doesn't appear in the training set, assign a high rarity score.
+    if ngram_freq == 0:
+        return 5
+    normalized_freq = ngram_freq / total_ngrams
+    if normalized_freq > threshold:
+        return 0  # Common ngram, rarity score is 0
+    
+    return -math.log(normalized_freq)
+
+
 #Which one to run. Only one true. 
 b_hadoop = False
 b_hdfs = True
@@ -40,6 +52,7 @@ print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
 ### Normalizing before everything now 
+#DONT USE APPLY, use replace_all from polars
 def normalize_message(value):
     line = re.sub(r'\d', '0', value)
     line = line.lower()
@@ -94,18 +107,6 @@ df_ngram_counts = pl.DataFrame({
 
 print(f'Time manage dfs for ad: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
-
-def rarity_score(ngram, train_ngrams_counter, total_ngrams, threshold = 0.05):
-    ngram_freq = train_ngrams_counter.get(ngram, 0)
-    # If the ngram doesn't appear in the training set, assign a high rarity score.
-    if ngram_freq == 0:
-        return 5
-    normalized_freq = ngram_freq / total_ngrams
-    if normalized_freq > threshold:
-        return 0  # Common ngram, rarity score is 0
-    
-    return -math.log(normalized_freq)
-
 
 frequent_ngrams_count=400
 
@@ -288,7 +289,15 @@ max_ano_score  555.000   10346 181   278930    6492  0.9828    0.6144    0.9775 
 #Statistics for scores_ano:
 #Mean: 16.288, Median: 16.260, Standard Deviation: 1.536, Min: 6.981, Max: 18.458
 
+#First version time
+#Time preprocess: 132.10 seconds
+#Time normalize: 23.15 seconds
+#Time split: 16.43 seconds
+#Time create normal set: 1773.85 seconds
+#Time test: 2077.55 seconds
 
+#2nd version for create normal set is now polars only and a 500x faster, few seconds
+#Tried 4 different versions to handle the test, but they are all over 30min
 
 prevtime =  time.time()
 
@@ -297,6 +306,9 @@ prevtime =  time.time()
 preprocessor = load.BGLLoader(filename="../../../Datasets/bgl/BGL.log")
 
 df = preprocessor.execute()
+
+#df = df.sample(fraction=0.1)
+
 enricher = er.EventLogEnricher(df)
 df = enricher.trigrams()
 df = df.with_columns(
@@ -333,41 +345,69 @@ prevtime =  time.time()
 #CREATE NORMAL COUNTER AND DF
 
 df_train = df_train.with_columns(pl.col("e_cgrams").fill_null([]))
-e_cgrams_data = df_train["e_cgrams"] # if null values inside lists: [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+#e_cgrams_data = df_train["e_cgrams"] # if null values inside lists: [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
 # Now flatten the list
-all_trigrams = list(chain.from_iterable(e_cgrams_data))
+#all_trigrams = list(chain.from_iterable(e_cgrams_data))
 
-trigram_counts = Counter(all_trigrams)
+flattened_train = df_train.select(pl.col("e_cgrams").explode())
+# Assuming df_train is your DataFrame
+df_ngram_counts = (
+    flattened_train.groupby('e_cgrams')
+    .agg(pl.col('e_cgrams').count().alias('count'))
+    .sort('count', descending=True)
+)
+
+
+#trigram_counts = Counter(flattened_df)
 # Create a new DataFrame with the trigrams and their counts
-df_ngram_counts = pl.DataFrame({
-    'ngram': list(trigram_counts.keys()),
-    'count': list(trigram_counts.values())
-})
+#df_ngram_counts = pl.DataFrame({
+#    'ngram': list(trigram_counts.keys()),
+#    'count': list(trigram_counts.values())
+#})
 
-frequent_ngrams_count=400
+#frequent_ngrams_count=9999
 
 # Count the frequency of ngrams in the training set
 total_ngrams = df_ngram_counts['count'].sum()
-train_ngrams_set = set(df_ngram_counts.sort(pl.col('count')).limit(frequent_ngrams_count)['ngram'])
+train_ngrams_set = set(df_ngram_counts.sort(pl.col('count'))['e_cgrams'])
 
 print(f'Time create normal set: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
+
+
+def rarity_score(freq, total_ngrams, threshold = 0.05):
+    if freq == 0:
+        return 5
+    normalized_freq = freq / total_ngrams
+    if normalized_freq > threshold:
+        return 0  # Common ngram, rarity score is 0
+    
+    return -math.log(normalized_freq)
+
+
 #TEST
+
+#Currently 4th version, no improvement to 1st but better than 2nd and 3rd
 
 # Replace None sublists with empty lists
 df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
 
 # Replace None elements with empty strings within each sublist
-e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+#e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+
+test_ngrams_set = df_test.select(pl.col("e_cgrams").explode().unique())
+joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
+joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
+count_dict = dict(zip(joined_df['e_cgrams'].to_list(), joined_df['count'].to_list()))
 
 scores = []
 for event_ngrams in df_test["e_cgrams"]:
-    event_ngrams_set = set(event_ngrams)
-    event_ano_scores = [rarity_score(ngram, trigram_counts, total_ngrams) for ngram in event_ngrams_set]
+    event_ano_scores = [rarity_score(count_dict.get(trigram, 0), total_ngrams) for trigram in set(event_ngrams)]
     scores.append(event_ano_scores)
     
-max_scores = [max(score_list) for score_list in scores if score_list]
+
+max_scores = [max(score_list) for score_list in scores if score_list] #This is around 5 seconds
 
 #the scores are arranged so that normal ones comes first
 scores_norm = max_scores[:2199751]
@@ -376,7 +416,21 @@ scores_ano = max_scores[2199751:]
 print(f'Time test: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
-# ROUGH EVALUATION
+# EVALUATION
+
+def simple_evaluation(scores_norm, scores_ano, threshold=15):
+    tp = sum(score > threshold for score in scores_ano)
+    fp = sum(score > threshold for score in scores_norm)
+    fn = sum(score <= threshold for score in scores_ano)
+    
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    
+    return precision, recall, f1
+
+precision, recall, f1 = simple_evaluation(scores_norm, scores_ano, threshold=15)
+print("Prec ", precision, ", recall ", recall, ", f1 ", f1)
 
 import numpy as np
 
@@ -401,3 +455,94 @@ print(f'Mean: {mean_norm:.3f}, Median: {median_norm:.3f}, Standard Deviation: {s
 print(f'\nStatistics for scores_ano:')
 print(f'Mean: {mean_ano:.3f}, Median: {median_ano:.3f}, Standard Deviation: {std_dev_ano:.3f}, Min: {min_value_ano:.3f}, Max: {max_value_ano:.3f}')
 
+# figure
+import matplotlib.pyplot as plt
+plt.figure(figsize=(10, 5))
+plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
+plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
+plt.xlabel('Value')
+plt.ylabel('Frequency')
+plt.title('Distribution of scores_norm and scores_ano')
+plt.legend(loc='upper right')  # Add legend to identify which color corresponds to which distribution
+plt.tight_layout()
+plt.show()
+
+
+
+"""
+Test versions:
+
+#Version 1, mostly python functions
+
+# Replace None sublists with empty lists
+df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
+
+# Replace None elements with empty strings within each sublist
+e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+
+scores = []
+for event_ngrams in df_test["e_cgrams"]:
+    event_ngrams_set = set(event_ngrams)
+    event_ano_scores = [rarity_score(ngram, trigram_counts, total_ngrams) for ngram in event_ngrams_set]
+    scores.append(event_ano_scores)
+
+max_scores = [max(score_list) for score_list in scores if score_list]
+
+
+
+Test version 2:
+#Trying alternative approach for testing by precalcuting counts into polars df and fetching them for each ngram. 
+#The row-by-row had to be done with python code though, so it was terribly slow. Over 2 hours for full BGL.
+
+scores = []
+# Iterate through each list of trigrams in df_test["e_cgrams"]
+for event_ngrams in df_test["e_cgrams"]:
+    # Convert the list of trigrams to a set to remove duplicates
+    event_ngrams_set = set(event_ngrams)
+    
+    # Convert the set to a list so we can index into it
+    event_ngrams_list = list(event_ngrams_set)
+    
+    # Extract the counts for each trigram from joined_df
+    event_counts_df = joined_df.filter(joined_df['e_cgrams'].is_in(event_ngrams_set))
+    event_counts = event_counts_df['count'].to_list()
+    
+    # If event_counts is empty, skip to the next iteration
+    if not event_counts:
+        scores.append(None)
+        continue
+    
+    # Find the trigram with the lowest count
+    min_count = min(event_counts)
+    
+    # Calculate the rarity score for the trigram with the lowest count
+    score = rarity_score(min_count, total_ngrams)
+    
+    # Append the score to the scores list
+    scores.append(score)
+
+# Convert the scores list to a Polars Series
+scores_series = pl.Series('scores', scores)
+
+# If needed, add the scores_series to your DataFrame
+df_test_with_scores = df_test.hstack(scores_series)
+
+
+Test version 3:
+#Get individual counts with pandas filter, loop inside loop. Even slower, 3 hours. 
+
+test_ngrams_set = df_test.select(pl.col("e_cgrams").explode().unique())
+joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
+joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
+
+scores = []
+for event_ngrams in df_test["e_cgrams"]:
+    event_ano_scores = []
+    event_ngrams_set = set(event_ngrams)
+    for trigram in event_ngrams_set:
+        count = joined_df.filter(joined_df['e_cgrams']==trigram)['count'][0]
+        event_ano_scores.append(rarity_score(count, total_ngrams))
+    scores.append(event_ano_scores)
+    
+max_scores = [max(score_list) for score_list in scores if score_list]
+    """

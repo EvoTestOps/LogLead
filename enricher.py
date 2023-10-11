@@ -1,5 +1,6 @@
 import polars as pl
 from drain3 import TemplateMiner
+from bertembedding import BertEmbeddings
 
 class EventLogEnricher:
     def __init__(self, df):
@@ -75,6 +76,62 @@ class EventLogEnricher:
             self.df = self.df.drop("drain")#Drop the dictionary produced by drain. Event_id and template are the most important. 
         return self.df
 
+    def create_neural_emb(self):
+        self._handle_prerequisites(["m_message"])
+        #MM: should check agains e_bert_emb. This is essentally protection for not doing useless computation
+        if "e_event_id" not in self.df.columns:
+            #MM: No need for drain specif documentation here
+            # Drain returns dict
+            # {'change_type': 'none',
+            # 'cluster_id': 1,
+            # 'cluster_size': 2,
+            # 'template_mined': 'session closed for user root',
+            # 'cluster_count': 1}
+            #MM: This is also Drain
+            self.tm = TemplateMiner()  # we store template for later use.
+
+            # We might have multiline log message, i.e. log_message + stack trace.
+            # Use only first line of log message for parsing
+            self.df = self.df.with_columns(
+                message_trimmed=pl.col("m_message").str.split("\n").list.first()
+                .str.to_lowercase()
+                .str.replace_all(r"[0-9\W_]", " ")
+                .str.replace_all(r"\s+", " ")
+                .str.replace_all(r"^\s+|\s+$", "")
+            )
+            # create a BertEmbeddings class instance
+            #MM: Do we need the generator later?
+            #For example if predictions need to be done much after training
+            #e.g. we train and then go to production where prediction take place. 
+            #if so then this should be
+            # YQ: It depends on the situation. E.g., for my fusion model, I define it in '__main__',
+            # to save the processing time, i.e., define one time and use it in all places
+            self.bert_emb_gen = BertEmbeddings()
+            #bert_emb_gen = BertEmbeddings()
+
+            # obtain bert sentence embedding
+            #MM: Is it possible to do this map or map_elements as in line 70?
+            #MM: Or is there too much performance hit?
+            #MM: This makes unnessary copies from and to polars dataframe.
+            #YQ: map or map_elements do the operation on "each element" of a column in the DataFrame.
+            #YQ: We can create Bert embedding for "each element" and map it to a column, but it takes heavy computing resources
+            #YQ: Because it fetch model and generate output again and again
+            #YQ: You can see from the current bertembedding class, I feed all values on self.df['message_trimmed'] to Bert
+            #YQ: This means we only fetch model and generate output one time. 
+            message_trimmed_list = self.df['message_trimmed'].to_list()
+            message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
+            # Convert the eager tensor to a NumPy array
+            message_trimmed_emb_list = message_trimmed_emb_tensor.numpy()
+            bert_emb_col_df = pl.DataFrame({
+                #MM Should be e_bert_emb -> YQ:fixed
+                'e_bert_emb': message_trimmed_emb_list
+            })
+
+            self.df = self.df.hstack(bert_emb_col_df)
+            #print(self.df["e_bert_emb"][1])
+            #b_hadoop, 177592 entries, Time taken: 375.30 seconds
+        return self.df
+
     def length(self):
         self._handle_prerequisites(["m_message"])
         if "e_message_len" not in self.df.columns:
@@ -129,6 +186,7 @@ class Regexs:
     def print_patterns(self):
         for key, pattern in self.patterns:
             print(f"{key}: {pattern}\n")
+
 
 
 class SequenceEnricher:
