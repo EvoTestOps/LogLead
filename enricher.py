@@ -83,6 +83,53 @@ class EventLogEnricher:
                 e_message_len_lines = pl.col("m_message").str.count_matches(r"(\n|\r|\r\n)")
             )
         return self.df
+    
+    def normalize(self, regexs, to_lower =False):
+                
+        base_code = 'self.df = self.df.with_columns(message_normal = pl.col("m_message").str.split("\\n").list.first()'
+        
+        if to_lower:
+            base_code += '.str.to_lowercase()'
+                
+        # Generate the replace_all chain
+        for key, pattern in regexs.patterns:
+            replace_code = f'.str.replace_all(r"{pattern}", "{key}")'
+            base_code += replace_code
+    
+        base_code += ')'
+        
+        print (base_code)
+        return base_code    
+        
+
+
+class Regexs:
+    def __init__(self):
+        self.patterns = [
+            ("ID", "((?<=[^A-Za-z0-9])|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))((?=[^A-Za-z0-9])|$)"),
+            ("IP", "((?<=[^A-Za-z0-9])|^)(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})((?=[^A-Za-z0-9])|$)"),
+            ("SEQ", "((?<=[^A-Za-z0-9])|^)([0-9a-f]{6,} ?){3,}((?=[^A-Za-z0-9])|$)"),
+            ("SEQ", "((?<=[^A-Za-z0-9])|^)([0-9A-F]{4} ?){4,}((?=[^A-Za-z0-9])|$)"),
+            ("HEX", "((?<=[^A-Za-z0-9])|^)(0x[a-f0-9A-F]+)((?=[^A-Za-z0-9])|$)"),
+            ("NUM", "((?<=[^A-Za-z0-9])|^)([\\-\\+]?\\d+)((?=[^A-Za-z0-9])|$)"),
+            ("CMD", "(?<=executed cmd )(\".+?\")")
+        ]
+
+    def add_pattern(self, key, pattern):
+        self.patterns.append((key, pattern))
+
+    def remove_pattern(self, key):
+        self.patterns = [p for p in self.patterns if p[0] != key]
+
+    def edit_pattern(self, key, new_pattern):
+        for i, (k, p) in enumerate(self.patterns):
+            if k == key:
+                self.patterns[i] = (key, new_pattern)
+                            
+    def print_patterns(self):
+        for key, pattern in self.patterns:
+            print(f"{key}: {pattern}\n")
+
 
 class SequenceEnricher:
     def __init__(self, df, df_sequences):

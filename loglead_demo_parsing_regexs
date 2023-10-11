@@ -1,0 +1,59 @@
+import loader as load, enricher as er, anomaly_detection as ad
+
+#Which one to run. Only one true. 
+b_hadoop = False
+b_hdfs = True
+b_profilence = False
+
+
+# Loading HDFS Logs----------------------------------------------------------------
+#hdfs_processor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
+#                                     labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
+#df = hdfs_processor.execute()
+#smaller hdfs for faster running. Parsing of whole HDFS takes about 11min
+#df = hdfs_processor.reduce_dataframes(frac=0.2)
+
+df = None
+df_seq = None
+preprocessor = None
+
+if (b_hadoop):
+       preprocessor = load.HadoopLoader(filename="../../../Datasets/hadoop/",
+                                                 filename_pattern  ="*.log",
+                                                 labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
+
+elif (b_hdfs):
+       preprocessor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
+                                          labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
+
+elif (b_profilence):
+       preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
+
+df = preprocessor.execute()
+if (not b_hadoop):
+    df = preprocessor.reduce_dataframes(frac=0.02)
+df_seq = preprocessor.df_sequences
+
+#-Event enrichment----------------------------------------------
+#Parsing in event level
+# Usage:
+regexs = er.Regexs()
+enricher_hdfs = er.EventLogEnricher(df)
+df = enricher_hdfs.length()
+enricher_hdfs.normalize(regexs=regexs)
+
+regexs.patterns
+import polars as pl
+df = df.with_columns(message_normal = pl.col("m_message").str.split("\n").list.first().str.replace_all(r"((?<=[^A-Za-z0-9])|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))((?=[^A-Za-z0-9])|$)", "ID").str.replace_all(r"((?<=[^A-Za-z0-9])|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})((?=[^A-Za-z0-9])|$)", "IP").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([0-9a-f]{6,} ?){3,}((?=[^A-Za-z0-9])|$)", "SEQ").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([0-9A-F]{4} ?){4,}((?=[^A-Za-z0-9])|$)", "SEQ").str.replace_all(r"((?<=[^A-Za-z0-9])|^)(0x[a-f0-9A-F]+)((?=[^A-Za-z0-9])|$)", "HEX").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([\-\+]?\d+)((?=[^A-Za-z0-9])|$)", "NUM").str.replace_all(r"(?<=executed cmd )(\".+?\")", "CMD"))
+print(df.select(pl.col("m_message")))
+
+
+#df = enricher_hdfs.parse_drain()
+
+#----------------------------------
+regexs.add_pattern("NEW_KEY", r"new_pattern")
+regexs.remove_pattern("ID")
+regexs.edit_pattern("NEW_KEY", r"edited_pattern")
+
+# Assuming df is your DataFrame
+regexs.print_patterns()
