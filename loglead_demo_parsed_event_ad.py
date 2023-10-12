@@ -32,8 +32,8 @@ elif (b_profilence):
        preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
 
 df = preprocessor.execute()
-#if (not b_hadoop):
-#    df = preprocessor.reduce_dataframes(frac=0.02)
+if (not b_hadoop):
+    df = preprocessor.reduce_dataframes(frac=0.02)
 df_seq = preprocessor.df_sequences
 
   

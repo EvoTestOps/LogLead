@@ -30,6 +30,7 @@ class BertEmbeddings:
         '''
 
     def create_bert_emb(self, sentences):
+        #length in word piece tokens
         max_length = 30
         # Set cache batch size depending on GPU memory
         cache_size = 300

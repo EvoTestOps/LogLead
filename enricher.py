@@ -1,6 +1,20 @@
 import polars as pl
-from drain3 import TemplateMiner
+import drain3 as dr
 from bertembedding import BertEmbeddings
+
+#Drain.ini default regexes 
+#No lookahead or lookbedinde so reimplemented with capture groups
+masking_patterns_drain = [
+    ("${start}ID${end}", r"(?P<start>[^A-Za-z0-9]|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}IP${end}", r"(?P<start>[^A-Za-z0-9]|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}SEQ${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9a-f]{6,} ?){3,}(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}SEQ${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9A-F]{4} ?){4,}(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}HEX${end}", r"(?P<start>[^A-Za-z0-9]|^)(0x[a-f0-9A-F]+)(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}NUM${end}", r"(?P<start>[^A-Za-z0-9]|^)([\-\+]?\d+)(?P<end>[^A-Za-z0-9]|$)"),
+    ("${cmd}CMD", r"(?P<cmd>executed cmd )(\".+?\")")
+]
+
+
 
 class EventLogEnricher:
     def __init__(self, df):
@@ -51,45 +65,45 @@ class EventLogEnricher:
         return [message[i:i+ngram] for i in range(len(message) - ngram + 1)]
     
     #Enrich with drain parsing results
-    def parse_drain(self):
+    def parse_drain(self, drain_masking=False, reparse = False):
         self._handle_prerequisites(["m_message"])
-        if "e_event_id" not in self.df.columns:
+        if reparse or "e_event_id" not in self.df.columns:
             # Drain returns dict
             # {'change_type': 'none',
             # 'cluster_id': 1,
             # 'cluster_size': 2,
             # 'template_mined': 'session closed for user root',
             # 'cluster_count': 1}
-            self.tm = TemplateMiner()#we store template for later use.
+           #we store template for later use.
             
             # We might have multiline log message, i.e. log_message + stack trace. 
             #Use only first line of log message for parsing
-            self.df = self.df.with_columns(
-                message_trimmed = pl.col("m_message").str.split("\n").list.first()
-            )
-            self.df = self.df.with_columns(drain = pl.col("message_trimmed").map_elements(lambda x: self.tm.add_log_message(x)))
-            #self.df = self.df.with_columns(drain = pl.col("m_message").map_elements(lambda x: self.tm.add_log_message(x)))
-            #tm.drain.print_tree()
+            if drain_masking:
+                dr.template_miner.config_filename = 'drain3.ini'
+                self.tm = dr.TemplateMiner()
+                self.df = self.df.with_columns(
+                    message_trimmed = pl.col("m_message").str.split("\n").list.first()
+                )
+                self.df = self.df.with_columns(drain = pl.col("message_trimmed").map_elements(lambda x: self.tm.add_log_message(x)))
+            else:
+                if "e_message_normalized" not in self.df.columns:
+                    self.normalize()
+                dr.template_miner.config_filename = 'drain3_no_masking.ini'
+                self.tm = dr.TemplateMiner()
+                self.df = self.df.with_columns(drain = pl.col("e_message_normalized").map_elements(lambda x: self.tm.add_log_message(x)))
+     
             self.df = self.df.with_columns(
                 e_event_id=pl.lit("e") + pl.col("drain").struct.field("cluster_id").cast(pl.Utf8),#extra thing ensure we e1 e2 instead of 1 2
                 e_template = pl.col("drain").struct.field("template_mined"))
             self.df = self.df.drop("drain")#Drop the dictionary produced by drain. Event_id and template are the most important. 
+            
+            #tm.drain.print_tree()
+
         return self.df
 
     def create_neural_emb(self):
         self._handle_prerequisites(["m_message"])
-        #MM: should check agains e_bert_emb. This is essentally protection for not doing useless computation
-        if "e_event_id" not in self.df.columns:
-            #MM: No need for drain specif documentation here
-            # Drain returns dict
-            # {'change_type': 'none',
-            # 'cluster_id': 1,
-            # 'cluster_size': 2,
-            # 'template_mined': 'session closed for user root',
-            # 'cluster_count': 1}
-            #MM: This is also Drain
-            self.tm = TemplateMiner()  # we store template for later use.
-
+        if "e_bert_emb" not in self.df.columns:
             # We might have multiline log message, i.e. log_message + stack trace.
             # Use only first line of log message for parsing
             self.df = self.df.with_columns(
@@ -141,51 +155,29 @@ class EventLogEnricher:
             )
         return self.df
     
-    def normalize(self, regexs, to_lower =False):
+    def normalize(self, regexs=masking_patterns_drain, to_lower =False):
                 
-        base_code = 'self.df = self.df.with_columns(message_normal = pl.col("m_message").str.split("\\n").list.first()'
-        
+        #base_code = 'self.df = self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
+        base_code = 'self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
+      
         if to_lower:
             base_code += '.str.to_lowercase()'
                 
         # Generate the replace_all chain
-        for key, pattern in regexs.patterns:
+        for key, pattern in regexs:
             replace_code = f'.str.replace_all(r"{pattern}", "{key}")'
             base_code += replace_code
     
         base_code += ')'
+        self.df = eval(base_code)
+        return self.df
+        #print (base_code)
+        #return base_code    
         
-        print (base_code)
-        return base_code    
-        
 
 
-class Regexs:
-    def __init__(self):
-        self.patterns = [
-            ("ID", "((?<=[^A-Za-z0-9])|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))((?=[^A-Za-z0-9])|$)"),
-            ("IP", "((?<=[^A-Za-z0-9])|^)(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})((?=[^A-Za-z0-9])|$)"),
-            ("SEQ", "((?<=[^A-Za-z0-9])|^)([0-9a-f]{6,} ?){3,}((?=[^A-Za-z0-9])|$)"),
-            ("SEQ", "((?<=[^A-Za-z0-9])|^)([0-9A-F]{4} ?){4,}((?=[^A-Za-z0-9])|$)"),
-            ("HEX", "((?<=[^A-Za-z0-9])|^)(0x[a-f0-9A-F]+)((?=[^A-Za-z0-9])|$)"),
-            ("NUM", "((?<=[^A-Za-z0-9])|^)([\\-\\+]?\\d+)((?=[^A-Za-z0-9])|$)"),
-            ("CMD", "(?<=executed cmd )(\".+?\")")
-        ]
 
-    def add_pattern(self, key, pattern):
-        self.patterns.append((key, pattern))
 
-    def remove_pattern(self, key):
-        self.patterns = [p for p in self.patterns if p[0] != key]
-
-    def edit_pattern(self, key, new_pattern):
-        for i, (k, p) in enumerate(self.patterns):
-            if k == key:
-                self.patterns[i] = (key, new_pattern)
-                            
-    def print_patterns(self):
-        for key, pattern in self.patterns:
-            print(f"{key}: {pattern}\n")
 
 
 

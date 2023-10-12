@@ -31,29 +31,23 @@ elif (b_profilence):
 
 df = preprocessor.execute()
 if (not b_hadoop):
-    df = preprocessor.reduce_dataframes(frac=0.02)
+    df = preprocessor.reduce_dataframes(frac=0.30)
 df_seq = preprocessor.df_sequences
 
 #-Event enrichment----------------------------------------------
-#Parsing in event level
-# Usage:
-regexs = er.Regexs()
-enricher_hdfs = er.EventLogEnricher(df)
-df = enricher_hdfs.length()
-enricher_hdfs.normalize(regexs=regexs)
+# Using regexes for normalization
+enricher = er.EventLogEnricher(df)
 
-regexs.patterns
+#Drain parsing with LogLEAD masking 
+#Faster by 60%
+df = enricher.normalize()
+df = enricher.parse_drain(reparse=True)
+#This is equal to below. With Drainmasking Compared to this
+df = enricher.parse_drain(drain_masking=True,reparse=True)
+
+#Check the results
 import polars as pl
-df = df.with_columns(message_normal = pl.col("m_message").str.split("\n").list.first().str.replace_all(r"((?<=[^A-Za-z0-9])|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))((?=[^A-Za-z0-9])|$)", "ID").str.replace_all(r"((?<=[^A-Za-z0-9])|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})((?=[^A-Za-z0-9])|$)", "IP").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([0-9a-f]{6,} ?){3,}((?=[^A-Za-z0-9])|$)", "SEQ").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([0-9A-F]{4} ?){4,}((?=[^A-Za-z0-9])|$)", "SEQ").str.replace_all(r"((?<=[^A-Za-z0-9])|^)(0x[a-f0-9A-F]+)((?=[^A-Za-z0-9])|$)", "HEX").str.replace_all(r"((?<=[^A-Za-z0-9])|^)([\-\+]?\d+)((?=[^A-Za-z0-9])|$)", "NUM").str.replace_all(r"(?<=executed cmd )(\".+?\")", "CMD"))
-print(df.select(pl.col("m_message")))
-
-
-#df = enricher_hdfs.parse_drain()
-
-#----------------------------------
-regexs.add_pattern("NEW_KEY", r"new_pattern")
-regexs.remove_pattern("ID")
-regexs.edit_pattern("NEW_KEY", r"edited_pattern")
-
-# Assuming df is your DataFrame
-regexs.print_patterns()
+#Executing this show the normalized log message
+df.select(pl.col("e_message_normalized"))[0,0]
+#This is the original log message
+df.select(pl.col("m_message"))[0,0]
