@@ -307,7 +307,7 @@ preprocessor = load.BGLLoader(filename="../../../Datasets/bgl/BGL.log")
 
 df = preprocessor.execute()
 
-#df = df.sample(fraction=0.1)
+df = df.sample(fraction=0.1)
 
 enricher = er.EventLogEnricher(df)
 df = enricher.trigrams()
@@ -378,7 +378,7 @@ prevtime =  time.time()
 
 def rarity_score(freq, total_ngrams, threshold = 0.05):
     if freq == 0:
-        return 5
+        return math.log(total_ngrams)*2 #e.g. twice as much as one occurence
     normalized_freq = freq / total_ngrams
     if normalized_freq > threshold:
         return 0  # Common ngram, rarity score is 0
@@ -405,20 +405,15 @@ scores = []
 for event_ngrams in df_test["e_cgrams"]:
     event_ano_scores = [rarity_score(count_dict.get(trigram, 0), total_ngrams) for trigram in set(event_ngrams)]
     scores.append(event_ano_scores)
-    
 
-max_scores = [max(score_list) for score_list in scores if score_list] #This is around 5 seconds
 
-#the scores are arranged so that normal ones comes first
-scores_norm = max_scores[:2199751]
-scores_ano = max_scores[2199751:]
+def evaluate(scores, split_pos, threshold = 15):
+    #the scores are arranged so that normal ones comes first
+    scores_norm = scores[:split_pos]
+    scores_ano = scores[split_pos:]
 
-print(f'Time test: {time.time() - prevtime:.2f} seconds')
-prevtime =  time.time()
+    # EVALUATION
 
-# EVALUATION
-
-def simple_evaluation(scores_norm, scores_ano, threshold=15):
     tp = sum(score > threshold for score in scores_ano)
     fp = sum(score > threshold for score in scores_norm)
     fn = sum(score <= threshold for score in scores_ano)
@@ -427,46 +422,55 @@ def simple_evaluation(scores_norm, scores_ano, threshold=15):
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
-    return precision, recall, f1
+    print("Prec ", precision, ", recall ", recall, ", f1 ", f1)
 
-precision, recall, f1 = simple_evaluation(scores_norm, scores_ano, threshold=15)
-print("Prec ", precision, ", recall ", recall, ", f1 ", f1)
+    import numpy as np
 
-import numpy as np
+    scores_norm_np = np.array(scores_norm)
+    scores_ano_np = np.array(scores_ano)
 
-scores_norm_np = np.array(scores_norm)
-scores_ano_np = np.array(scores_ano)
+    mean_norm = np.mean(scores_norm_np)
+    median_norm = np.median(scores_norm_np)
+    std_dev_norm = np.std(scores_norm_np)
+    min_value_norm = np.min(scores_norm_np)
+    max_value_norm = np.max(scores_norm_np)
 
-mean_norm = np.mean(scores_norm_np)
-median_norm = np.median(scores_norm_np)
-std_dev_norm = np.std(scores_norm_np)
-min_value_norm = np.min(scores_norm_np)
-max_value_norm = np.max(scores_norm_np)
+    mean_ano = np.mean(scores_ano_np)
+    median_ano = np.median(scores_ano_np)
+    std_dev_ano = np.std(scores_ano_np)
+    min_value_ano = np.min(scores_ano_np)
+    max_value_ano = np.max(scores_ano_np)
 
-mean_ano = np.mean(scores_ano_np)
-median_ano = np.median(scores_ano_np)
-std_dev_ano = np.std(scores_ano_np)
-min_value_ano = np.min(scores_ano_np)
-max_value_ano = np.max(scores_ano_np)
+    print(f'Statistics for scores_norm:')
+    print(f'Mean: {mean_norm:.3f}, Median: {median_norm:.3f}, Standard Deviation: {std_dev_norm:.3f}, Min: {min_value_norm:.3f}, Max: {max_value_norm:.3f}')
 
-print(f'Statistics for scores_norm:')
-print(f'Mean: {mean_norm:.3f}, Median: {median_norm:.3f}, Standard Deviation: {std_dev_norm:.3f}, Min: {min_value_norm:.3f}, Max: {max_value_norm:.3f}')
+    print(f'\nStatistics for scores_ano:')
+    print(f'Mean: {mean_ano:.3f}, Median: {median_ano:.3f}, Standard Deviation: {std_dev_ano:.3f}, Min: {min_value_ano:.3f}, Max: {max_value_ano:.3f}')
 
-print(f'\nStatistics for scores_ano:')
-print(f'Mean: {mean_ano:.3f}, Median: {median_ano:.3f}, Standard Deviation: {std_dev_ano:.3f}, Min: {min_value_ano:.3f}, Max: {max_value_ano:.3f}')
+    # figure
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 5))
+    plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
+    plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
+    plt.xlabel('Value')
+    plt.ylabel('Frequency')
+    plt.title('Distribution of scores_norm and scores_ano')
+    plt.legend(loc='upper right')  # Add legend to identify which color corresponds to which distribution
+    plt.tight_layout()
+    plt.show()
 
-# figure
-import matplotlib.pyplot as plt
-plt.figure(figsize=(10, 5))
-plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
-plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
-plt.xlabel('Value')
-plt.ylabel('Frequency')
-plt.title('Distribution of scores_norm and scores_ano')
-plt.legend(loc='upper right')  # Add legend to identify which color corresponds to which distribution
-plt.tight_layout()
-plt.show()
+max_scores = [max(score_list) for score_list in scores if score_list] #This is around 5 seconds
+avg_scores = [sum(score_list)/len(score_list) for score_list in scores if score_list] 
+weighted_multi = [sum(score_list)*max(score_list) / len(score_list) for score_list in scores if score_list]
+weighted_square = [sum(score_list)**2 / len(score_list)**2 for score_list in scores if score_list]
 
+evaluate(max_scores, len(df_normal_test),30)
+evaluate(avg_scores, len(df_normal_test),11)
+evaluate(weighted_multi, len(df_normal_test),200)
+evaluate(weighted_square, len(df_normal_test),125)
+
+print(f'Time test: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
 
 
 """
