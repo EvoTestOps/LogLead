@@ -299,6 +299,15 @@ max_ano_score  555.000   10346 181   278930    6492  0.9828    0.6144    0.9775 
 #2nd version for create normal set is now polars only and a 500x faster, few seconds
 #Tried 4 different versions to handle the test, but they are all over 30min
 
+#Event levels prediction
+import loader as load, enricher as er, anomaly_detection as ad
+import polars as pl
+import math
+from collections import Counter
+from itertools import chain
+import re
+import time; 
+
 prevtime =  time.time()
 
 #PREPROCESS
@@ -307,7 +316,7 @@ preprocessor = load.BGLLoader(filename="../../../Datasets/bgl/BGL.log")
 
 df = preprocessor.execute()
 
-df = df.sample(fraction=0.1)
+#df = df.sample(fraction=0.5)
 
 enricher = er.EventLogEnricher(df)
 df = enricher.trigrams()
@@ -396,23 +405,52 @@ df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
 # Replace None elements with empty strings within each sublist
 #e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
 
-test_ngrams_set = df_test.select(pl.col("e_cgrams").explode().unique())
+df_test = df_test.explode("e_cgrams")
+#Precalculate scores for unique trigrams
+test_ngrams_set = df_test.unique()
 joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
 joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
-count_dict = dict(zip(joined_df['e_cgrams'].to_list(), joined_df['count'].to_list()))
+df_test = joined_df.with_columns(
+    pl.col("count").map_elements(lambda value: rarity_score(value, total_ngrams), return_dtype=pl.Float64).alias("rarity_score")
+)
+#Add scores to the exploded test_df
+print(f'Time calc scores: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
 
-scores = []
-for event_ngrams in df_test["e_cgrams"]:
-    event_ano_scores = [rarity_score(count_dict.get(trigram, 0), total_ngrams) for trigram in set(event_ngrams)]
-    scores.append(event_ano_scores)
+
+#Aggregate the list to message level again
+
+#We can calculate the max directly if it's the only thing we want
+#max_rarity_df = (
+#    df_test.group_by('m_message')
+#    .agg(
+#        max_rarity_score=pl.col('rarity_score').max(),
+#        label=pl.col('label').first(),
+#    )
+#)
+
+def collect_list(s: pl.Series) -> pl.Series:
+    return s.to_list()
+
+#I haven't verified that aggregated matches the original exactly
+aggregated_df = (
+    df_test.group_by('m_message', 'timestamp')
+    .agg(
+        e_cgrams_list=pl.col('e_cgrams').map_elements(collect_list),
+        rarity_score_list=pl.col('rarity_score').map_elements(collect_list),
+        label=pl.col('label').first()
+    )
+)
+
+scores_norm = aggregated_df.filter(aggregated_df['label'] == '-')['rarity_score_list'].to_list()
+scores_ano = aggregated_df.filter(aggregated_df['label'] != '-')['rarity_score_list'].to_list()
 
 
-def evaluate(scores, split_pos, threshold = 15):
-    #the scores are arranged so that normal ones comes first
-    scores_norm = scores[:split_pos]
-    scores_ano = scores[split_pos:]
+print(f'Time aggregate and filter: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
 
-    # EVALUATION
+
+def evaluate(scores_norm, scores_ano, threshold = 15):
 
     tp = sum(score > threshold for score in scores_ano)
     fp = sum(score > threshold for score in scores_norm)
@@ -459,17 +497,22 @@ def evaluate(scores, split_pos, threshold = 15):
     plt.tight_layout()
     plt.show()
 
-max_scores = [max(score_list) for score_list in scores if score_list] #This is around 5 seconds
-avg_scores = [sum(score_list)/len(score_list) for score_list in scores if score_list] 
-weighted_multi = [sum(score_list)*max(score_list) / len(score_list) for score_list in scores if score_list]
-weighted_square = [sum(score_list)**2 / len(score_list)**2 for score_list in scores if score_list]
+#max_scores = [max(score_list) for score_list in scores if score_list] #This is around 5 seconds
+#avg_scores = [sum(score_list)/len(score_list) for score_list in scores if score_list] 
+#weighted_multi = [sum(score_list)*max(score_list) / len(score_list) for score_list in scores if score_list]
+#weighted_square = [sum(score_list)**2 / len(score_list)**2 for score_list in scores if score_list]
 
-evaluate(max_scores, len(df_normal_test),30)
-evaluate(avg_scores, len(df_normal_test),11)
-evaluate(weighted_multi, len(df_normal_test),200)
-evaluate(weighted_square, len(df_normal_test),125)
+#evaluate(max_scores,labels,30)
+#evaluate(avg_scores,labels,11)
+#evaluate(weighted_multi,labels,200)
 
-print(f'Time test: {time.time() - prevtime:.2f} seconds')
+scores_norm = [max(score_list) for score_list in scores_norm if score_list] #This is around 5 seconds
+scores_ano = [max(score_list) for score_list in scores_ano if score_list]
+evaluate(scores_norm,scores_ano, 30)
+
+
+
+print(f'Time evaluate: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
 
@@ -549,4 +592,14 @@ for event_ngrams in df_test["e_cgrams"]:
     scores.append(event_ano_scores)
     
 max_scores = [max(score_list) for score_list in scores if score_list]
+
+
+#version 4:
+count_dict = dict(zip(joined_df['e_cgrams'].to_list(), joined_df['count'].to_list()))
+
+scores = []
+for event_ngrams in df_test["e_cgrams"]:
+    event_ano_scores = [rarity_score(count_dict.get(trigram, 0), total_ngrams) for trigram in set(event_ngrams)]
+    scores.append(event_ano_scores)
+
     """
