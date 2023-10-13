@@ -2,39 +2,31 @@
 import loader as load, enricher as er, anomaly_detection as ad
 
 
-#Which one to run. Only one true. 
-b_hadoop = False
-b_hdfs = True
-b_profilence = False
-
-
-# Loading HDFS Logs----------------------------------------------------------------
-#hdfs_processor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
-#                                     labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
-#df = hdfs_processor.execute()
-#smaller hdfs for faster running. Parsing of whole HDFS takes about 11min
-#df = hdfs_processor.reduce_dataframes(frac=0.2)
+dataset = "hdfs" #hdfs, pro, hadoop, tb, tb-small
 
 df = None
 df_seq = None
-preprocessor = None
+loader = None
 
-if (b_hadoop):
-       preprocessor = load.HadoopLoader(filename="../../../Datasets/hadoop/",
+if dataset=="hadoop":
+       loader = load.HadoopLoader(filename="../../../Datasets/hadoop/",
                                                  filename_pattern  ="*.log",
                                                  labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
-
-elif (b_hdfs):
-       preprocessor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
+elif dataset=="hdfs":
+       loader = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
                                           labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
+elif dataset=="pro":
+       loader = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
+elif dataset=="tb":
+       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+elif dataset=="tb-small":
+       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird_2k.log") #Only 2k lines
 
-elif (b_profilence):
-       preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
 
-df = preprocessor.execute()
-if (not b_hadoop):
-    df = preprocessor.reduce_dataframes(frac=0.02)
-df_seq = preprocessor.df_sequences
+df = loader.execute()
+if dataset!="hadoop":
+    df = loader.reduce_dataframes(frac=0.02)
+df_seq = loader.df_sequences
 
   
 #-Event enrichment----------------------------------------------

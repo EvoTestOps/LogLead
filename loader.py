@@ -89,7 +89,7 @@ class BaseLoader:
         """
         
         # If df_sequences is present, reduce its size
-        if hasattr(self, 'df_sequences'):
+        if hasattr(self, 'df_sequences') and self.df_sequences != None:
             self.df_sequences = self.df_sequences.sample(fraction=frac)
             # Update df to include only the rows that have seq_id values present in the filtered df_sequences
             self.df = self.df.filter(pl.col("seq_id").is_in(self.df_sequences["seq_id"]))
@@ -321,7 +321,7 @@ class HDFSLoader(BaseLoader):
         parsed_times = parsed_times.to_series().str.strptime(pl.Datetime, "%y%m%d%H%M%S")
         self.df = self.df.with_columns(parsed_times)
 
-# Processor for the HDFS log file
+# Processor for the Thunderbird log file
 class ThunderbirdLoader(BaseLoader):
     def load(self):
         self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
@@ -333,7 +333,8 @@ class ThunderbirdLoader(BaseLoader):
         self._split_component_and_pid()
         #parse datatime
         self.df = self.df.with_columns(m_timestamp = pl.from_epoch(pl.col("timestamp")))
-       
+        #Label contains multiple anomaly cases. Convert to binary
+        self.df = self.df.with_columns(normal = pl.col("label").str.starts_with("-"))
 
     #Reason for extra processing. We want so separte pid from component and in the log file they are embedded
     #Data description
