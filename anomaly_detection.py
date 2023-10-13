@@ -49,61 +49,6 @@ class EventAnomalyDetection:
         #)
         return self.df
     
-    def _prepare_data(self, train, df_eve, col_name):
-        X = None
-        labels = df_eve.select(pl.col("normal")).to_series().to_list()
-
-        #Extract tokens
-        tokens = df_eve.select(pl.col(col_name)).to_series().to_list()
-        tokens = [' '.join(t) for t in tokens]
-        #We are training
-        if train:
-            self.vectorizer = CountVectorizer()
-            X = self.vectorizer.fit_transform(tokens)
-        #We are predicting
-        else:
-            X = self.vectorizer.transform(tokens)
-
-        return X, labels
-    
-    def train_model(self,df_eve, col_name, model):
-        X_train, labels = self._prepare_data(train=True, df_eve=df_eve, col_name=col_name)
-        self.model = model
-        self.model.fit(X_train, labels)
-        
-    def predict(self, df_eve, col_name, print_scores=True):
-        X_test, labels = self._prepare_data(train=False, df_eve=df_eve, col_name=col_name)
-        predictions = self.model.predict(X_test)
-        #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, IsolationForest):
-            predictions = np.where(predictions > 0, 1, 0)
-        df_eve = df_eve.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
-        if print_scores:
-            self._print_evaluation_scores(labels, predictions, self.model)
-        return df_eve
-    
-    def train_LR(self,df_eve, col_name="e_words"):
-        self.train_model (df_eve, col_name, LogisticRegression(max_iter=1000))
-        
-    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
-        print(f"Results from model: {type(model).__name__}")
-        # Evaluate the model's performance
-        accuracy = accuracy_score(y_test, y_pred)
-        print(f"Accuracy: {accuracy:.2f}")
-        from sklearn.metrics import f1_score
-        # Compute the F1 score
-        f1 = f1_score(y_test, y_pred)
-        # Print the F1 score
-        print(f"F1 Score: {f1:.2f}")
-        # Compute the confusion matrix--------------------------------------------------
-        from sklearn.metrics import confusion_matrix
-        #import matplotlib.pyplot as plt
-        #import seaborn as sns
-        cm = confusion_matrix(y_test, y_pred)
-        # Print the confusion matrix
-        print("Confusion Matrix:")
-        print(cm)
-        #F1--------------------------------------------------------
     
 def test_train_split(df, test_frac):
     # Shuffle the DataFrame
@@ -116,19 +61,20 @@ def test_train_split(df, test_frac):
     train_df = df.tail(-test_size)
     return train_df, test_df
 
-class SeqAnomalyDetection:
-    def __init__(self, event_col=None, numeric_cols=None):
-        self.event_col = event_col
+class SupervisedAnomalyDetection:
+    def __init__(self, item_list_col=None, numeric_cols=None, label_col="normal"):
+        self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
+        self.label_col = label_col
         #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
 
     def _prepare_data(self, train, df_seq):
         X = None
-        labels = df_seq.select(pl.col("normal")).to_series().to_list()
+        labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
         #Extract events
-        if self.event_col:
-            events = df_seq.select(pl.col(self.event_col)).to_series().to_list()
+        if self.item_list_col:
+            events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
             events = [' '.join(e) for e in events]
             #We are training
             if train:
@@ -149,10 +95,6 @@ class SeqAnomalyDetection:
     def train_model(self, df_seq, model):
         X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
         self.model = model
-        #TODO: Check if this is really needed
-        if isinstance(model, IsolationForest):
-            X_train = X_train.tocsr() if scipy.sparse.issparse(X_train) else X_train
-
         self.model.fit(X_train, labels)
         
     def predict(self, df_seq, print_scores=True):

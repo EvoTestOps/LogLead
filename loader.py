@@ -89,7 +89,7 @@ class BaseLoader:
         """
         
         # If df_sequences is present, reduce its size
-        if hasattr(self, 'df_sequences') and self.df_sequences != None:
+        if hasattr(self, 'df_sequences') and self.df_sequences is not None:
             self.df_sequences = self.df_sequences.sample(fraction=frac)
             # Update df to include only the rows that have seq_id values present in the filtered df_sequences
             self.df = self.df.filter(pl.col("seq_id").is_in(self.df_sequences["seq_id"]))

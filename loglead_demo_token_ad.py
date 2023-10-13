@@ -36,8 +36,6 @@ enricher =  er.EventLogEnricher(df)
 df = enricher.words()
 df = enricher.alphanumerics()
 df = enricher.trigrams() #carefull might be slow
-df = enricher.parse_drain()
-enricher.tm.drain.print_tree()
 
 #Add anomaly scores for each line.
 event_ad = ad.EventAnomalyDetection(df)
@@ -47,8 +45,16 @@ df = event_ad.compute_ano_score("e_cgrams", 100)
 
 #Predict line anomalousness with given input, e.g. words
 #Supervised classical ML based AD
-event_ad = ad.EventAnomalyDetection(df)
-df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.9)
+sad = ad.SupervisedAnomalyDetection("e_alphanumerics")
+df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.99)
 #event_ad._prepare_data(train=True, col_name="e_words")
-res = event_ad.train_LR(df_eve_train,col_name="e_words")
-res = event_ad.predict(df_eve_test, col_name ="e_words")
+res = sad.train_LR(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_DT(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_IsolationForest(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_RF(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_XGB(df_eve_train)
+res = sad.predict(df_eve_test)
