@@ -6,6 +6,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
@@ -101,7 +102,7 @@ class SupervisedAnomalyDetection:
         X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         predictions = self.model.predict(X_test)
         #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, IsolationForest):
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor)):
             predictions = np.where(predictions > 0, 1, 0)
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if print_scores:
@@ -118,9 +119,19 @@ class SupervisedAnomalyDetection:
         self.train_model (df_seq, LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
-    def train_IsolationForest(self, df_seq, n_estimators=100, max_samples='auto', contamination=0.03):
+    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto"):
         self.train_model (df_seq, IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination))
+                          
+    def train_LOF(self, df_seq, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
+        #LOF novelty=True model needs to be trained without anomalies
+        #If we set novelty=False then Predict is no longer available for calling.
+        #It messes up our general model prediction routine
+        if filter_anos:
+            df_seq = df_seq.filter(pl.col(self.label_col))
+        self.train_model (df_seq, LocalOutlierFactor(
+            n_neighbors=n_neighbors,  contamination=contamination, novelty=True))
+    
 
     def train_RF(self, df_seq):
         self.train_model(df_seq, RandomForestClassifier())
