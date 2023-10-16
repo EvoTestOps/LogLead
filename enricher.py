@@ -1,6 +1,6 @@
 import polars as pl
 import drain3 as dr
-from bertembedding import BertEmbeddings
+from basebert_embedding import BertEmbeddings
 
 #Drain.ini default regexes 
 #No lookahead or lookbedinde so reimplemented with capture groups
@@ -139,13 +139,13 @@ class EventLogEnricher:
             # Convert the eager tensor to a NumPy array
             message_trimmed_emb_list = message_trimmed_emb_tensor.numpy()
             bert_emb_col_df = pl.DataFrame({
-                #MM Should be e_bert_emb -> YQ:fixed
                 'e_bert_emb': message_trimmed_emb_list
             })
 
             self.df = self.df.hstack(bert_emb_col_df)
             #print(self.df["e_bert_emb"][1])
-            #b_hadoop, 177592 entries, Time taken: 375.30 seconds
+            #Albert, b_hadoop, 177592 entries, Time taken: 375.30 seconds
+            #Base Bert, b_hadoop, 177592 entries, Time taken: 601.45 seconds
         return self.df
 
     def length(self):
