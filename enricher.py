@@ -205,9 +205,13 @@ class SequenceEnricher:
     
     def events(self):
         # Aggregate event ids into a list for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(
-                events = pl.col('e_event_id')
-            )
+        df_temp = self.df.group_by('seq_id').agg(events = pl.col('e_event_id'))
+        # Join this result with df_sequences on seq_id
+        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
+        return self.df_sequences
+
+    def tokens(self, token="e_words"):
+        df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
