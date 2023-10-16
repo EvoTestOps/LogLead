@@ -5,13 +5,13 @@ from bertembedding import BertEmbeddings
 #Drain.ini default regexes 
 #No lookahead or lookbedinde so reimplemented with capture groups
 masking_patterns_drain = [
-    ("${start}ID${end}", r"(?P<start>[^A-Za-z0-9]|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))(?P<end>[^A-Za-z0-9]|$)"),
-    ("${start}IP${end}", r"(?P<start>[^A-Za-z0-9]|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?P<end>[^A-Za-z0-9]|$)"),
-    ("${start}SEQ${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9a-f]{6,} ?){3,}(?P<end>[^A-Za-z0-9]|$)"),
-    ("${start}SEQ${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9A-F]{4} ?){4,}(?P<end>[^A-Za-z0-9]|$)"),
-    ("${start}HEX${end}", r"(?P<start>[^A-Za-z0-9]|^)(0x[a-f0-9A-F]+)(?P<end>[^A-Za-z0-9]|$)"),
-    ("${start}NUM${end}", r"(?P<start>[^A-Za-z0-9]|^)([\-\+]?\d+)(?P<end>[^A-Za-z0-9]|$)"),
-    ("${cmd}CMD", r"(?P<cmd>executed cmd )(\".+?\")")
+    ("${start}<ID>${end}", r"(?P<start>[^A-Za-z0-9]|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<IP>${end}", r"(?P<start>[^A-Za-z0-9]|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<SEQ>${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9a-f]{6,} ?){3,}(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<SEQ>${end}", r"(?P<start>[^A-Za-z0-9]|^)([0-9A-F]{4} ?){4,}(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<HEX>${end}", r"(?P<start>[^A-Za-z0-9]|^)(0x[a-f0-9A-F]+)(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<NUM>${end}", r"(?P<start>[^A-Za-z0-9]|^)([\-\+]?\d+)(?P<end>[^A-Za-z0-9]|$)"),
+    ("${cmd}<CMD>", r"(?P<cmd>executed cmd )(\".+?\")")
 ]
 
 
@@ -106,13 +106,16 @@ class EventLogEnricher:
         if "e_bert_emb" not in self.df.columns:
             # We might have multiline log message, i.e. log_message + stack trace.
             # Use only first line of log message for parsing
-            self.df = self.df.with_columns(
-                message_trimmed=pl.col("m_message").str.split("\n").list.first()
-                .str.to_lowercase()
-                .str.replace_all(r"[0-9\W_]", " ")
-                .str.replace_all(r"\s+", " ")
-                .str.replace_all(r"^\s+|\s+$", "")
-            )
+            
+#            self.df = self.df.with_columns(
+#                message_trimmed=pl.col("m_message").str.split("\n").list.first()
+#                .str.to_lowercase()
+#                .str.replace_all(r"[0-9\W_]", " ")
+#                .str.replace_all(r"\s+", " ")
+#                .str.replace_all(r"^\s+|\s+$", "")
+#            )
+            if "e_message_normalized" not in self.df.columns:
+                    self.normalize()
             # create a BertEmbeddings class instance
             #MM: Do we need the generator later?
             #For example if predictions need to be done much after training
@@ -122,7 +125,6 @@ class EventLogEnricher:
             # to save the processing time, i.e., define one time and use it in all places
             self.bert_emb_gen = BertEmbeddings()
             #bert_emb_gen = BertEmbeddings()
-
             # obtain bert sentence embedding
             #MM: Is it possible to do this map or map_elements as in line 70?
             #MM: Or is there too much performance hit?
@@ -132,7 +134,7 @@ class EventLogEnricher:
             #YQ: Because it fetch model and generate output again and again
             #YQ: You can see from the current bertembedding class, I feed all values on self.df['message_trimmed'] to Bert
             #YQ: This means we only fetch model and generate output one time. 
-            message_trimmed_list = self.df['message_trimmed'].to_list()
+            message_trimmed_list = self.df['e_message_normalized'].to_list()
             message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
             # Convert the eager tensor to a NumPy array
             message_trimmed_emb_list = message_trimmed_emb_tensor.numpy()

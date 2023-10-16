@@ -1,6 +1,10 @@
 import polars as pl
 import numpy as np
 from collections import Counter
+#Faster sklearn enabled. See https://intel.github.io/scikit-learn-intelex/latest/
+# Causes problems in RandomForrest. We have to use older version due to tensorflow numpy combatibilities
+# from sklearnex import patch_sklearn
+#patch_sklearn()
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
@@ -63,27 +67,38 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SupervisedAnomalyDetection:
-    def __init__(self, item_list_col=None, numeric_cols=None, label_col="normal"):
+    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="normal"):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
+        self.emb_list_col = emb_list_col
         #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
 
     def _prepare_data(self, train, df_seq):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
-        #Extract events
+        # Extract events
         if self.item_list_col:
             events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
             events = [' '.join(e) for e in events]
-            #We are training
+            # We are training
             if train:
                 self.vectorizer = CountVectorizer()
                 X = self.vectorizer.fit_transform(events)
-            #We are predicting
+            # We are predicting
             else:
                 X = self.vectorizer.transform(events)
+
+        # Extract lists of embeddings
+        if  self.emb_list_col:
+            emb_list = df_seq.select(pl.col(self.emb_list_col)).to_series().to_list()
+            
+            # Convert lists of floats to a matrix
+            #emb_matrix = np.array(emb_list)
+            emb_matrix = np.vstack(emb_list)
+            # Stack with X
+            X = hstack([X, emb_matrix]) if X is not None else emb_matrix
 
         # Extract additional predictors
         if self.numeric_cols:

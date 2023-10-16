@@ -26,8 +26,6 @@ elif dataset=="hdfs_s_parq":
        df = pl.read_parquet("hdfs_events_002.parquet")
        df_seq = pl.read_parquet("hdfs_seqs_002.parquet")
 
-
-
 if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):

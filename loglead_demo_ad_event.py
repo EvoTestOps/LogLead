@@ -27,6 +27,7 @@ if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):
               df = loader.reduce_dataframes(frac=0.02)
+       df_seq = loader.df_sequences 
        if (dataset == "tb"):
               df.write_parquet("tb_002.parquet")
 #Null should be handeled in the loader. However, if they exist they get killed here
@@ -51,14 +52,12 @@ res = sad.train_LR(df_eve_train)
 res = sad.predict(df_eve_test)
 res = sad.train_DT(df_eve_train)
 res = sad.predict(df_eve_test)
-res = sad.train_IsolationForest(df_eve_train, contamination=0.1)
-res = sad.predict(df_eve_test)
+#Does not work in some environment
+#res = sad.train_IsolationForest(df_eve_train, contamination=0.1)
+#res = sad.predict(df_eve_test)
 res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
 res = sad.predict(df_eve_test)
 res = sad.train_RF(df_eve_train)
 res = sad.predict(df_eve_test)
 res = sad.train_XGB(df_eve_train)
 res = sad.predict(df_eve_test)
-
-df_eve_train.filter(pl.col("normal")).shape[0]
-df_eve_train.shape[0]
