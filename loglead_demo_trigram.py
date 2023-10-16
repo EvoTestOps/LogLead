@@ -306,7 +306,15 @@ import math
 from collections import Counter
 from itertools import chain
 import re
-import time; 
+import time
+import numpy as np
+import scipy.sparse
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
+
 
 prevtime =  time.time()
 
@@ -340,6 +348,7 @@ df = df.with_columns(
 print(f'Time normalize: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
+
 #SPLIT
 
 normal_data = df.filter(df['normal'])
@@ -347,6 +356,8 @@ anomalous_data = df.filter(~df['normal'])
 
 df_train, df_normal_test = ad.test_train_split(normal_data, test_frac=0.5)
 df_test = pl.concat([df_normal_test, anomalous_data], how="vertical")
+# Replace None sublists with empty lists
+df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
 
 print(f'Time split: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
@@ -397,16 +408,53 @@ def rarity_score(freq, total_ngrams, threshold = 0.05):
 
 #TEST
 
-#Currently 4th version, no improvement to 1st but better than 2nd and 3rd
 
-# Replace None sublists with empty lists
-df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
+### Precalc score dot count vector
+#This is because we precalculate only based on the training data, not sure what happens to OOV later. 
 
-# Replace None elements with empty strings within each sublist
-#e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+#Precalculated score vector
+train_trigrams = df_ngram_counts['e_cgrams'].to_list()
+counts = df_ngram_counts['count'].to_list()
+# Create a dictionary from the trigrams and counts, applying the rarity_score function to each count
+score_dict = dict(zip(train_trigrams, [rarity_score(count, total_ngrams) for count in counts]))
 
-df_test = df_test.explode("e_cgrams")
-#Precalculate scores for unique trigrams
+# Get the trigrams
+test_trigrams = df_test['e_cgrams'].to_list()
+
+print(f'Time to list: {time.time() - prevtime:.2f} seconds')
+prevtime = time.time()
+
+# Disable the analyzer
+vectorizer = CountVectorizer(analyzer=lambda x: x)
+
+# Now fit the vectorizer and transform the data
+X = vectorizer.fit_transform(test_trigrams)
+
+feature_names = vectorizer.get_feature_names()
+
+# Create the score_vector, here 32 is hardcoded OOV score
+score_vector = np.array([score_dict.get(feature, 32) for feature in feature_names])
+
+X_csr = X.tocsr()
+score_matrix = X_csr.dot(score_vector)
+df_test = df_test.with_columns(pl.Series(name="score_matrix", values=score_matrix))
+#Divide by length
+df_test = df_test.with_columns(df_test['e_cgrams'].apply(lambda x: len(x)).alias('e_cgrams_length'))
+df_test = df_test.with_columns((df_test['score_matrix'] / df_test['e_cgrams_length']).alias('scores'))
+
+
+scores_norm = df_test.filter(df_test['label'] == '-')['scores'].to_list()
+scores_ano = df_test.filter(df_test['label'] != '-')['scores'].to_list()
+
+#Add scores to the exploded test_df
+print(f'Time test vectors: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+
+#The polars way
+
+df_test = df_test.explode("e_cgrams") #53 seconds
+#This needs to be edited. The unique() was initially for just the trigrams, but now it's pretty pointless.
 test_ngrams_set = df_test.unique()
 joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
 joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
@@ -452,20 +500,24 @@ prevtime =  time.time()
 
 def evaluate(scores_norm, scores_ano, threshold = 15):
 
-    tp = sum(score > threshold for score in scores_ano)
-    fp = sum(score > threshold for score in scores_norm)
-    fn = sum(score <= threshold for score in scores_ano)
-    
+    import numpy as np
+    # Assuming scores_norm and scores_ano are your input lists
+    scores_norm_np = np.array(scores_norm)
+    scores_norm_np = scores_norm_np[~np.isnan(scores_norm_np)]  # This will remove nan values
+
+    scores_ano_np = np.array(scores_ano)
+    scores_ano_np = scores_ano_np[~np.isnan(scores_ano_np)]  # This will remove nan values
+
+    # Now you can continue with your calculations
+    tp = sum(score > threshold for score in scores_ano_np)
+    fp = sum(score > threshold for score in scores_norm_np)
+    fn = sum(score <= threshold for score in scores_ano_np)
+
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-    
+
     print("Prec ", precision, ", recall ", recall, ", f1 ", f1)
-
-    import numpy as np
-
-    scores_norm_np = np.array(scores_norm)
-    scores_ano_np = np.array(scores_ano)
 
     mean_norm = np.mean(scores_norm_np)
     median_norm = np.median(scores_norm_np)
@@ -508,12 +560,74 @@ def evaluate(scores_norm, scores_ano, threshold = 15):
 
 scores_norm = [max(score_list) for score_list in scores_norm if score_list] #This is around 5 seconds
 scores_ano = [max(score_list) for score_list in scores_ano if score_list]
-evaluate(scores_norm,scores_ano, 30)
+evaluate(scores_norm,scores_ano, 10)
 
 
 
 print(f'Time evaluate: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
+
+
+
+###  COUNT VECTORIZER supervised
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
+# Assume df is your DataFrame
+df = df.with_columns(pl.col("e_cgrams").fill_null([]))
+
+prevtime = time.time()
+
+# Convert labels to binary: 0 for normal, 1 for anomalous
+labels = [(0 if label == '-' else 1) for label in df['label'].to_list()]
+
+# Get the trigrams
+trigrams = df['e_cgrams'].to_list()
+
+print(f'Time to list: {time.time() - prevtime:.2f} seconds')
+prevtime = time.time()
+
+# Disable the analyzer
+vectorizer = CountVectorizer(analyzer=lambda x: x)
+
+# Now fit the vectorizer and transform the data
+X = vectorizer.fit_transform(trigrams)
+
+print(f'Time vectorize: {time.time() - prevtime:.2f} seconds')
+prevtime = time.time()
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
+
+# Create and train the Multinomial Naive Bayes classifier
+clf = MultinomialNB()
+clf.fit(X_train, y_train)
+print(f'Time train: {time.time() - prevtime:.2f} seconds')
+prevtime = time.time()
+
+y_pred = clf.predict(X_test)
+print(f'Time predict: {time.time() - prevtime:.2f} seconds')
+prevtime = time.time()
+
+# Evaluate the accuracy of the classifier
+accuracy = accuracy_score(y_test, y_pred)
+print(f'Accuracy: {accuracy * 100:.2f}%')
+
+# Precision, Recall, F1 Score with 'micro' averaging:
+precision = precision_score(y_test, y_pred, average='micro')
+print(f'Micro-averaged Precision: {precision * 100:.2f}%')
+
+recall = recall_score(y_test, y_pred, average='micro')
+print(f'Micro-averaged Recall: {recall * 100:.2f}%')
+
+f1 = f1_score(y_test, y_pred, average='micro')
+print(f'Micro-averaged F1 Score: {f1 * 100:.2f}%')
+
+print(f'Time to eval: {time.time() - prevtime:.2f} seconds')
+
 
 
 """
