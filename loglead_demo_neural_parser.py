@@ -28,7 +28,7 @@ elif dataset=="hadoop_emb":
        df_seq = pl.read_parquet("hadoop_seqs_bert_emb.parquet") 
 elif dataset=="tb_s_emb":
        import polars as pl
-       df = pl.read_parquet("tb_s_parq_events_bert_emb.parquet")      
+       df = pl.read_parquet("tb_s_emb_events_bert_emb.parquet")      
 
 
 if loader != None:
@@ -44,7 +44,7 @@ if loader != None:
 df = df.filter(pl.col("m_message").is_not_null()) 
 #Create bert embeddings
 enricher = er.EventLogEnricher(df)
-df = enricher.create_neural_emb() #238second / whole thing 4:17 hadoop
+df = enricher.create_neural_emb("e_basebert_emb") #238second / whole thing 4:17 hadoop
 
 #Save the file so no need to rerun later bert
 df.write_parquet(f"{dataset}_events_bert_emb.parquet")
@@ -52,14 +52,31 @@ if dataset in ("hadoop", "hdfs", "profilence"):
        df_seq.write_parquet(f"{dataset}_seqs_bert_emb.parquet")
 
 
+df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.98)
+#-------------------------------------------------------------
 #Predict using embeddings
-sad = ad.SupervisedAnomalyDetection(None, None, "e_bert_emb")
-df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.95)
+sad = ad.SupervisedAnomalyDetection(None, None, "e_basebert_emb")
 res = sad.train_LR(df_eve_train)
 res = sad.predict(df_eve_test)
 res = sad.train_DT(df_eve_train)
 res = sad.predict(df_eve_test)
-res = sad.train_IsolationForest(df_eve_train, contamination=0.1)
+res = sad.train_SVM(df_eve_train, max_iter=300)
+res = sad.predict(df_eve_test)
+res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
+res = sad.predict(df_eve_test)
+res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
+res = sad.predict(df_eve_test)
+res = sad.train_RF(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_XGB(df_eve_train)
+res = sad.predict(df_eve_test)
+
+sad = ad.SupervisedAnomalyDetection(None, None, "e_bert_emb")
+res = sad.train_LR(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_DT(df_eve_train)
+res = sad.predict(df_eve_test)
+res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
 res = sad.predict(df_eve_test)
 res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
 res = sad.predict(df_eve_test)

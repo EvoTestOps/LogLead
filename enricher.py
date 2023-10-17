@@ -101,51 +101,27 @@ class EventLogEnricher:
 
         return self.df
 
-    def create_neural_emb(self):
+    def create_neural_emb(self, emb_col="e_bert_emb"):
         self._handle_prerequisites(["m_message"])
-        if "e_bert_emb" not in self.df.columns:
-            # We might have multiline log message, i.e. log_message + stack trace.
-            # Use only first line of log message for parsing
-            
-#            self.df = self.df.with_columns(
-#                message_trimmed=pl.col("m_message").str.split("\n").list.first()
-#                .str.to_lowercase()
-#                .str.replace_all(r"[0-9\W_]", " ")
-#                .str.replace_all(r"\s+", " ")
-#                .str.replace_all(r"^\s+|\s+$", "")
-#            )
+        if emb_col not in self.df.columns:
             if "e_message_normalized" not in self.df.columns:
                     self.normalize()
-            # create a BertEmbeddings class instance
-            #MM: Do we need the generator later?
-            #For example if predictions need to be done much after training
-            #e.g. we train and then go to production where prediction take place. 
-            #if so then this should be
-            # YQ: It depends on the situation. E.g., for my fusion model, I define it in '__main__',
-            # to save the processing time, i.e., define one time and use it in all places
             self.bert_emb_gen = BertEmbeddings()
-            #bert_emb_gen = BertEmbeddings()
-            # obtain bert sentence embedding
-            #MM: Is it possible to do this map or map_elements as in line 70?
-            #MM: Or is there too much performance hit?
-            #MM: This makes unnessary copies from and to polars dataframe.
-            #YQ: map or map_elements do the operation on "each element" of a column in the DataFrame.
-            #YQ: We can create Bert embedding for "each element" and map it to a column, but it takes heavy computing resources
-            #YQ: Because it fetch model and generate output again and again
-            #YQ: You can see from the current bertembedding class, I feed all values on self.df['message_trimmed'] to Bert
-            #YQ: This means we only fetch model and generate output one time. 
+            #Feed the whole model as once to save compute
             message_trimmed_list = self.df['e_message_normalized'].to_list()
             message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
             # Convert the eager tensor to a NumPy array
             message_trimmed_emb_list = message_trimmed_emb_tensor.numpy()
             bert_emb_col_df = pl.DataFrame({
-                'e_bert_emb': message_trimmed_emb_list
+                emb_col: message_trimmed_emb_list
             })
 
             self.df = self.df.hstack(bert_emb_col_df)
             #print(self.df["e_bert_emb"][1])
             #Albert, b_hadoop, 177592 entries, Time taken: 375.30 seconds
             #Base Bert, b_hadoop, 177592 entries, Time taken: 601.45 seconds
+        else:
+            print(f"Column {emb_col} allready exists, drop the column or choose another name")
         return self.df
 
     def length(self):

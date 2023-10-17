@@ -124,8 +124,8 @@ class SupervisedAnomalyDetection:
             self._print_evaluation_scores(labels, predictions, self.model)
         return df_seq
 
-    def train_LR(self, df_seq):
-        self.train_model (df_seq, LogisticRegression(max_iter=1000))
+    def train_LR(self, df_seq, max_iter=1000):
+        self.train_model (df_seq, LogisticRegression(max_iter=max_iter))
         
     def train_DT(self, df_seq):
         self.train_model (df_seq, DecisionTreeClassifier())
@@ -134,7 +134,9 @@ class SupervisedAnomalyDetection:
         self.train_model (df_seq, LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
-    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto"):
+    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
+        if filter_anos:
+            df_seq = df_seq.filter(pl.col(self.label_col))
         self.train_model (df_seq, IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination))
                           
