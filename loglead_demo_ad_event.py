@@ -36,7 +36,7 @@ df = df.filter(pl.col("m_message").is_not_null())
 enricher =  er.EventLogEnricher(df)
 df = enricher.words()
 df = enricher.alphanumerics()
-df = enricher.trigrams() #carefull might be slow
+#df = enricher.trigrams() #carefull might be slow
 
 #Add anomaly scores for each line.
 event_ad = ad.EventAnomalyDetection(df)
@@ -46,26 +46,26 @@ df = event_ad.compute_ano_score("e_alphanumerics", 100)
 
 #Predict line anomalousness with given input, e.g. words
 #Supervised classical ML based AD
-sad = ad.SupervisedAnomalyDetection("e_words")
 df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.95)
-
 sad = ad.SupervisedAnomalyDetection("e_words", None, None)
-res = sad.train_LR(df_eve_train)
-res = sad.predict(df_eve_test)
-res = sad.train_DT(df_eve_train)
-res = sad.predict(df_eve_test)
-res = sad.train_SVM(df_eve_train, max_iter=300)
-res = sad.predict(df_eve_test)
-res = sad.predict(df_eve_test)
-res = sad.train_RF(df_eve_train)
-res = sad.predict(df_eve_test)
-res = sad.train_XGB(df_eve_train)
-res = sad.predict(df_eve_test)
-#Unsupervised
-res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
-res = sad.predict(df_eve_test)
-res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
-res = sad.predict(df_eve_test)
-res = sad.train_KMeans(df_eve_train)
-res = sad.predict(df_eve_test)
+sad.evaluate_all_ads(df_eve_train, df_eve_test)
+
+# res = sad.train_LR(df_eve_train)
+# res = sad.predict(df_eve_test)
+# res = sad.train_DT(df_eve_train)
+# res = sad.predict(df_eve_test)
+# res = sad.train_SVM(df_eve_train, max_iter=300)
+# res = sad.predict(df_eve_test)
+# res = sad.predict(df_eve_test)
+# res = sad.train_RF(df_eve_train)
+# res = sad.predict(df_eve_test)
+# res = sad.train_XGB(df_eve_train)
+# res = sad.predict(df_eve_test)
+# #Unsupervised
+# res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
+# res = sad.predict(df_eve_test)
+# res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
+# res = sad.predict(df_eve_test)
+# res = sad.train_KMeans(df_eve_train)
+# res = sad.predict(df_eve_test)
 
