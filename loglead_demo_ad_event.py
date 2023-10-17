@@ -48,16 +48,24 @@ df = event_ad.compute_ano_score("e_alphanumerics", 100)
 #Supervised classical ML based AD
 sad = ad.SupervisedAnomalyDetection("e_words")
 df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.95)
+
+sad = ad.SupervisedAnomalyDetection("e_words", None, None)
 res = sad.train_LR(df_eve_train)
 res = sad.predict(df_eve_test)
 res = sad.train_DT(df_eve_train)
 res = sad.predict(df_eve_test)
-#Does not work in some environment
-#res = sad.train_IsolationForest(df_eve_train, contamination=0.1)
-#res = sad.predict(df_eve_test)
-res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
+res = sad.train_SVM(df_eve_train, max_iter=300)
+res = sad.predict(df_eve_test)
 res = sad.predict(df_eve_test)
 res = sad.train_RF(df_eve_train)
 res = sad.predict(df_eve_test)
 res = sad.train_XGB(df_eve_train)
 res = sad.predict(df_eve_test)
+#Unsupervised
+res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
+res = sad.predict(df_eve_test)
+res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
+res = sad.predict(df_eve_test)
+res = sad.train_KMeans(df_eve_train)
+res = sad.predict(df_eve_test)
+

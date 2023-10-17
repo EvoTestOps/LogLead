@@ -11,6 +11,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
+from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
@@ -117,7 +118,7 @@ class SupervisedAnomalyDetection:
         X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         predictions = self.model.predict(X_test)
         #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, (IsolationForest, LocalOutlierFactor)):
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans)):
             predictions = np.where(predictions > 0, 1, 0)
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if print_scores:
@@ -149,6 +150,9 @@ class SupervisedAnomalyDetection:
         self.train_model (df_seq, LocalOutlierFactor(
             n_neighbors=n_neighbors,  contamination=contamination, novelty=True))
     
+    def train_KMeans(self, df_seq):
+        self.train_model(df_seq, KMeans(n_init="auto",n_clusters=2))
+
 
     def train_RF(self, df_seq):
         self.train_model(df_seq, RandomForestClassifier())
