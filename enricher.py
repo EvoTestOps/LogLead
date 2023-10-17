@@ -50,14 +50,15 @@ class EventLogEnricher:
     #Trigram flag to be removed after this is fixed. 
     #https://github.com/pola-rs/polars/issues/10833
     #https://github.com/pola-rs/polars/issues/10890   
-    def trigrams(self):
-        self._handle_prerequisites(["m_message"])
+    def trigrams(self, column="m_message"):
+        self._handle_prerequisites([column])
         if "e_cgrams" not in self.df.columns:
             self.df = self.df.with_columns(
-                pl.col("m_message").map_elements(
+                pl.col(column).map_elements(
                     lambda mes: self._create_cngram(message=mes, ngram=3)).alias("e_cgrams")
             )
         return self.df
+
 
     def _create_cngram(self, message, ngram=3):
         if ngram <= 0:
