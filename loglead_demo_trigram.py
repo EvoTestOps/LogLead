@@ -326,27 +326,25 @@ df = preprocessor.execute()
 
 #df = df.sample(fraction=0.5)
 
+print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
 enricher = er.EventLogEnricher(df)
-df = enricher.trigrams()
+
+regexs = [('0','\d'),('0','0+')]
+df = enricher.normalize(regexs, to_lower=True)
+
+print(f'Time normalize: {time.time() - prevtime:.2f} seconds')
+prevtime =  time.time()
+
+df = enricher.trigrams(column="e_message_normalized")
 df = df.with_columns(
     pl.when(df['label'] == "-").then(True).otherwise(False).alias("normal")
 )
 
-print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
+print(f'Time create ngrams: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
- 
-def normalize_message(value):
-    line = re.sub(r'\d', '0', value)
-    line = line.lower()
-    line = re.sub('0+', '0', line)
-    return line
 
-df = df.with_columns(
-    pl.col("m_message").apply(normalize_message)
-)
-
-print(f'Time normalize: {time.time() - prevtime:.2f} seconds')
-prevtime =  time.time()
 
 
 #SPLIT
@@ -455,8 +453,8 @@ prevtime =  time.time()
 
 df_test = df_test.explode("e_cgrams") #53 seconds
 #This needs to be edited. The unique() was initially for just the trigrams, but now it's pretty pointless.
-test_ngrams_set = df_test.unique()
-joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
+#test_ngrams_set = df_test.unique()
+joined_df = df_test.join(df_ngram_counts, on='e_cgrams', how='left')
 joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
 df_test = joined_df.with_columns(
     pl.col("count").map_elements(lambda value: rarity_score(value, total_ngrams), return_dtype=pl.Float64).alias("rarity_score")
@@ -501,14 +499,44 @@ prevtime =  time.time()
 def evaluate(scores_norm, scores_ano, threshold = 15):
 
     import numpy as np
-    # Assuming scores_norm and scores_ano are your input lists
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import roc_curve, auc
+    
+    def auc_roc_analysis(labels, preds, plot=True):
+        # Compute the ROC curve
+        fpr, tpr, thresholds = roc_curve(labels, preds)
+        # Compute the AUC from the points of the ROC curve
+        roc_auc = auc(fpr, tpr)
+
+        if plot:
+            # Plot the ROC curve
+            plt.figure()
+            lw = 2
+            plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title('Receiver Operating Characteristic (ROC)')
+            plt.legend(loc="lower right")
+            plt.show()
+        
+        return roc_auc
+
     scores_norm_np = np.array(scores_norm)
     scores_norm_np = scores_norm_np[~np.isnan(scores_norm_np)]  # This will remove nan values
 
     scores_ano_np = np.array(scores_ano)
-    scores_ano_np = scores_ano_np[~np.isnan(scores_ano_np)]  # This will remove nan values
+    scores_ano_np = scores_ano_np[~np.isnan(scores_ano_np)]  
+    
+    # Concatenate the scores and create a corresponding labels array
+    all_scores = np.concatenate((scores_norm_np, scores_ano_np))
+    labels = np.concatenate((np.zeros(len(scores_norm_np)), np.ones(len(scores_ano_np))))  # 0 for normal, 1 for anomalous
 
-    # Now you can continue with your calculations
+    # Call auc_roc_analysis with the labels and scores
+    print("auc roc: ", auc_roc_analysis(labels, all_scores))
+
     tp = sum(score > threshold for score in scores_ano_np)
     fp = sum(score > threshold for score in scores_norm_np)
     fn = sum(score <= threshold for score in scores_ano_np)
@@ -517,7 +545,7 @@ def evaluate(scores_norm, scores_ano, threshold = 15):
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
-    print("Prec ", precision, ", recall ", recall, ", f1 ", f1)
+    print(f"Prec {precision:.3f}, recall {recall:.3f}, f1 {f1:.3f}")
 
     mean_norm = np.mean(scores_norm_np)
     median_norm = np.median(scores_norm_np)
@@ -538,7 +566,6 @@ def evaluate(scores_norm, scores_ano, threshold = 15):
     print(f'Mean: {mean_ano:.3f}, Median: {median_ano:.3f}, Standard Deviation: {std_dev_ano:.3f}, Min: {min_value_ano:.3f}, Max: {max_value_ano:.3f}')
 
     # figure
-    import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 5))
     plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
     plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
@@ -560,7 +587,7 @@ def evaluate(scores_norm, scores_ano, threshold = 15):
 
 scores_norm = [max(score_list) for score_list in scores_norm if score_list] #This is around 5 seconds
 scores_ano = [max(score_list) for score_list in scores_ano if score_list]
-evaluate(scores_norm,scores_ano, 10)
+evaluate(scores_norm,scores_ano, 9)
 
 
 

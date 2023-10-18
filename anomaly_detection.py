@@ -11,8 +11,10 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
+from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+from sklearn.svm import OneClassSVM
 
 from sklearn.metrics import accuracy_score
 from scipy.sparse import hstack
@@ -117,24 +119,26 @@ class SupervisedAnomalyDetection:
         X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         predictions = self.model.predict(X_test)
         #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, (IsolationForest, LocalOutlierFactor)):
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
             predictions = np.where(predictions > 0, 1, 0)
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if print_scores:
             self._print_evaluation_scores(labels, predictions, self.model)
         return df_seq
 
-    def train_LR(self, df_seq):
-        self.train_model (df_seq, LogisticRegression(max_iter=1000))
+    def train_LR(self, df_seq, max_iter=1000):
+        self.train_model (df_seq, LogisticRegression(max_iter=max_iter))
         
     def train_DT(self, df_seq):
         self.train_model (df_seq, DecisionTreeClassifier())
 
-    def train_SVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=100):
+    def train_LSVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=500):
         self.train_model (df_seq, LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
-    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto"):
+    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
+        if filter_anos:
+            df_seq = df_seq.filter(pl.col(self.label_col))
         self.train_model (df_seq, IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination))
                           
@@ -147,12 +151,25 @@ class SupervisedAnomalyDetection:
         self.train_model (df_seq, LocalOutlierFactor(
             n_neighbors=n_neighbors,  contamination=contamination, novelty=True))
     
+    def train_KMeans(self, df_seq):
+        self.train_model(df_seq, KMeans(n_init="auto",n_clusters=2))
+
+    def train_OneClassSVM(self, df_seq):
+        self.train_model(df_seq, OneClassSVM(max_iter=500))
 
     def train_RF(self, df_seq):
         self.train_model(df_seq, RandomForestClassifier())
 
     def train_XGB(self, df_seq):
         self.train_model(df_seq, XGBClassifier())
+        
+    def evaluate_all_ads(self, train_df, test_df):
+        for method_name in sorted(dir(self)):
+            if method_name.startswith("train_") and not  method_name.startswith("train_model") :
+                method = getattr(self, method_name)
+                if callable(method):
+                    method(train_df)
+                    self.predict(test_df)
 
     def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
         print(f"Results from model: {type(model).__name__}")
