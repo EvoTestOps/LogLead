@@ -175,7 +175,7 @@ class SupervisedAnomalyDetection:
         return X, labels
 
     #Overwrites previous model
-    def train_model(self, df_seq, model,enable_analyzer=False):
+    def train_model(self, df_seq, model,enable_analyzer=True):
         self.enable_analyzer = enable_analyzer
         X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
         self.model = model
