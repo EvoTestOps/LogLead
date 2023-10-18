@@ -254,7 +254,7 @@ class SupervisedAnomalyDetection:
         
         from sklearn.metrics import f1_score
         # Compute the F1 score
-        f1 = f1_score(y_test, y_pred, pos_label=-1)
+        f1 = f1_score(y_test, y_pred)
         # Print the F1 score
         print(f"F1 Score: {f1:.2f}")
 
