@@ -1,11 +1,14 @@
 #from transformers import DistilBertTokenizer, TFDistilBertModel
 import tensorflow as tf
 from transformers import AlbertTokenizer, TFAlbertModel
+from transformers import BertTokenizer, TFBertModel
 import time
 
 
 class BertEmbeddings:
-    def __init__(self):
+    def __init__(self, bertmodel = "basebert"):
+
+        self.basebert = bertmodel
         
         #Print out all GPU and CPU devices
         devices = tf.config.list_physical_devices()
@@ -17,8 +20,15 @@ class BertEmbeddings:
         cpus = tf.config.list_physical_devices('CPU')
         print("CPUs: ", cpus)
 
-        self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
-        self.model = TFAlbertModel.from_pretrained('albert-base-v2', output_hidden_states=True)
+        if self.basebert == 'basebert':
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            self.model = TFBertModel.from_pretrained('bert-base-uncased', output_hidden_states=True)
+            print("Using basebert")
+
+        if self.basebert == 'albert':
+            self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
+            self.model = TFAlbertModel.from_pretrained('albert-base-v2', output_hidden_states=True)
+            print("Using albert")
 
         '''
         base bert
@@ -33,7 +43,7 @@ class BertEmbeddings:
         #length in word piece tokens
         max_length = 30
         # Set cache batch size depending on GPU memory
-        cache_size = 300
+        cache_size = 1000
         embeddings = []
 
         # Start tracking time
@@ -49,19 +59,31 @@ class BertEmbeddings:
             # Put the model in "evaluation" mode, meaning feed-forward operation.
             self.model.trainable = False
 
-            # Predict hidden states features for each layer
-            outputs = self.model(tokenized_batch)
+            if self.basebert == 'basebert':
 
-            # `outputs` is a tuple with various elements. The hidden states are in the 3rd element.
-            hidden_states = outputs['hidden_states']
+                inputs = {'input_ids': tokenized_batch['input_ids'],
+                          'attention_mask': tokenized_batch['attention_mask']}
 
-            # The last layer is at -1 index. Each layer contains embeddings for all tokens.
-            token_vecs = hidden_states[-1]
+                outputs = self.model(inputs)
+
+                hidden_states = outputs[2]
+                token_vecs = hidden_states[-1]
+
+            if self.basebert == 'albert':
+
+                # Predict hidden states features for each layer
+                outputs = self.model(tokenized_batch)
+
+                # `outputs` is a tuple with various elements. The hidden states are in the 3rd element.
+                hidden_states = outputs['hidden_states']
+
+                # The last layer is at -1 index. Each layer contains embeddings for all tokens.
+                token_vecs = hidden_states[-1]
 
             # Calculate the mean along the sequence length dimension for each sentence
             sentence_embs = tf.reduce_mean(token_vecs, axis=1)
 
-            embeddings.append(sentence_embs.numpy())
+            embeddings.append(sentence_embs)
 
         # Concatenate all batch embeddings
         embeddings = tf.concat(embeddings, axis=0)
