@@ -394,16 +394,14 @@ prevtime =  time.time()
 
 
 
-def rarity_score(freq, total_ngrams, threshold = 0.05):
-    if freq == 0:
-        return math.log(total_ngrams)*2 #e.g. twice as much as one occurence
-    normalized_freq = freq / total_ngrams
-    if normalized_freq > threshold:
-        return 0  # Common ngram, rarity score is 0
-    
-    return -math.log(normalized_freq)
-
-
+def rarity_score(freq, total_ngrams, common_threshold = 0.01):
+            normalized_freq = freq / total_ngrams
+            if normalized_freq > common_threshold:
+                return 0  # Common ngram, rarity score is 0     
+            score = -math.log(normalized_freq) ** 3
+            if freq == 0:
+                return (-math.log(1/total_ngrams) ** 3 )*2
+            return score
 #TEST
 
 
@@ -587,7 +585,7 @@ def evaluate(scores_norm, scores_ano, threshold = 15):
 
 scores_norm = [max(score_list) for score_list in scores_norm if score_list] #This is around 5 seconds
 scores_ano = [max(score_list) for score_list in scores_ano if score_list]
-evaluate(scores_norm,scores_ano, 9)
+evaluate(scores_norm,scores_ano, 10)
 
 
 

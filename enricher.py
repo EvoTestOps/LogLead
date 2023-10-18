@@ -30,18 +30,18 @@ class EventLogEnricher:
             raise ValueError(f"Missing prerequisites for enrichment: {', '.join(prerequisites)}")
 
     # Function-based enricher to split messages into words
-    def words(self):
-        self._handle_prerequisites(["m_message"])
+    def words(self, column="m_message"):
+        self._handle_prerequisites([column])
         if "e_words" not in self.df.columns:
-            self.df = self.df.with_columns(pl.col("m_message").str.split(by=" ").alias("e_words"))
+            self.df = self.df.with_columns(pl.col(column).str.split(by=" ").alias("e_words"))
         return self.df
 
     # Function-based enricher to extract alphanumeric tokens from messages
-    def alphanumerics(self):
-        self._handle_prerequisites(["m_message"])
+    def alphanumerics(self, column="m_message"):
+        self._handle_prerequisites([column])
         if "e_alphanumerics" not in self.df.columns:
             self.df = self.df.with_columns(
-                pl.col("m_message").str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
+                pl.col(column).str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
             )
         return self.df
 

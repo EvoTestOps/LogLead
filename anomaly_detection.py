@@ -19,7 +19,8 @@ from sklearn.svm import OneClassSVM
 from sklearn.metrics import accuracy_score
 from scipy.sparse import hstack
 import scipy.sparse
-
+import math
+import time
 
 class EventAnomalyDetection:
     def __init__(self, df):
@@ -56,6 +57,65 @@ class EventAnomalyDetection:
         #)
         return self.df
     
+
+class RarityModel:
+    def __init__(self, threshold = 10):
+        self.threshold = threshold
+        self.score_vector = None
+        self.scores = None
+        self.is_norm = None
+        
+    
+    def fit(self, X_train, labels=None):  
+        def rarity_score(freq, total_ngrams, common_threshold = 0.01):
+            normalized_freq = freq / total_ngrams
+            if normalized_freq > common_threshold:
+                return 0  # Common ngram, rarity score is 0     
+            score = -math.log(normalized_freq) ** 3
+            if freq == 0:
+                return (-math.log(1/total_ngrams) ** 3 )*2
+            return score
+        
+        total_ngrams = X_train.sum()
+        train_counts = np.array(X_train.sum(axis=0))[0]
+        self.score_vector = np.array([rarity_score(count, total_ngrams) for count in train_counts])
+        
+    
+    def predict(self, X_test):
+        X_test_csr = X_test.tocsr()
+        # Getting the count of non-zero elements along axis 1 (columns) for each instance
+        non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  # Convert to float64 here
+        non_zero_counts[non_zero_counts == 0] = 1  # Now this line will work as intended
+        # Computing the dot product of X_test_csr and score_vector
+        self.scores = X_test_csr.dot(self.score_vector)
+        # Ensuring self.scores is a float array
+        self.scores = self.scores.astype(np.float64)
+        # Dividing the scores by the count of non-zero elements
+        self.scores /= non_zero_counts
+        # Comparing the scores to the threshold
+        self.is_norm = (self.scores < self.threshold).astype(int)
+        return self.is_norm
+    
+    def custom_plot(self, labels):
+        import matplotlib.pyplot as plt
+        
+        # Convert labels to a boolean array if they are not already
+        labels_bool = np.array(labels).astype(bool)
+        scores_norm = self.scores[labels_bool]  # 0 for normal in this case
+        scores_ano = self.scores[~labels_bool]  # 1 for anomalous in this case
+        plt.figure(figsize=(10, 5))
+        plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
+        plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
+        plt.xlabel('Value')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of scores_norm and scores_ano')
+        plt.legend(loc='upper right')
+        plt.tight_layout()
+        plt.show()
+
+
+
+
     
 def test_train_split(df, test_frac):
     # Shuffle the DataFrame
@@ -69,11 +129,12 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SupervisedAnomalyDetection:
-    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="normal"):
+    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="normal", enable_analyzer=True):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
         self.emb_list_col = emb_list_col
+        self.enable_analyzer = enable_analyzer
         #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
 
     def _prepare_data(self, train, df_seq):
@@ -83,10 +144,14 @@ class SupervisedAnomalyDetection:
         # Extract events
         if self.item_list_col:
             events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
-            events = [' '.join(e) for e in events]
+            if self.enable_analyzer:
+                events = [' '.join(e) for e in events]
             # We are training
             if train:
-                self.vectorizer = CountVectorizer()
+                if self.enable_analyzer: #it's enabled by default
+                    self.vectorizer = CountVectorizer() 
+                else:
+                    self.vectorizer = CountVectorizer(analyzer=lambda x: x)
                 X = self.vectorizer.fit_transform(events)
             # We are predicting
             else:
@@ -110,12 +175,13 @@ class SupervisedAnomalyDetection:
         return X, labels
 
     #Overwrites previous model
-    def train_model(self, df_seq, model):
+    def train_model(self, df_seq, model,enable_analyzer=False):
+        self.enable_analyzer = enable_analyzer
         X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
         self.model = model
         self.model.fit(X_train, labels)
         
-    def predict(self, df_seq, print_scores=True):
+    def predict(self, df_seq, print_scores=True, custom_plot=False):
         X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         predictions = self.model.predict(X_test)
         #IsolationForrest does not give binary predictions. Convert
@@ -124,6 +190,8 @@ class SupervisedAnomalyDetection:
         df_seq = df_seq.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if print_scores:
             self._print_evaluation_scores(labels, predictions, self.model)
+        if custom_plot:
+            self.model.custom_plot(labels)
         return df_seq
 
     def train_LR(self, df_seq, max_iter=1000):
@@ -163,13 +231,20 @@ class SupervisedAnomalyDetection:
     def train_XGB(self, df_seq):
         self.train_model(df_seq, XGBClassifier())
         
+    def train_RarityModel(self, df_seq, filter_anos=True, threshold=500):
+        if filter_anos:
+            df_seq = df_seq.filter(pl.col(self.label_col))
+        self.train_model(df_seq, RarityModel(threshold), enable_analyzer=True)
+        
     def evaluate_all_ads(self, train_df, test_df):
         for method_name in sorted(dir(self)):
             if method_name.startswith("train_") and not  method_name.startswith("train_model") :
                 method = getattr(self, method_name)
                 if callable(method):
+                    time_start = time.time()
                     method(train_df)
                     self.predict(test_df)
+                    print(f'Total time: {time.time()-time_start:.2f} seconds')
 
     def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
         print(f"Results from model: {type(model).__name__}")
@@ -179,7 +254,7 @@ class SupervisedAnomalyDetection:
         
         from sklearn.metrics import f1_score
         # Compute the F1 score
-        f1 = f1_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred, pos_label=-1)
         # Print the F1 score
         print(f"F1 Score: {f1:.2f}")
 
