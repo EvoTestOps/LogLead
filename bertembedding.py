@@ -1,4 +1,3 @@
-#from transformers import DistilBertTokenizer, TFDistilBertModel
 import tensorflow as tf
 from transformers import AlbertTokenizer, TFAlbertModel
 from transformers import BertTokenizer, TFBertModel
@@ -29,15 +28,6 @@ class BertEmbeddings:
             self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
             self.model = TFAlbertModel.from_pretrained('albert-base-v2', output_hidden_states=True)
             print("Using albert")
-
-        '''
-        base bert
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        self.model = TFBertModel.from_pretrained('bert-base-uncased')
-        DistilBert
-        self.tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
-        self.model = TFDistilBertModel.from_pretrained('distilbert-base-uncased', output_hidden_states=True)
-        '''
 
     def create_bert_emb(self, sentences):
         #length in word piece tokens
