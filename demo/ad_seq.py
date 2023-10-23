@@ -1,7 +1,10 @@
 #Sequence levels prediction
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import sys
+sys.path.append('..')
+import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
 
-
+full_data = "../../../../Datasets"
+private_data ="../private_data"
 dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small
 
 df = None
@@ -9,22 +12,22 @@ df_seq = None
 loader = None
 
 if dataset=="hadoop":
-       loader = load.HadoopLoader(filename="../../../Datasets/hadoop/",
+       loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                                  filename_pattern  ="*.log",
                                                  labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
 elif dataset=="hdfs":
-       loader = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
+       loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
                                           labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
 elif dataset=="pro":
-       loader = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
+       loader = load.ProLoader(filename=f"{full_data}/profilence/*.txt")
 elif dataset=="tb":
-       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
 elif dataset=="tb-small":
-       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird_2k.log") #Only 2k lines
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird_2k.log") #Only 2k lines
 elif dataset=="hdfs_s_parq":
        import polars as pl
-       df = pl.read_parquet("hdfs_events_002.parquet")
-       df_seq = pl.read_parquet("hdfs_seqs_002.parquet")
+       df = pl.read_parquet(f"{private_data}/hdfs_events_002.parquet")
+       df_seq = pl.read_parquet(f"{private_data}/hdfs_seqs_002.parquet")
 
 if loader != None:
        df = loader.execute()
@@ -32,8 +35,8 @@ if loader != None:
               df = loader.reduce_dataframes(frac=0.02)
        df_seq = loader.df_sequences       
        if (dataset == "hdfs"):
-              df.write_parquet("hdfs_events_002.parquet")
-              df_seq.write_parquet("hdfs_seqs_002.parquet")
+              df.write_parquet(f"{private_data}/hdfs_events_002.parquet")
+              df_seq.write_parquet(f"{private_data}/hdfs_events_002.parquet")
               
 
 #df = loader.execute()
