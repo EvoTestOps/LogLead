@@ -1,6 +1,6 @@
 #
 #Separate demo files
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 
 
 gelf_processor = load.GELFLoader(filename="gelf.log")

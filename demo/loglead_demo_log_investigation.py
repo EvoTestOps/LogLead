@@ -1,5 +1,5 @@
 #This file is for investing if there are multi-line log entries. Normally a single log event occupies one line but not always, e.g. due to stack traces
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 import polars as pl
 # Processing Hadoop Logs--------------------------------------------------------------------
 hadoop_processor = load.HadoopLoader(filename="../../../Datasets/hadoop/",

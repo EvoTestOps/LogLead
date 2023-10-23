@@ -1,5 +1,5 @@
 #Sequence levels prediction
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 
 
 dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small

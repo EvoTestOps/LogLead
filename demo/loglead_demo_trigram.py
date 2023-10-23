@@ -1,5 +1,5 @@
 #Sequence levels prediction
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 import polars as pl
 import math
 from collections import Counter
@@ -300,7 +300,7 @@ max_ano_score  555.000   10346 181   278930    6492  0.9828    0.6144    0.9775 
 #Tried 4 different versions to handle the test, but they are all over 30min
 
 #Event levels prediction
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 import polars as pl
 import math
 from collections import Counter

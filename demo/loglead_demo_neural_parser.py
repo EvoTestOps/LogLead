@@ -1,6 +1,6 @@
 #
 #Separate demo files
-import loader as load, enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
 
 dataset = "tb_s_emb" #hdfs, pro, hadoop, tb, tb_small (has no anomalies), tb_s_parq tb_s_emb
 df = None
