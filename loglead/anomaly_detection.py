@@ -200,7 +200,7 @@ class SupervisedAnomalyDetection:
     def train_DT(self, df_seq):
         self.train_model (df_seq, DecisionTreeClassifier())
 
-    def train_LSVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=500):
+    def train_LSVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=1000):
         self.train_model (df_seq, LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
