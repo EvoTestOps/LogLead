@@ -43,9 +43,13 @@ class BaseLoader:
         # Print the results
         if null_counts:
             for col, count in null_counts.items():
-                print(f"WARNING! Column '{col}' has {count} null values. This can cause problems during analysis. ")
+                print(f"WARNING! Column '{col}' has {count} null values. You have 4 options:"
+                        f" 1) Do nothing and hope for the best"
+                        f", 2) Drop the column that has nulls"
+                        f", 3) Filter out rows that have nulls"
+                        f", 4) Investigate and fix your Loader")
                 print(f"To investigate: <DF_NAME>.filter(<DF_NAME>['{col}'].is_null())")
-                
+
     def check_mandatory_columns(self):
         missing_columns = [col for col in self._mandatory_columns if col not in self.df.columns]
         if missing_columns:

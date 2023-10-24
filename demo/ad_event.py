@@ -6,29 +6,29 @@ sys.path.append('..')
 import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
 import polars as pl
 
-full_data = "../../../../Datasets/"
+full_data = "/home/ubuntu/Datasets"
 
 dataset = "bgl" #hdfs, pro, hadoop, tb, tb_small (has no anomalies), tb_s_parq
 df = None
 df_seq = None
 loader = None
-if dataset=="hdfs":
-       loader = load.HadoopLoader(filename=f"{full_data}hadoop/",
+if dataset=="hadoop":
+       loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                                  filename_pattern  ="*.log",
-                                                 labels_file_name=f"{full_data}hadoop/abnormal_label_accurate.txt")
+                                                 labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
 elif dataset=="hdfs":
-       loader = load.HDFSLoader(filename=f"{full_data}hdfs/HDFS.log", 
-                                          labels_file_name=f"{full_data}hdfs/anomaly_label.csv")
+       loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
+                                          labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 elif dataset=="pro":
-       loader = load.ProLoader(filename=f"{full_data}profilence/*.txt")
+       loader = load.ProLoader(filename=f"{full_data}/profilence/*.txt")
 elif dataset=="tb":
-       loader = load.ThunderbirdLoader(filename=f"{full_data}thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
 elif dataset=="tb_small":
-       loader = load.ThunderbirdLoader(filename=f"{full_data}thunderbird/Thunderbird_2k.log") #Only 2k lines
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird_2k.log") #Only 2k lines
 elif dataset=="tb_s_parq":
        df = pl.read_parquet("tb_002.parquet")
 elif dataset=="bgl":
-       loader = load.BGLLoader(filename=f"{full_data}bgl/BGL.log")
+       loader = load.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
 
 if loader != None:
        df = loader.execute()

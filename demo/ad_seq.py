@@ -3,7 +3,7 @@ import sys
 sys.path.append('..')
 import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
 
-full_data = "../../../../Datasets"
+full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
 dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small
 
@@ -12,12 +12,12 @@ df_seq = None
 loader = None
 
 if dataset=="hadoop":
-       loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
+       loader = load.HadoopLoader(filename=f"{full_data}hadoop/",
                                                  filename_pattern  ="*.log",
-                                                 labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
+                                                 labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
 elif dataset=="hdfs":
-       loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
-                                          labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
+       loader = load.HDFSLoader(filename=f"{full_data}hdfs/HDFS.log", 
+                                          labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 elif dataset=="pro":
        loader = load.ProLoader(filename=f"{full_data}/profilence/*.txt")
 elif dataset=="tb":
