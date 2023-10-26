@@ -1,6 +1,7 @@
 import polars as pl
 import drain3 as dr
 from .bertembedding import BertEmbeddings
+import os
 
 # Drain.ini default regexes
 # No lookahead or lookbedinde so reimplemented with capture groups
@@ -77,8 +78,10 @@ class EventLogEnricher:
 
             # We might have multiline log message, i.e. log_message + stack trace.
             # Use only first line of log message for parsing
+            current_script_path = os.path.abspath(__file__)
+            current_script_directory = os.path.dirname(current_script_path)
             if drain_masking:
-                dr.template_miner.config_filename = '../loglead/drain3.ini' #TODO fix the path relative
+                dr.template_miner.config_filename = os.path.join(current_script_directory, 'drain3.ini') #TODO fix the path relative
                 self.tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
                     message_trimmed=pl.col("m_message").str.split("\n").list.first()
@@ -88,7 +91,7 @@ class EventLogEnricher:
             else:
                 if "e_message_normalized" not in self.df.columns:
                     self.normalize()
-                dr.template_miner.config_filename = '../loglead/drain3_no_masking.ini'  #TODO fix the path relative
+                dr.template_miner.config_filename =os.path.join(current_script_directory, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
                 self.tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
                     drain=pl.col("e_message_normalized").map_elements(lambda x: self.tm.add_log_message(x)))

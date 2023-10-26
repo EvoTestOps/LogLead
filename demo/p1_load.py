@@ -1,4 +1,6 @@
-#
+#This file performs same actions in both LogLEAD and in LogParsers code. 
+# LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
+ 
 #Separate demo files
 import sys
 import time
@@ -9,43 +11,58 @@ import loglead.loader as load
 import demo.p1_logparser_load as logparser
 
 full_data = "/home/ubuntu/Datasets"
+dataset ="hdfs"
 
-#One runs---------------------------------------------------
-#Execute the same actions for both. In Loglead this means excluding timestamp parsing, 
-time_start = time.time()
-loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
-loader.load()
-loader._split_and_unnest(["date", "time", "id", "level", "component", "m_message"])
-print(f'LogLead HDFS load total time: {time.time()-time_start:.2f} seconds')
-time_start = time.time()
-df= logparser.log_to_dataframe(f"{full_data}/hdfs/HDFS.log")
-print(f'LogParser HDFS load total time: {time.time()-time_start:.2f} seconds')
+logparser_format = {
+#    "hdfs" : "<Date> <Time> <Pid> <Level> <Component>: <Content>",
+#    "bgl" : "<Label> <Timestamp> <Date> <Node> <Time> <NodeRepeat> <Type> <Component> <Level> <Content>",
+    "tb" : "<Label> <Timestamp> <Date> <User> <Month> <Day> <Time> <Location> <Component>(\[<PID>\])?: <Content>"
+}
 
+loglead_format = {
+    "hdfs" : ["date", "time", "id", "level", "component", "m_message"],
+    "bgl" : ["label", "timestamp", "date", "node", "time", "noderepeat", "type", "component", "level", "m_message"],
+    "tb" : ["label", "timestamp", "date", "userid", "month", "day", "time", "location", "component_pid", "m_message"]
+}
 
-
-#10 Runs------------------------------------------------------------
-# For LogLead HDFS
-loglead_times = []
-for _ in range(10):
-    time_start = time.time()
-    loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
-    loader.load()
-    loader._split_and_unnest(["date", "time", "id", "level", "component", "m_message"])
-    loglead_times.append(time.time() - time_start)
-
-avg_loglead_time = sum(loglead_times) / len(loglead_times)
-print(f'LogLead HDFS load average time over 10 runs: {avg_loglead_time:.2f} seconds')
-
-# For LogParser HDFS
-
-logparser_times = []
-for _ in range(10):
-    time_start = time.time()
-    df = logparser.log_to_dataframe(f"{full_data}/hdfs/HDFS.log")
-    logparser_times.append(time.time() - time_start)
-
-avg_logparser_time = sum(logparser_times) / len(logparser_times)
-print(f'LogParser HDFS load average time over 10 runs: {avg_logparser_time:.2f} seconds')
+def create_correct_loader(dataset):
+    if dataset=="hdfs":
+        loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
+                                            labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
+    elif dataset=="tb":
+        loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+    elif dataset=="bgl":
+        loader = load.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
+    return loader
 
 
-logparser.generate_logformat_regex('<Date> <Time> <Pid> <Level> <Component>: <Content>')
+for key, value in loglead_format.items():
+    print(f"Processing: {key}, {value}")
+    loglead_times = []
+    for _ in range(1):
+        print(f"r{_}", end=", ")
+        time_start = time.time()
+        loader = create_correct_loader(key)
+        loader.load()
+        loader._split_and_unnest(value)
+        if (key == "tb"):
+            loader._split_component_and_pid()
+        loglead_times.append(time.time() - time_start)
+
+    avg_loglead_time = sum(loglead_times) / len(loglead_times)
+    print(f'LogLead {key} load average time over 10 runs: {avg_loglead_time:.2f} seconds. {loader.df.shape[0]} rows processed')
+
+
+for key, value in logparser_format.items():
+    print(f"Processing: {key}, {value}")
+    logparser_times = []
+    for _ in range(1):
+        loader = create_correct_loader(key)
+        time_start = time.time()
+        df = logparser.log_to_dataframe(loader.filename, value)
+        logparser_times.append(time.time() - time_start)
+
+    avg_logparser_time = sum(logparser_times) / len(logparser_times)
+    print(f'LogParser {key} load average time over 10 runs: {avg_logparser_time:.2f} seconds.{df.shape[0]} rows processed')
+          
+

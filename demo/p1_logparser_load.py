@@ -16,22 +16,22 @@
 # =========================================================================
 import pandas as pd
 import regex as re
-
+import datetime
 #Routine loads data from logfile and creates a dataframe. 
 #Routine taken from LogPai/Logpaser/Drain project
 #https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L327C1-L344C21
 #Following modification were made.
 #1) Converted to normal function instead of class member function
 #2) Added a counter that reports progress every 1,000,000 rows
-#3) Logformat variable as default is fixed to one that works with hdfs
-#4) Removed variable regex and headers logformat
-#5) Moved generate_logformat_regex as 
-def log_to_dataframe(log_file, log_format='<Date> <Time> <Pid> <Level> <Component>: <Content>'):
+#3) Added errors=ignore as there is a non-utf character in TB.
+#4) Moved generate_logformat_regex inside this function 
+def log_to_dataframe(log_file, log_format):
     """Function to transform log file to dataframe"""
     headers, regex = generate_logformat_regex(log_format)
     log_messages = []
     linecount = 0
-    with open(log_file, "r") as fin:
+#    with open(log_file, "r") as fin:
+    with open(log_file, "r", errors="replace") as fin:
         for line in fin.readlines():
             try:
                 match = regex.search(line.strip())
@@ -39,9 +39,10 @@ def log_to_dataframe(log_file, log_format='<Date> <Time> <Pid> <Level> <Componen
                 log_messages.append(message)
                 linecount += 1
                 if linecount % 1000000 == 0:
-                    print(f"Processed {linecount} lines.")
+                    print(f"{datetime.datetime.now().strftime('%H:%M:%S')}", flush=True)
             except Exception as e:
-                print("[Warning] Skip line: " + line)
+                continue
+                #print("[Warning] Skip line: " + line)
     logdf = pd.DataFrame(log_messages, columns=headers)
     logdf.insert(0, "LineId", None)
     logdf["LineId"] = [i + 1 for i in range(linecount)]
@@ -66,3 +67,4 @@ def generate_logformat_regex(logformat):
             headers.append(header)
     regex = re.compile("^" + regex + "$")
     return headers, regex        
+
