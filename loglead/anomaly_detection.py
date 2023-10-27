@@ -87,6 +87,8 @@ class RarityModel:
         non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  # Convert to float64 here
         non_zero_counts[non_zero_counts == 0] = 1  # Now this line will work as intended
         # Computing the dot product of X_test_csr and score_vector
+        print("X_test_csr dimensions:", X_test_csr.shape)
+        print("self.score_vector dimensions:", self.score_vector.shape)
         self.scores = X_test_csr.dot(self.score_vector)
         # Ensuring self.scores is a float array
         self.scores = self.scores.astype(np.float64)
@@ -136,7 +138,24 @@ class SupervisedAnomalyDetection:
         self.emb_list_col = emb_list_col
         self.enable_analyzer = enable_analyzer
         #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
+        
+    def test_train_split(self, df, test_frac):
+        # Shuffle the DataFrame
+        df = df.sample(fraction = 1.0, shuffle=True)
+        # Split ratio
+        test_size = int(test_frac * df.shape[0])
 
+        # Split the DataFrame using head and tail
+        self.test_df = df.head(test_size)
+        self.train_df = df.tail(-test_size)
+        
+        #Prepare all data for running
+        self.X_train, self.labels_train = self._prepare_data(True, self.train_df)
+        self.X_test, self.labels_test = self._prepare_data(False, self.test_df)
+        #No anomalies dataset is used for some unsupervised algos. 
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col)))
+        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df)
+        
     def _prepare_data(self, train, df_seq):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
@@ -173,15 +192,75 @@ class SupervisedAnomalyDetection:
             X = hstack([X, additional_features]) if X is not None else additional_features
 
         return X, labels
+        
 
-    #Overwrites previous model
-    def train_model(self, df_seq, model,enable_analyzer=True):
+    def dep_prepare_data(self, train, df_seq):
+        X = None
+        labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
+
+        # Extract events
+        if self.item_list_col:
+            events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
+            if self.enable_analyzer:
+                events = [' '.join(e) for e in events]
+            # We are training
+            if train:
+                if self.enable_analyzer: #it's enabled by default
+                    self.vectorizer = CountVectorizer() 
+                else:
+                    self.vectorizer = CountVectorizer(analyzer=lambda x: x)
+                X = self.vectorizer.fit_transform(events)
+            # We are predicting
+            else:
+                X = self.vectorizer.transform(events)
+
+        # Extract lists of embeddings
+        if  self.emb_list_col:
+            emb_list = df_seq.select(pl.col(self.emb_list_col)).to_series().to_list()
+            
+            # Convert lists of floats to a matrix
+            #emb_matrix = np.array(emb_list)
+            emb_matrix = np.vstack(emb_list)
+            # Stack with X
+            X = hstack([X, emb_matrix]) if X is not None else emb_matrix
+
+        # Extract additional predictors
+        if self.numeric_cols:
+            additional_features = df_seq.select(self.numeric_cols).to_pandas().values
+            X = hstack([X, additional_features]) if X is not None else additional_features
+
+        return X, labels
+
+         
+    def train_model(self, model, enable_analyzer=True, filter_anos=False):
+        self.enable_analyzer = enable_analyzer
+        X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
+        #Store the current the model and whether it uses ano data or no
+        self.model = model
+        self.filter_anos = filter_anos
+        self.model.fit(X_train_to_use, self.labels_train)
+
+    def dep_train_model(self, df_seq, model,enable_analyzer=True):
         self.enable_analyzer = enable_analyzer
         X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
         self.model = model
         self.model.fit(X_train, labels)
-        
-    def predict(self, df_seq, print_scores=True, custom_plot=False):
+    
+    def predict(self, print_scores=True, custom_plot=False):
+        #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
+        X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
+        predictions = self.model.predict(X_test_to_use)
+        #IsolationForrest does not give binary predictions. Convert
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
+            predictions = np.where(predictions > 0, 1, 0)
+        df_seq = self.test_df.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
+        if print_scores:
+            self._print_evaluation_scores(self.labels_test, predictions, self.model)
+        if custom_plot:
+            self.model.custom_plot(self.labels_test)
+        return df_seq 
+       
+    def dep_predict(self, df_seq, print_scores=True, custom_plot=False):
         X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         predictions = self.model.predict(X_test)
         #IsolationForrest does not give binary predictions. Convert
@@ -194,57 +273,104 @@ class SupervisedAnomalyDetection:
             self.model.custom_plot(labels)
         return df_seq
 
-    def train_LR(self, df_seq, max_iter=1000):
-        self.train_model (df_seq, LogisticRegression(max_iter=max_iter))
-        
-    def train_DT(self, df_seq):
-        self.train_model (df_seq, DecisionTreeClassifier())
+    def dep_train_LR(self, df_seq, max_iter=1000):
+        self.dep_train_model (df_seq, LogisticRegression(max_iter=max_iter))
+    
+    def train_LR(self, max_iter=1000):
+        self.train_model (LogisticRegression(max_iter=max_iter))
+    
+    def dep_train_DT(self, df_seq):
+        self.dep_train_model (df_seq, DecisionTreeClassifier())
+    
+    def train_DT(self):
+        self.train_model (DecisionTreeClassifier())
 
-    def train_LSVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=1000):
-        self.train_model (df_seq, LinearSVC(
+    def dep_train_LSVM(self, df_seq,  penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=1000):
+        self.dep_train_model (df_seq, LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
-    def train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
+    def train_LSVM(self, penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=1000):
+        self.train_model (LinearSVC(
+            penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
+
+    def dep_train_IsolationForest(self, df_seq, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
         if filter_anos:
             df_seq = df_seq.filter(pl.col(self.label_col))
-        self.train_model (df_seq, IsolationForest(
+        self.dep_train_model (df_seq, IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination))
                           
-    def train_LOF(self, df_seq, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
+    def train_IsolationForest(self, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
+        self.train_model (IsolationForest(
+            n_estimators=n_estimators, max_samples=max_samples, contamination=contamination), filter_anos=filter_anos)
+                          
+    def dep_train_LOF(self, df_seq, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
         #LOF novelty=True model needs to be trained without anomalies
         #If we set novelty=False then Predict is no longer available for calling.
         #It messes up our general model prediction routine
         if filter_anos:
             df_seq = df_seq.filter(pl.col(self.label_col))
-        self.train_model (df_seq, LocalOutlierFactor(
-            n_neighbors=n_neighbors,  contamination=contamination, novelty=True))
+        self.dep_train_model (df_seq, LocalOutlierFactor(
+            n_neighbors=n_neighbors,  contamination=contamination, novelty=True ))
     
-    def train_KMeans(self, df_seq):
-        self.train_model(df_seq, KMeans(n_init="auto",n_clusters=2))
+    def train_LOF(self, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
+        #LOF novelty=True model needs to be trained without anomalies
+        #If we set novelty=False then Predict is no longer available for calling.
+        #It messes up our general model prediction routine
+        self.train_model (LocalOutlierFactor(
+            n_neighbors=n_neighbors,  contamination=contamination, novelty=True), filter_anos=filter_anos)
+    
+    def dep_train_KMeans(self, df_seq):
+        self.dep_train_model(df_seq, KMeans(n_init="auto",n_clusters=2))
 
-    def train_OneClassSVM(self, df_seq):
-        self.train_model(df_seq, OneClassSVM(max_iter=500))
+    def train_KMeans(self):
+        self.train_model(KMeans(n_init="auto",n_clusters=2))
 
-    def train_RF(self, df_seq):
-        self.train_model(df_seq, RandomForestClassifier())
+    def dep_train_OneClassSVM(self, df_seq):
+        self.dep_train_model(df_seq, OneClassSVM(max_iter=1000))
 
-    def train_XGB(self, df_seq):
-        self.train_model(df_seq, XGBClassifier())
+    def train_OneClassSVM(self):
+        self.train_model(OneClassSVM(max_iter=1000))
+
+    def dep_train_RF(self, df_seq):
+        self.dep_train_model(df_seq, RandomForestClassifier())
+
+    def train_RF(self):
+        self.train_model( RandomForestClassifier())
+
+    def dep_train_XGB(self, df_seq):
+        self.dep_train_model(df_seq, XGBClassifier())
         
-    def train_RarityModel(self, df_seq, filter_anos=True, threshold=500):
+    def train_XGB(self):
+        self.train_model(XGBClassifier())
+        
+    def dep_train_RarityModel(self, df_seq, filter_anos=True, threshold=500):
         if filter_anos:
             df_seq = df_seq.filter(pl.col(self.label_col))
-        self.train_model(df_seq, RarityModel(threshold), enable_analyzer=True)
+        self.dep_train_model(df_seq, RarityModel(threshold), enable_analyzer=True)
         
-    def evaluate_all_ads(self, train_df, test_df):
+    def train_RarityModel(self, filter_anos=True, threshold=500):
+        self.train_model(RarityModel(threshold), enable_analyzer=True, filter_anos=filter_anos)
+        
+    def dep_evaluate_all_ads(self, train_df, test_df):
+        for method_name in sorted(dir(self)):
+            if method_name.startswith("dep_train_") and not  method_name.startswith("dep_train_model") :
+                method = getattr(self, method_name)
+                if callable(method):
+                    time_start = time.time()
+                    method(train_df)
+                    self.dep_predict(test_df)
+                    print(f'Total time: {time.time()-time_start:.2f} seconds')
+
+    def evaluate_all_ads(self):
         for method_name in sorted(dir(self)):
             if method_name.startswith("train_") and not  method_name.startswith("train_model") :
                 method = getattr(self, method_name)
                 if callable(method):
                     time_start = time.time()
-                    method(train_df)
-                    self.predict(test_df)
+                    method()
+                    self.predict()
                     print(f'Total time: {time.time()-time_start:.2f} seconds')
+
 
     def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
         print(f"Results from model: {type(model).__name__}")

@@ -64,6 +64,12 @@ class EventLogEnricher:
             return []
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
 
+    #Parse Spell
+    #https://github.com/simonemainardi/pyspell
+    #https://github.com/nbigaouette/spell-rs
+    #https://github.com/nailo2c/spellpy/
+
+
     # Enrich with drain parsing results
     def parse_drain(self, drain_masking=False, reparse=False):
         self._handle_prerequisites(["m_message"])

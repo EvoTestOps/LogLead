@@ -4,7 +4,7 @@
 #Separate demo files
 import sys
 import time
-sys.path.append('~/Development/mika/LogLEAD/')
+sys.path.append('/home/ubuntu/Development/mika/LogLEAD/')
 import polars as pl
 
 import loglead.loader as load
