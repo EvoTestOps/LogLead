@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 *.parquet
 private_data/
+p2_res.txt
