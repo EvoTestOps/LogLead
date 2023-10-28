@@ -50,13 +50,13 @@ if loader != None:
 #Parsing in event level
 enricher = er.EventLogEnricher(df)
 df = enricher.length()
-#df = enricher.parse_drain()
+df = enricher.parse_drain()
 df = enricher.words()
 df = enricher.alphanumerics()
 
 #Collect events to sequence level as list[str]
 seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
-#seq_enricher.events()
+seq_enricher.events()
 seq_enricher.eve_len()
 seq_enricher.start_time()
 seq_enricher.end_time()
@@ -65,89 +65,36 @@ seq_enricher.duration()
 seq_enricher.tokens()
 
 
-sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
-sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
 # Suppress ConvergenceWarning
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
-sad.evaluate_all_ads()
-
-#OLD-WAY__________________________________________________________________________
-#Split
-df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.95)
-
-#Anomaly detection with Logstic Regression and DT----------------------------------------------
 
 #Using tokens(words) from each sequence 
 sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
-sad.dep_evaluate_all_ads(df_seq_train, df_seq_test)
-
-# sad.train_LR(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_DT(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_SVM(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_IsolationForest(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_RF(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_XGB(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-
+sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
+sad.evaluate_all_ads()
 
 # AD using only numeric columns:
 #Defining numeric columns to be inclded
 numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1"]
 sad = ad.SupervisedAnomalyDetection(numeric_cols=numeric_cols)
-sad.evaluate_all_ads(df_seq_train, df_seq_test)
-
-# sad.train_LR(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_DT(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_SVM(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_IsolationForest(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_RF(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_XGB(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-
+sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
+sad.evaluate_all_ads(disabled_methods=["train_RarityModel"])#Rarity model not working here for some reason. 
 
 # AD using only event column:
 sad =  ad.SupervisedAnomalyDetection(item_list_col="events")
-sad.evaluate_all_ads(df_seq_train, df_seq_test)
+sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
+sad.evaluate_all_ads()
 
-# sad.train_LR(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_DT(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_SVM(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_IsolationForest(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_RF(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_XGB(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-
-
-# AD using both
+#Events + Numeric
 sad =  ad.SupervisedAnomalyDetection(item_list_col="events", numeric_cols=numeric_cols)
-sad.evaluate_all_ads(df_seq_train, df_seq_test)
+sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
+sad.evaluate_all_ads()
 
-# sad.train_LR(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_DT(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_SVM(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_IsolationForest(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_RF(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
-# sad.train_XGB(df_seq_train)
-# df_seq_test = sad.predict(df_seq_test, print_scores = True)
+
+#OLD-WAY__________________________________________________________________________
+#Split
+df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.95)
+sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
+sad.dep_evaluate_all_ads(df_seq_train, df_seq_test)

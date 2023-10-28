@@ -60,31 +60,37 @@ df = enricher.trigrams(column) #carefull might be slow
 #df = event_ad.compute_ano_score("e_alphanumerics", 100)
 #df = event_ad.compute_ano_score("e_cgrams", 100)
 
-#Predict line anomalousness with given input, e.g. words
-#Supervised classical ML based AD
+#Predict all new way
+sad =  ad.SupervisedAnomalyDetection(item_list_col="e_words")
+sad.test_train_split (df, test_frac=0.95)
+sad.evaluate_all_ads()
+
+#OLD-WAY__________________________________________________________________________
+#Split
 df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.95)
-sad = ad.SupervisedAnomalyDetection("e_cgrams", None, None)
-sad.evaluate_all_ads(df_eve_train, df_eve_test)
+sad = ad.SupervisedAnomalyDetection("e_words", None, None)
+sad.dep_evaluate_all_ads(df_eve_train, df_eve_test)
 
-# res = sad.train_LR(df_eve_train)
-# res = sad.predict(df_eve_test)
-# res = sad.train_DT(df_eve_train)
-# res = sad.predict(df_eve_test)
-# res = sad.train_SVM(df_eve_train, max_iter=300)
-# res = sad.predict(df_eve_test)
-# res = sad.predict(df_eve_test)
-# res = sad.train_RF(df_eve_train)
-# res = sad.predict(df_eve_test)
-# res = sad.train_XGB(df_eve_train)
-# res = sad.predict(df_eve_test)
+
+# res = sad.dep_train_LR(df_eve_train)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_DT(df_eve_train)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_LSVM(df_eve_train, max_iter=300)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_RF(df_eve_train)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_XGB(df_eve_train)
+# res = sad.dep_predict(df_eve_test)
 # #Unsupervised
-# res = sad.train_IsolationForest(df_eve_train,filter_anos=False)
-# res = sad.predict(df_eve_test)
-# res = sad.train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
-# res = sad.predict(df_eve_test)
-# res = sad.train_KMeans(df_eve_train)
-# res = sad.predict(df_eve_test)
+# res = sad.dep_train_IsolationForest(df_eve_train,filter_anos=False)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_LOF(df_eve_train, filter_anos=True, contamination=0.1)
+# res = sad.dep_predict(df_eve_test)
+# res = sad.dep_train_KMeans(df_eve_train)
+# res = sad.dep_predict(df_eve_test)
 
-#Custom plot enabled
-#res = sad.train_RarityModel(df_eve_train, threshold=800)
-#res = sad.predict(df_eve_test, print_scores = True, custom_plot = True)
+# #Custom plot enabled
+# res = sad.dep_train_RarityModel(df_eve_train, threshold=800)
+# res = sad.dep_predict(df_eve_test, print_scores = True, custom_plot = True)

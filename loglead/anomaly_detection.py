@@ -361,9 +361,21 @@ class SupervisedAnomalyDetection:
                     self.dep_predict(test_df)
                     print(f'Total time: {time.time()-time_start:.2f} seconds')
 
-    def evaluate_all_ads(self):
+    def _evaluate_all_ads(self):
         for method_name in sorted(dir(self)):
             if method_name.startswith("train_") and not  method_name.startswith("train_model") :
+                method = getattr(self, method_name)
+                if callable(method):
+                    time_start = time.time()
+                    method()
+                    self.predict()
+                    print(f'Total time: {time.time()-time_start:.2f} seconds')
+
+    def evaluate_all_ads(self, disabled_methods=[]):
+        for method_name in sorted(dir(self)):
+            if (method_name.startswith("train_") 
+                and not method_name.startswith("train_model") 
+                and method_name not in disabled_methods):
                 method = getattr(self, method_name)
                 if callable(method):
                     time_start = time.time()
