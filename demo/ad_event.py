@@ -50,17 +50,18 @@ if normalize:
        df = enricher.normalize(regexs, to_lower=True)
        column="e_message_normalized"
 
+#df = enricher.words(column)
+#df = enricher.alphanumerics(column)
+#df = enricher.trigrams(column) #carefull might be slow
+
+#Split to words in sklearn
+sad =  ad.SupervisedAnomalyDetection(item_list_col="m_message")
+sad.test_train_split (df, test_frac=0.95)
+sad.evaluate_all_ads()
+
+
+#Split to words in polars.
 df = enricher.words(column)
-df = enricher.alphanumerics(column)
-df = enricher.trigrams(column) #carefull might be slow
-
-#Add anomaly scores for each line.
-#event_ad = ad.EventAnomalyDetection(df)
-#df = event_ad.compute_ano_score("e_words", 100)
-#df = event_ad.compute_ano_score("e_alphanumerics", 100)
-#df = event_ad.compute_ano_score("e_cgrams", 100)
-
-#Predict all new way
 sad =  ad.SupervisedAnomalyDetection(item_list_col="e_words")
 sad.test_train_split (df, test_frac=0.95)
 sad.evaluate_all_ads()

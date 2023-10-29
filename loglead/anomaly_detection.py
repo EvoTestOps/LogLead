@@ -86,9 +86,6 @@ class RarityModel:
         # Getting the count of non-zero elements along axis 1 (columns) for each instance
         non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  # Convert to float64 here
         non_zero_counts[non_zero_counts == 0] = 1  # Now this line will work as intended
-        # Computing the dot product of X_test_csr and score_vector
-        print("X_test_csr dimensions:", X_test_csr.shape)
-        print("self.score_vector dimensions:", self.score_vector.shape)
         self.scores = X_test_csr.dot(self.score_vector)
         # Ensuring self.scores is a float array
         self.scores = self.scores.astype(np.float64)
@@ -156,20 +153,22 @@ class SupervisedAnomalyDetection:
         self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col)))
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df)
         
+        
     def _prepare_data(self, train, df_seq):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
         # Extract events
         if self.item_list_col:
-            events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
-            if self.enable_analyzer:
-                events = [' '.join(e) for e in events]
+            # Extract the column
+            column_data = df_seq.select(pl.col(self.item_list_col))             
+            events = column_data.to_series().to_list()
             # We are training
             if train:
-                if self.enable_analyzer: #it's enabled by default
+                # Check the datatype  
+                if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
                     self.vectorizer = CountVectorizer() 
-                else:
+                elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
                     self.vectorizer = CountVectorizer(analyzer=lambda x: x)
                 X = self.vectorizer.fit_transform(events)
             # We are predicting
@@ -191,9 +190,8 @@ class SupervisedAnomalyDetection:
             additional_features = df_seq.select(self.numeric_cols).to_pandas().values
             X = hstack([X, additional_features]) if X is not None else additional_features
 
-        return X, labels
+        return X, labels    
         
-
     def dep_prepare_data(self, train, df_seq):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
