@@ -1,5 +1,7 @@
 import polars as pl
 import drain3 as dr
+import parsers.lenma.lenma_template as lmt
+import hashlib
 from .bertembedding import BertEmbeddings
 import os
 
@@ -112,6 +114,27 @@ class EventLogEnricher:
             # tm.drain.print_tree()
 
         return self.df
+    
+    def parse_lenma(self, masking=True, reparse=False):
+        self._handle_prerequisites(["e_words"])
+        if reparse or "e_event_lenma_id" not in self.df.columns:
+
+            self.lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
+            self.df = self.df.with_row_count()
+            self.df = self.df.with_columns(
+                lenma=pl.struct(["e_words", "row_nr"])
+                .map_elements(lambda x: self.lenma_tm.infer_template(x["e_words"], x["row_nr"])))
+
+            def extract_id(obj):
+                template_str = " ".join(obj.words)
+                eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
+                return eid
+
+            self.df = self.df.with_columns(
+                e_event_lenma_id= pl.col("lenma").map_elements(lambda x:extract_id(x))
+            )
+        return self.df
+
 
     def create_neural_emb(self):
         self._handle_prerequisites(["m_message"])

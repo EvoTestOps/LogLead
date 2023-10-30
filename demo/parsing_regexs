@@ -1,49 +1,60 @@
-import loader as load, enricher as er, anomaly_detection as ad
+import sys
+sys.path.append('..')
+import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
 
-#Which one to run. Only one true. 
-b_hadoop = False
-b_hdfs = True
-b_profilence = False
-
-
-# Loading HDFS Logs----------------------------------------------------------------
-#hdfs_processor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
-#                                     labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
-#df = hdfs_processor.execute()
-#smaller hdfs for faster running. Parsing of whole HDFS takes about 11min
-#df = hdfs_processor.reduce_dataframes(frac=0.2)
+full_data = "/home/ubuntu/Datasets"
+private_data ="../private_data"
+dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small
 
 df = None
 df_seq = None
-preprocessor = None
+loader = None
 
-if (b_hadoop):
-       preprocessor = load.HadoopLoader(filename="../../../Datasets/hadoop/",
+if dataset=="hadoop":
+       loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                                  filename_pattern  ="*.log",
-                                                 labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
+                                                 labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
+elif dataset=="hdfs":
+       loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
+                                          labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
+elif dataset=="pro":
+       loader = load.ProLoader(filename=f"{full_data}/profilence/*.txt")
+elif dataset=="tb":
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+elif dataset=="tb-small":
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird_2k.log") #Only 2k lines
+elif dataset=="hdfs_s_parq":
+       import polars as pl
+       df = pl.read_parquet(f"{private_data}/hdfs_events_002.parquet")
+       df_seq = pl.read_parquet(f"{private_data}/hdfs_seqs_002.parquet")
 
-elif (b_hdfs):
-       preprocessor = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
-                                          labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
-
-elif (b_profilence):
-       preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
-
-df = preprocessor.execute()
-if (not b_hadoop):
-    df = preprocessor.reduce_dataframes(frac=0.30)
-df_seq = preprocessor.df_sequences
+if loader != None:
+       df = loader.execute()
+       if (dataset != "hadoop"):
+              df = loader.reduce_dataframes(frac=0.002)
+       df_seq = loader.df_sequences       
+       if (dataset == "hdfs"):
+              df.write_parquet(f"{private_data}/hdfs_events_002.parquet")
+              df_seq.write_parquet(f"{private_data}/hdfs_seqs_002.parquet")
+              
 
 #-Event enrichment----------------------------------------------
 # Using regexes for normalization
-enricher = er.EventLogEnricher(df)
 
 #Drain parsing with LogLEAD masking 
 #Faster by 60%
+enricher = er.EventLogEnricher(df)
 df = enricher.normalize()
 df = enricher.parse_drain(reparse=True)
-#This is equal to below. With Drainmasking Compared to this
+#This is equal to above. With Drainmasking Compared to this
 df = enricher.parse_drain(drain_masking=True,reparse=True)
+
+#Lenma parsing
+enricher = er.EventLogEnricher(df)
+df = enricher.normalize()
+df = enricher.words(column = "e_message_normalized")
+enricher.df = enricher.df[0:20000] # Takes about 10s in HDFS data
+df_lenma = enricher.parse_lenma()
 
 #Check the results
 import polars as pl
@@ -51,3 +62,7 @@ import polars as pl
 df.select(pl.col("e_message_normalized"))[0,0]
 #This is the original log message
 df.select(pl.col("m_message"))[0,0]
+#This lenma event id
+df_lenma.select(pl.col("e_event_lenma_id"))[0,0]
+#This is drain event id
+df.select(pl.col("e_event_id"))[0,0]
