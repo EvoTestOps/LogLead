@@ -38,31 +38,41 @@ if loader != None:
               df_seq.write_parquet(f"{private_data}/hdfs_seqs_002.parquet")
               
 
-#-Event enrichment----------------------------------------------
-# Using regexes for normalization
 
-#Drain parsing with LogLEAD masking 
+#Drain parsing with and without LogLEAD masking --------------------------------------------------------
 #Faster by 60%
 enricher = er.EventLogEnricher(df)
-df = enricher.normalize()
-df = enricher.parse_drain(reparse=True)
+#Normalize message regexes
+df_d = enricher.normalize()
+df_d = enricher.parse_drain(reparse=True)
 #This is equal to above. With Drainmasking Compared to this
-df = enricher.parse_drain(drain_masking=True,reparse=True)
+df_d = enricher.parse_drain(drain_masking=True,reparse=True)
 
-#Lenma parsing
+#Drain, Lenma and Spell parsing----------------------------------------------------------------
 enricher = er.EventLogEnricher(df)
 df = enricher.normalize()
 df = enricher.words(column = "e_message_normalized")
-enricher.df = enricher.df[0:20000] # Takes about 10s in HDFS data
-df_lenma = enricher.parse_lenma()
+enricher.df = enricher.df[0:20000] 
+df_parsers = enricher.parse_lenma() # Takes about 10s in HDFS data
+df_parsers = enricher.parse_spell()
+df_parsers = enricher.parse_drain()
 
-#Check the results
+#Check the results-------------------------------------------------------
 import polars as pl
 #Executing this show the normalized log message
 df.select(pl.col("e_message_normalized"))[0,0]
 #This is the original log message
 df.select(pl.col("m_message"))[0,0]
-#This lenma event id
-df_lenma.select(pl.col("e_event_lenma_id"))[0,0]
+
 #This is drain event id
-df.select(pl.col("e_event_id"))[0,0]
+df_parsers.select(pl.col("e_event_id"))[0,0]
+#This lenma event id
+df_parsers.select(pl.col("e_event_lenma_id"))[0,0]
+#Spell event id
+df_parsers.select(pl.col("e_event_spell_id"))[0,0]
+#Templates
+df_parsers.select(pl.col("e_template"))[0,0] #Drain
+df_parsers.select(pl.col("e_template_lenma"))[0,0] #Lenma
+df_parsers.select(pl.col("e_template_spell"))[0,0] #Spell
+
+

@@ -1,6 +1,7 @@
 import polars as pl
 import drain3 as dr
 import parsers.lenma.lenma_template as lmt
+from parsers.pyspell.spell import lcsmap, lcsobj
 import hashlib
 from .bertembedding import BertEmbeddings
 import os
@@ -66,12 +67,6 @@ class EventLogEnricher:
             return []
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
 
-    #Parse Spell
-    #https://github.com/simonemainardi/pyspell
-    #https://github.com/nbigaouette/spell-rs
-    #https://github.com/nailo2c/spellpy/
-
-
     # Enrich with drain parsing results
     def parse_drain(self, drain_masking=False, reparse=False):
         self._handle_prerequisites(["m_message"])
@@ -88,8 +83,9 @@ class EventLogEnricher:
             # Use only first line of log message for parsing
             current_script_path = os.path.abspath(__file__)
             current_script_directory = os.path.dirname(current_script_path)
+            drain3_ini_location =  os.path.join(current_script_directory, '../parsers/drain3/')
             if drain_masking:
-                dr.template_miner.config_filename = os.path.join(current_script_directory, 'drain3.ini') #TODO fix the path relative
+                dr.template_miner.config_filename = os.path.join(drain3_ini_location,'drain3.ini') #TODO fix the path relative
                 self.tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
                     message_trimmed=pl.col("m_message").str.split("\n").list.first()
@@ -99,7 +95,7 @@ class EventLogEnricher:
             else:
                 if "e_message_normalized" not in self.df.columns:
                     self.normalize()
-                dr.template_miner.config_filename =os.path.join(current_script_directory, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
+                dr.template_miner.config_filename =os.path.join(drain3_ini_location, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
                 self.tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
                     drain=pl.col("e_message_normalized").map_elements(lambda x: self.tm.add_log_message(x)))
@@ -108,13 +104,11 @@ class EventLogEnricher:
                 e_event_id=pl.lit("e") + pl.col("drain").struct.field("cluster_id").cast(pl.Utf8),
                 # extra thing ensure we e1 e2 instead of 1 2
                 e_template=pl.col("drain").struct.field("template_mined"))
-            self.df = self.df.drop(
-                "drain")  # Drop the dictionary produced by drain. Event_id and template are the most important.
-
+            self.df = self.df.drop("drain")  # Drop the dictionary produced by drain. Event_id and template are the most important.
             # tm.drain.print_tree()
-
         return self.df
     
+    #https://github.com/keiichishima/templateminer
     def parse_lenma(self, masking=True, reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
@@ -122,19 +116,46 @@ class EventLogEnricher:
             self.lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
             self.df = self.df.with_row_count()
             self.df = self.df.with_columns(
-                lenma=pl.struct(["e_words", "row_nr"])
+                lenma_obj=pl.struct(["e_words", "row_nr"])
                 .map_elements(lambda x: self.lenma_tm.infer_template(x["e_words"], x["row_nr"])))
-
             def extract_id(obj):
                 template_str = " ".join(obj.words)
                 eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
-                return eid
+                return {'eid':eid, 'template_str':template_str}
 
             self.df = self.df.with_columns(
-                e_event_lenma_id= pl.col("lenma").map_elements(lambda x:extract_id(x))
+                lenma_info= pl.col("lenma_obj").map_elements(lambda x:extract_id(x))
             )
+            self.df = self.df.with_columns(
+                e_event_lenma_id = pl.col("lenma_info").struct.field("eid"),
+                e_template_lenma = pl.col("lenma_info").struct.field("template_str"))
+            self.df = self.df.drop(["lenma_obj", "lenma_info", "row_nr"])
         return self.df
 
+    #https://github.com/bave/pyspell/
+    def parse_spell(self, masking=True, reparse=False):
+        self._handle_prerequisites(["m_message"])
+        if reparse or "e_event_spell_id" not in self.df.columns:
+            if "e_message_normalized" not in self.df.columns:
+                self.normalize()
+            self.spell = lcsmap(r'\s+')
+            self.df = self.df.with_columns(
+                spell_obj=pl.col("e_message_normalized")
+                .map_elements(lambda x: self.spell.insert(x)))
+
+            def extract_id(obj):
+                template_str = " ".join(obj._lcsseq)
+                eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
+                return {'eid':eid, 'template_str':template_str}
+
+            self.df = self.df.with_columns(
+                 spell_info= pl.col("spell_obj").map_elements(lambda x:extract_id(x))
+            )
+            self.df = self.df.with_columns(
+                e_event_spell_id = pl.col("spell_info").struct.field("eid"),
+                e_template_spell = pl.col("spell_info").struct.field("template_str"))
+            self.df = self.df.drop(["spell_obj", "spell_info"])
+        return self.df
 
     def create_neural_emb(self):
         self._handle_prerequisites(["m_message"])

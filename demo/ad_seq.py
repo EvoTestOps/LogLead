@@ -1,6 +1,6 @@
 #Sequence levels prediction
 import sys
-sys.path.append('/home/ubuntu/Development/mika/LogLEAD')
+sys.path.append('..')
 import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
 import time
 
