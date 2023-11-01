@@ -3,7 +3,8 @@ import drain3 as dr
 import parsers.lenma.lenma_template as lmt
 from parsers.pyspell.spell import lcsmap, lcsobj
 import hashlib
-from .bertembedding import BertEmbeddings
+#Lazy import inside the method. 
+#from .bertembedding import BertEmbeddings
 import os
 
 # Drain.ini default regexes
@@ -160,36 +161,11 @@ class EventLogEnricher:
     def create_neural_emb(self):
         self._handle_prerequisites(["m_message"])
         if "e_bert_emb" not in self.df.columns:
-            # We might have multiline log message, i.e. log_message + stack trace.
-            # Use only first line of log message for parsing
-
-            #            self.df = self.df.with_columns(
-            #                message_trimmed=pl.col("m_message").str.split("\n").list.first()
-            #                .str.to_lowercase()
-            #                .str.replace_all(r"[0-9\W_]", " ")
-            #                .str.replace_all(r"\s+", " ")
-            #                .str.replace_all(r"^\s+|\s+$", "")
-            #            )
+            #Lazy import only if needed
+            from .bertembedding import BertEmbeddings
             if "e_message_normalized" not in self.df.columns:
                 self.normalize()
-            # create a BertEmbeddings class instance
-            # MM: Do we need the generator later?
-            # For example if predictions need to be done much after training
-            # e.g. we train and then go to production where prediction take place.
-            # if so then this should be
-            # YQ: It depends on the situation. E.g., for my fusion model, I define it in '__main__',
-            # to save the processing time, i.e., define one time and use it in all places
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")
-            # bert_emb_gen = BertEmbeddings()
-            # obtain bert sentence embedding
-            # MM: Is it possible to do this map or map_elements as in line 70?
-            # MM: Or is there too much performance hit?
-            # MM: This makes unnessary copies from and to polars dataframe.
-            # YQ: map or map_elements do the operation on "each element" of a column in the DataFrame.
-            # YQ: We can create Bert embedding for "each element" and map it to a column, but it takes heavy computing resources
-            # YQ: Because it fetch model and generate output again and again
-            # YQ: You can see from the current bertembedding class, I feed all values on self.df['message_trimmed'] to Bert
-            # YQ: This means we only fetch model and generate output one time.
             message_trimmed_list = self.df['e_message_normalized'].to_list()
             message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
             # Convert the eager tensor to a NumPy array
@@ -199,9 +175,6 @@ class EventLogEnricher:
             })
 
             self.df = self.df.hstack(bert_emb_col_df)
-            # print(self.df["e_bert_emb"][1])
-            # Albert, b_hadoop, 177592 entries, Time taken: 375.30 seconds
-            # Base Bert, b_hadoop, 177592 entries, Time taken: 601.45 seconds
         return self.df
 
     def length(self):
@@ -255,9 +228,9 @@ class SequenceEnricher:
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
 
-    def events(self):
+    def events(self, event_col = "e_event_id"):
         # Aggregate event ids into a list for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(events=pl.col('e_event_id'))
+        df_temp = self.df.group_by('seq_id').agg(pl.col(event_col).alias(event_col))
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
@@ -290,3 +263,12 @@ class SequenceEnricher:
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences    
+    
+    def embeddings(self, embedding_column="e_bert_emb"):
+        # Aggregate by averaging the embeddings for each sequence (seq_id)
+        df_temp = self.df.select(pl.col("seq_id"), pl.col(embedding_column).list.to_struct()).unnest(embedding_column)
+        df_temp = df_temp.group_by('seq_id').mean()
+        df_temp = df_temp.select(pl.col("seq_id"),pl.concat_list(pl.col("*").exclude("seq_id")).alias(embedding_column))
+        # Join this result with df_sequences on seq_id
+        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
+        return self.df_sequences

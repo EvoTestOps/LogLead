@@ -128,7 +128,7 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SupervisedAnomalyDetection:
-    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="normal", enable_analyzer=True):
+    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", enable_analyzer=True):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
@@ -136,16 +136,17 @@ class SupervisedAnomalyDetection:
         self.enable_analyzer = enable_analyzer
         #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
         
-    def test_train_split(self, df, test_frac):
-        # Shuffle the DataFrame
-        df = df.sample(fraction = 1.0, shuffle=True)
-        # Split ratio
-        test_size = int(test_frac * df.shape[0])
+    def test_train_split(self, df, new_split=True,  test_frac=0.9):
+        if new_split:
+            # Shuffle the DataFrame
+            df = df.sample(fraction = 1.0, shuffle=True)
+            # Split ratio
+            test_size = int(test_frac * df.shape[0])
 
-        # Split the DataFrame using head and tail
-        self.test_df = df.head(test_size)
-        self.train_df = df.tail(-test_size)
-        
+            # Split the DataFrame using head and tail
+            self.test_df = df.head(test_size)
+            self.train_df = df.tail(-test_size)
+            
         #Prepare all data for running
         self.X_train, self.labels_train = self._prepare_data(True, self.train_df)
         self.X_test, self.labels_test = self._prepare_data(False, self.test_df)
@@ -380,6 +381,7 @@ class SupervisedAnomalyDetection:
                     method()
                     self.predict()
                     print(f'Total time: {time.time()-time_start:.2f} seconds')
+        print("---------------------------------------------------------------")
 
 
     def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):

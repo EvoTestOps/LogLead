@@ -1,10 +1,9 @@
 #This file performs same actions in both LogLEAD and in LogParsers code. 
 # LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
  
-#Separate demo files
 import sys
 import time
-sys.path.append('/home/ubuntu/Development/mika/LogLEAD/')
+sys.path.append('..')
 import polars as pl
 
 import loglead.loader as load

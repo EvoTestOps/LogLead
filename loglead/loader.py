@@ -21,8 +21,12 @@ class BaseLoader:
         self.df_sequences = df_sequences #sequence level dataframe
 
     def load(self):
-        raise NotImplementedError
-
+        print(f"WARNING! You using dummy loader. This will results in dataframe with single column only titled: m_message"
+              f"Consider implmenting dataset specific loader")
+        self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
+                        separator=self._csv_separator, ignore_errors=True)
+        self.df = df.rename({"column_1": "m_message"})
+        
     def preprocess(self):
         raise NotImplementedError
 
@@ -32,7 +36,19 @@ class BaseLoader:
         self.preprocess()
         self.check_for_nulls() 
         self.check_mandatory_columns()
+        self.add_ano_col()
         return self.df
+    
+    def add_ano_col(self):
+        # Check if the 'normal' column exists
+        if self.df is not None and  "normal" in self.df.columns:
+            # Create the 'anomaly' column by inverting the boolean values of the 'normal' column
+            self.df = self.df.with_columns(pl.col("normal").not_().alias("anomaly"))
+        if self.df_sequences is not None and "normal" in self.df_sequences:
+            # Create the 'anomaly' column by inverting the boolean values of the 'normal' column
+            self.df_sequences = self.df_sequences.with_columns(pl.col("normal").not_().alias("anomaly"))
+        self._mandatory_columns = ["m_message"]
+
     
     def check_for_nulls(self):
         null_counts = {}  # Dictionary to store count of nulls for each column
