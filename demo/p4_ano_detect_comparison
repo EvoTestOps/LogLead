@@ -7,14 +7,11 @@ import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection
 full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
 
-
 loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
                                             labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
-
-
 loader.execute()
 
-#df = loader.reduce_dataframes(0.001)
+df = loader.reduce_dataframes(0.001)
 df = loader.reduce_dataframes(0.1)
 df_seq =  loader.df_sequences
 
@@ -26,8 +23,13 @@ df = enricher.parse_spell()
 df = enricher.parse_lenma()
 df = enricher.create_neural_emb()
 
-df.write_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
-df_seq.write_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
+#df.write_parquet(f"{private_data}/P4_Parsed_hdfs_events_0001.parquet")
+#df_seq.write_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_0001.parquet")
+#df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_0001.parquet")
+#df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_0001.parquet")
+
+df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
+df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 
 
 seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
@@ -44,23 +46,39 @@ from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 #Disable unsupervised
 disable = ["train_IsolationForest", "train_LOF","train_KMeans", "train_OneClassSVM", "train_RarityModel"]
-sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
-sad.test_train_split (seq_enricher.df_sequences, test_frac=0.5)
-sad.evaluate_all_ads(disabled_methods=disable)
+#Need a loop to run these multiple times
+sad = ad.SupervisedAnomalyDetection(store_scores=True, print_scores=False)
 
-sad.item_list_col = "e_event_id"
-sad.test_train_split (seq_enricher.df_sequences, new_split=False)
-sad.evaluate_all_ads(disabled_methods=disable)
+for i in range(10):
+    print (f"{i}", end ="")
+    sad.item_list_col = "e_words"
+    sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
+    sad.evaluate_all_ads(disabled_methods=disable)
+    print(".", end="")
+    sad.item_list_col = "e_event_id"
+    sad.test_train_split (seq_enricher.df_sequences, new_split=False)
+    sad.evaluate_all_ads(disabled_methods=disable)
+    print(".", end="")
+    sad.item_list_col ="e_event_lenma_id"
+    sad.test_train_split (seq_enricher.df_sequences, new_split=False)
+    sad.evaluate_all_ads(disabled_methods=disable)
+    print(".", end="")
+    sad.item_list_col ="e_event_spell_id"
+    sad.test_train_split (seq_enricher.df_sequences, new_split=False)
+    sad.evaluate_all_ads(disabled_methods=disable)
+    print(".")
+    sad.item_list_col =None
+    sad.emb_list_col = "e_bert_emb"
+    sad.test_train_split (seq_enricher.df_sequences, new_split=False)
+    sad.evaluate_all_ads(disabled_methods=disable)
+    sad.emb_list_col = None
 
-sad.item_list_col ="e_event_lenma_id"
-sad.test_train_split (seq_enricher.df_sequences, new_split=False)
-sad.evaluate_all_ads(disabled_methods=disable)
 
-sad.item_list_col ="e_event_spell_id"
-sad.test_train_split (seq_enricher.df_sequences, new_split=False)
-sad.evaluate_all_ads(disabled_methods=disable)
 
-sad.item_list_col =None
-sad.emb_list_col = "e_bert_emb"
-sad.test_train_split (seq_enricher.df_sequences, new_split=False)
-sad.evaluate_all_ads(disabled_methods=disable)
+#-----------------------------------------------
+print(sad.storage.calculate_average_scores(score_type="f1").to_csv())
+sad.storage.print_confusion_matrices()
+sad.storage.print_confusion_matrices("RandomForestClassifier","e_words")
+
+sad.storage.print_scores()
+sad.storage.print_scores("RandomForestClassifier","e_words")

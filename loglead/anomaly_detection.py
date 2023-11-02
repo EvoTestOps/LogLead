@@ -15,6 +15,12 @@ from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.svm import OneClassSVM
+from sklearn.metrics import f1_score
+from sklearn.metrics import confusion_matrix
+import csv
+from io import StringIO
+import pandas as pd
+
 
 from sklearn.metrics import accuracy_score
 from scipy.sparse import hstack
@@ -128,13 +134,16 @@ def test_train_split(df, test_frac):
     return train_df, test_df
 
 class SupervisedAnomalyDetection:
-    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", enable_analyzer=True):
+    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
+                 store_scores=False, print_scores=True, enable_analyzer=True):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
         self.emb_list_col = emb_list_col
         self.enable_analyzer = enable_analyzer
-        #self.events, self.labels, self.additional_features = self._prepare_data(self.df_train)
+        self.store_scores = store_scores
+        self.storage = ModelResultsStorage()
+        self.print_scores=print_scores
         
     def test_train_split(self, df, new_split=True,  test_frac=0.9):
         if new_split:
@@ -245,7 +254,7 @@ class SupervisedAnomalyDetection:
         self.model = model
         self.model.fit(X_train, labels)
     
-    def predict(self, print_scores=True, custom_plot=False):
+    def predict(self, custom_plot=False):
         #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
         predictions = self.model.predict(X_test_to_use)
@@ -253,10 +262,13 @@ class SupervisedAnomalyDetection:
         if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
             predictions = np.where(predictions > 0, 1, 0)
         df_seq = self.test_df.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
-        if print_scores:
+        if self.print_scores:
             self._print_evaluation_scores(self.labels_test, predictions, self.model)
         if custom_plot:
             self.model.custom_plot(self.labels_test)
+        if self.store_scores:
+            self.storage.store_test_results(self.labels_test, predictions, self.model, 
+                                            self.item_list_col, self.numeric_cols, self.emb_list_col)
         return df_seq 
        
     def dep_predict(self, df_seq, print_scores=True, custom_plot=False):
@@ -380,25 +392,26 @@ class SupervisedAnomalyDetection:
                     time_start = time.time()
                     method()
                     self.predict()
-                    print(f'Total time: {time.time()-time_start:.2f} seconds')
-        print("---------------------------------------------------------------")
+                    if self.print_scores:
+                        print(f'Total time: {time.time()-time_start:.2f} seconds')
+        if self.print_scores:
+            print("---------------------------------------------------------------")
 
 
     def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
-        print(f"Accuracy: {accuracy:.2f}")
+        print(f"Accuracy: {accuracy:.4f}")
         
-        from sklearn.metrics import f1_score
+
         # Compute the F1 score
         f1 = f1_score(y_test, y_pred)
         # Print the F1 score
-        print(f"F1 Score: {f1:.2f}")
+        print(f"F1 Score: {f1:.4f}")
 
 
-        # Compute the confusion matrix--------------------------------------------------
-        from sklearn.metrics import confusion_matrix
+
         #import matplotlib.pyplot as plt
         #import seaborn as sns
         cm = confusion_matrix(y_test, y_pred)
@@ -428,4 +441,185 @@ class SupervisedAnomalyDetection:
             print("\nTop Important Predictors:")
             for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
                 print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
-                
+
+
+
+class ModelResultsStorage:
+    def __init__(self):
+        self.test_results = []
+
+    def _create_input_signature(self, item_list_col, numeric_cols, emb_list_col):
+        # Create the input signature by concatenating all input types
+        input_parts = (
+            item_list_col if item_list_col is not None else [],
+            numeric_cols if numeric_cols is not None else [],
+            emb_list_col if emb_list_col is not None else [],
+        )
+        input_signature = ''.join(str(item) for sublist in input_parts for item in sublist)
+        return input_signature
+
+    def store_test_results(self, y_test, y_pred, model, item_list_col=None, numeric_cols=None, emb_list_col=None):
+        input_signature = self._create_input_signature(item_list_col, numeric_cols, emb_list_col)
+
+        result = {
+            'model': model,
+            'y_test': y_test,
+            'y_pred': y_pred,
+            'input_signature': input_signature,
+        }
+        self.test_results.append(result)
+
+    def calculate_average_scores(self, score_type='accuracy'):
+        if score_type not in ['accuracy', 'f1']:
+            raise ValueError("score_type must be 'accuracy' or 'f1'.")
+
+        # Create a list to store each row of the DataFrame
+        data_for_df = []
+
+        # Iterate over stored results and calculate scores
+        for result in self.test_results:
+            model_name = type(result['model']).__name__
+            input_signature = result['input_signature']
+            
+            # Calculate scores
+            acc = accuracy_score(result['y_test'], result['y_pred'])
+            f1 = f1_score(result['y_test'], result['y_pred'], average='weighted')
+            
+            # Append row to the list
+            data_for_df.append({
+                'Model': model_name,
+                'Input Signature': input_signature,
+                'Accuracy': acc,
+                'F1 Score': f1
+            })
+
+        # Convert the list to a DataFrame
+        df = pd.DataFrame(data_for_df)
+
+        # Calculate average scores
+        if score_type == 'accuracy':
+            df_average = df.groupby(['Model', 'Input Signature']).agg({'Accuracy': 'mean'}).reset_index()
+        else:
+            df_average = df.groupby(['Model', 'Input Signature']).agg({'F1 Score': 'mean'}).reset_index()
+
+        # Pivot the DataFrame to get Input Signatures as columns
+        score_column = 'Accuracy' if score_type == 'accuracy' else 'F1 Score'
+        df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_column).reset_index()
+
+
+        # Pivot the DataFrame to get Input Signatures as columns
+        #df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_type.capitalize()).reset_index()
+
+        # Fill NaN values with 0 or an appropriate value
+        df_pivot.fillna(0, inplace=True)
+
+        return df_pivot
+
+    def print_confusion_matrices(self, model_filter=None, signature_filter=None):
+        for result in self.test_results:
+            model_name = type(result['model']).__name__
+            input_signature = result['input_signature']
+            cm = confusion_matrix(result['y_test'], result['y_pred'])
+
+            # Check if model_name matches model_filter, if provided
+            if model_filter and model_name != model_filter:
+                continue
+
+            # Check if input_signature matches signature_filter, if provided
+            if signature_filter and input_signature != signature_filter:
+                continue
+
+            print(f"Model: {model_name}")
+            print(f"Input Signature: {input_signature}")
+            print("Confusion Matrix:")
+            print(cm)
+            
+
+    def print_scores(self, model_filter=None, signature_filter=None, score_type='all'):
+        # Check for valid score_type
+        valid_score_types = ['accuracy', 'f1', 'all']
+        if score_type not in valid_score_types:
+            raise ValueError(f"score_type must be one of {valid_score_types}")
+
+        for result in self.test_results:
+            model_name = type(result['model']).__name__
+            input_signature = result['input_signature']
+            acc = accuracy_score(result['y_test'], result['y_pred'])
+            f1 = f1_score(result['y_test'], result['y_pred'], average='weighted')
+
+            # Filter results
+            if model_filter and model_name != model_filter:
+                continue
+            if signature_filter and input_signature != signature_filter:
+                continue
+
+            # Print results based on score_type
+            print(f"Model: {model_name}")
+            print(f"Input Signature: {input_signature}")
+            if score_type in ['accuracy', 'all']:
+                print(f"Accuracy: {acc:.4f}")
+            if score_type in ['f1', 'all']:
+                print(f"F1 Score: {f1:.4f}")
+
+
+
+
+class ModelResultsStorageOLD:
+    def __init__(self):
+        self.test_results = []
+
+    def store_test_results(self, y_test, y_pred, model, item_list_col=None, numeric_cols=None, emb_list_col=None):
+        result = {
+            'model': model,
+            'y_test': y_test,
+            'y_pred': y_pred,
+            'item_list_col': item_list_col,
+            'numeric_cols': numeric_cols,
+            'emb_list_col': emb_list_col
+        }
+        self.test_results.append(result)
+
+    def calculate_average_scores(self, score_type='accuracy'):
+        if score_type not in ['accuracy', 'f1']:
+            raise ValueError("score_type must be 'accuracy' or 'f1'.")
+
+        # Create a list to store each row of the DataFrame
+        data_for_df = []
+
+        # Iterate over stored results and calculate scores
+        for result in self.test_results:
+            model_name = type(result['model']).__name__
+            input_signature = ''.join(str(item) for sublist in (
+                result.get('item_list_col') or [],
+                result.get('numeric_cols') or [],
+                result.get('emb_list_col') or [],
+            ) for item in sublist)  # Flatten input_signature
+            
+            # Calculate scores
+            acc = accuracy_score(result['y_test'], result['y_pred'])
+            f1 = f1_score(result['y_test'], result['y_pred'], average='weighted')
+            
+            # Append row to the list
+            data_for_df.append({
+                'Model': model_name,
+                'Input Signature': input_signature,
+                'Accuracy': acc,
+                'F1 Score': f1
+            })
+
+        # Convert the list to a DataFrame
+        df = pd.DataFrame(data_for_df)
+
+        # Calculate average scores
+        if score_type == 'accuracy':
+            df_average = df.groupby(['Model', 'Input Signature']).agg({'Accuracy': 'mean'}).reset_index()
+        else:
+            df_average = df.groupby(['Model', 'Input Signature']).agg({'F1 Score': 'mean'}).reset_index()
+
+        # Pivot the DataFrame to get Input Signatures as columns
+        df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_type.capitalize()).reset_index()
+
+        # Fill NaN values with 0 or an appropriate value
+        df_pivot.fillna(0, inplace=True)
+
+        return df_pivot
