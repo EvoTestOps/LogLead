@@ -34,7 +34,7 @@ for data in datas:
     df = data
     for parser in parsers:
         elapsed_times = []
-        for _ in range(3):
+        for _ in range(10):
             enricher = er.EventLogEnricher(df)
             start_time = time.time()
             df = enricher.normalize()
