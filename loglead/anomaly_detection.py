@@ -483,7 +483,7 @@ class ModelResultsStorage:
             
             # Calculate scores
             acc = accuracy_score(result['y_test'], result['y_pred'])
-            f1 = f1_score(result['y_test'], result['y_pred'], average='weighted')
+            f1 = f1_score(result['y_test'], result['y_pred'])
             
             # Append row to the list
             data_for_df.append({
@@ -545,7 +545,7 @@ class ModelResultsStorage:
             model_name = type(result['model']).__name__
             input_signature = result['input_signature']
             acc = accuracy_score(result['y_test'], result['y_pred'])
-            f1 = f1_score(result['y_test'], result['y_pred'], average='weighted')
+            f1 = f1_score(result['y_test'], result['y_pred'])
 
             # Filter results
             if model_filter and model_name != model_filter:
