@@ -28,6 +28,12 @@ import scipy.sparse
 import math
 import time
 
+from scipy.sparse import csr_matrix
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+
 class EventAnomalyDetection:
     def __init__(self, df):
         self.df = df
@@ -121,6 +127,28 @@ class RarityModel:
 
 
 
+def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=True):
+    # Compute the ROC curve
+    fpr, tpr, thresholds = roc_curve(labels, preds)
+    # Compute the AUC from the points of the ROC curve
+    roc_auc = auc(fpr, tpr)
+
+    if plot:
+        # Plot the ROC curve
+        plt.figure()
+        lw = 2
+        plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(titlestr)
+        plt.legend(loc="lower right")
+        plt.show()
+
+    return roc_auc
+
     
 def test_train_split(df, test_frac):
     # Shuffle the DataFrame
@@ -135,17 +163,18 @@ def test_train_split(df, test_frac):
 
 class SupervisedAnomalyDetection:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
-                 store_scores=False, print_scores=True, enable_analyzer=True):
+                 store_scores=False, print_scores=True):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
         self.emb_list_col = emb_list_col
-        self.enable_analyzer = enable_analyzer
         self.store_scores = store_scores
         self.storage = ModelResultsStorage()
         self.print_scores=print_scores
+        self.train_vocabulary = None
+
         
-    def test_train_split(self, df, new_split=True,  test_frac=0.9):
+    def test_train_split(self, df, new_split=True,  test_frac=0.9, vec_name="CountVectorizer", oov_analysis=False):
         if new_split:
             # Shuffle the DataFrame
             df = df.sample(fraction = 1.0, shuffle=True)
@@ -155,16 +184,25 @@ class SupervisedAnomalyDetection:
             # Split the DataFrame using head and tail
             self.test_df = df.head(test_size)
             self.train_df = df.tail(-test_size)
-            
-        #Prepare all data for running
-        self.X_train, self.labels_train = self._prepare_data(True, self.train_df)
-        self.X_test, self.labels_test = self._prepare_data(False, self.test_df)
-        #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col)))
-        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df)
+        
+            #Prepare all data for running
+            self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name, oov_analysis)
+            self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name, oov_analysis)
+
+            #No anomalies dataset is used for some unsupervised algos. 
+            self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
+            self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
+            if oov_analysis:
+                print(self.test_df)
+                oovtime = time.time()
+                oov_counts = np.array(self.test_df["oov_count"])
+                ano_labels = np.array(self.labels_test_no_anos).astype(int)
+                auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
+                print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
+
         
         
-    def _prepare_data(self, train, df_seq):
+    def _prepare_data(self, train, df_seq, vec_name, oov_analysis=False):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
@@ -173,17 +211,31 @@ class SupervisedAnomalyDetection:
             # Extract the column
             column_data = df_seq.select(pl.col(self.item_list_col))             
             events = column_data.to_series().to_list()
+            vectorizer_class = globals()[vec_name]
             # We are training
             if train:
                 # Check the datatype  
                 if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
-                    self.vectorizer = CountVectorizer() 
+                    self.vectorizer = vectorizer_class() 
                 elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
-                    self.vectorizer = CountVectorizer(analyzer=lambda x: x)
+                    self.vectorizer = vectorizer_class(analyzer=lambda x: x)
                 X = self.vectorizer.fit_transform(events)
+                self.train_vocabulary = self.vectorizer.vocabulary_
+
             # We are predicting
             else:
                 X = self.vectorizer.transform(events)
+                if oov_analysis:
+                    oov_vectorizer = CountVectorizer(analyzer=lambda x: x, binary=True)
+                    X_binary = oov_vectorizer.fit_transform(events)
+                    feature_names = oov_vectorizer.get_feature_names_out()
+                    oov_terms = set(feature_names) - set(self.train_vocabulary)
+                    oov_indicator = np.array([feature in oov_terms for feature in feature_names], dtype=int)
+                    oov_indicator_sparse = csr_matrix(oov_indicator)
+                    oov_counts = X_binary.dot(oov_indicator_sparse.T)
+                    oov_counts = oov_counts.toarray().ravel()
+                    self.test_df = self.test_df.with_columns(pl.Series(name="oov_count", values=oov_counts))
+                    
 
         # Extract lists of embeddings
         if  self.emb_list_col:
@@ -209,14 +261,10 @@ class SupervisedAnomalyDetection:
         # Extract events
         if self.item_list_col:
             events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
-            if self.enable_analyzer:
-                events = [' '.join(e) for e in events]
+            events = [' '.join(e) for e in events]
             # We are training
             if train:
-                if self.enable_analyzer: #it's enabled by default
-                    self.vectorizer = CountVectorizer() 
-                else:
-                    self.vectorizer = CountVectorizer(analyzer=lambda x: x)
+                self.vectorizer = CountVectorizer() 
                 X = self.vectorizer.fit_transform(events)
             # We are predicting
             else:
@@ -240,16 +288,14 @@ class SupervisedAnomalyDetection:
         return X, labels
 
          
-    def train_model(self, model, enable_analyzer=True, filter_anos=False):
-        self.enable_analyzer = enable_analyzer
+    def train_model(self, model, filter_anos=False):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
         self.model = model
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
-    def dep_train_model(self, df_seq, model,enable_analyzer=True):
-        self.enable_analyzer = enable_analyzer
+    def dep_train_model(self, df_seq, model):
         X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
         self.model = model
         self.model.fit(X_train, labels)
@@ -357,10 +403,10 @@ class SupervisedAnomalyDetection:
     def dep_train_RarityModel(self, df_seq, filter_anos=True, threshold=500):
         if filter_anos:
             df_seq = df_seq.filter(pl.col(self.label_col))
-        self.dep_train_model(df_seq, RarityModel(threshold), enable_analyzer=True)
+        self.dep_train_model(df_seq, RarityModel(threshold))
         
     def train_RarityModel(self, filter_anos=True, threshold=500):
-        self.train_model(RarityModel(threshold), enable_analyzer=True, filter_anos=filter_anos)
+        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
         
     def dep_evaluate_all_ads(self, train_df, test_df):
         for method_name in sorted(dir(self)):
@@ -441,6 +487,18 @@ class SupervisedAnomalyDetection:
             print("\nTop Important Predictors:")
             for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
                 print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
+                
+        #AUC-ROC analysis for selected unsupervised models      
+        titlestr = type(self.model).__name__ + " ROC"
+        X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
+        if isinstance(self.model, IsolationForest):
+            y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
+            auc_roc_analysis(y_test, y_pred, titlestr)
+        if isinstance(self.model, RarityModel):
+            auc_roc_analysis(y_test, model.scores, titlestr)
+        if isinstance(self.model, KMeans):
+            y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
+            auc_roc_analysis(y_test, y_pred, titlestr)
 
 
 
