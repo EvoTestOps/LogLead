@@ -73,12 +73,9 @@ for i in range(10):
     sad.evaluate_all_ads(disabled_methods=disable)
     sad.emb_list_col = None
 
-
-
 #-----------------------------------------------
 print(sad.storage.calculate_average_scores(score_type="f1").to_csv())
 sad.storage.print_confusion_matrices()
-sad.storage.print_confusion_matrices("RandomForestClassifier","e_words")
-
+sad.storage.print_confusion_matrices("LogisticRegression","e_bert_emb")
 sad.storage.print_scores()
-sad.storage.print_scores("RandomForestClassifier","e_words")
+sad.storage.print_scores("LogisticRegression","e_bert_emb", score_type="f1")

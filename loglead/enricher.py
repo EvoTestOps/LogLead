@@ -195,6 +195,15 @@ class EventLogEnricher:
             base_code += '.str.to_lowercase()'
 
         # Generate the replace_all chain
+        # TODO We need to duplicate everything otherwise we get only every other replacement in 
+        #"Folder_0012_2323_2324" -> After first replacement we get Folder Folder_<NUM>_2323_<NUM>
+        #After second replacement we get  Folder_<NUM>_<NUM>_<NUM>. This is ugly but due to Crate limitations
+        # https://docs.rs/regex/latest/regex/
+        # https://stackoverflow.com/questions/57497045/how-to-get-overlapping-regex-captures-in-rust
+        # Orig:     BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_200811092030_0001_m_000590_0/part-00590. blk_-1727475099218615100
+        # After 1st BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_<NUM>_0001_m_<NUM>_0/part-<NUM>. blk_<SEQ>'
+        # After 2nd BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_<NUM>_<NUM>_m_<NUM>_<NUM>/part-<NUM>. blk_<SEQ>'
+        #Longer explanation Overlapping Matches: The regex crate does not find overlapping matches by default. If your text has numbers that are immediately adjacent to each other with only a non-alphanumeric separator (which is consumed by the start or end group), the regex engine won't match the second number because the separator is already consumed by the first match.
         for key, pattern in regexs:
             replace_code = f'.str.replace_all(r"{pattern}", "{key}")'
             base_code += replace_code
