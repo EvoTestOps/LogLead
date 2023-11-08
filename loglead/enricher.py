@@ -8,7 +8,12 @@ import hashlib
 import os
 
 # Drain.ini default regexes
-# No lookahead or lookbedinde so reimplemented with capture groups
+# No lookahead or lookbedinde so reimplemented with capture groups. Still problem with overlaps See
+# https://docs.rs/regex/latest/regex/
+# https://stackoverflow.com/questions/57497045/how-to-get-overlapping-regex-captures-in-rust
+# Orig:     BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_200811092030_0001_m_000590_0/part-00590. blk_-1727475099218615100
+# After 1st BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_<NUM>_0001_m_<NUM>_0/part-<NUM>. blk_<SEQ>'
+# After 2nd BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_<NUM>_<NUM>_m_<NUM>_<NUM>/part-<NUM>. blk_<SEQ>'
 masking_patterns_drain = [
     ("${start}<ID>${end}", r"(?P<start>[^A-Za-z0-9]|^)(([0-9a-f]{2,}:){3,}([0-9a-f]{2,}))(?P<end>[^A-Za-z0-9]|$)"),
     ("${start}<IP>${end}", r"(?P<start>[^A-Za-z0-9]|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?P<end>[^A-Za-z0-9]|$)"),
@@ -162,7 +167,7 @@ class EventLogEnricher:
         self._handle_prerequisites(["m_message"])
         if "e_bert_emb" not in self.df.columns:
             #Lazy import only if needed
-            from .bertembedding import BertEmbeddings
+            from ..parsers.bert.bertembedding import BertEmbeddings
             if "e_message_normalized" not in self.df.columns:
                 self.normalize()
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")
@@ -186,7 +191,7 @@ class EventLogEnricher:
             )
         return self.df
 
-    def normalize(self, regexs=masking_patterns_drain, to_lower=False):
+    def normalize(self, regexs=masking_patterns_drain, to_lower=False, twice=True):
 
         # base_code = 'self.df = self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
         base_code = 'self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
@@ -207,6 +212,8 @@ class EventLogEnricher:
         for key, pattern in regexs:
             replace_code = f'.str.replace_all(r"{pattern}", "{key}")'
             base_code += replace_code
+            if twice:
+                base_code += replace_code
 
         base_code += ')'
         self.df = eval(base_code)

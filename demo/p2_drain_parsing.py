@@ -1,5 +1,5 @@
-#This file performs same actions in both LogLEAD and in LogParsers code. 
-# LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
+#This file performs same actions in both LogLead and in LogParsers code. 
+#LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
  
 import sys
 import time
@@ -11,7 +11,6 @@ import loglead.enricher as er
 import demo.p1_logparser_load as logparser
 
 full_data = "/home/ubuntu/Datasets"
-dataset ="hdfs"
 
 datasets = ["hdfs", "hadoop", "bgl"]
 
@@ -31,38 +30,60 @@ def create_correct_loader(dataset):
         
     return loader
 
-loader = create_correct_loader("tb")
-df = loader.execute()
 
+datasets = ["hadoop","hdfs", "bgl"]
+#datasets = ["tb"]
+# Assuming the function 'create_correct_loader' takes a string and returns an appropriate loader.
+# And 'execute' method of the loader returns a DataFrame-like object.
 
-enricher = er.EventLogEnricher(df)
+# Dictionary to store execution times for each dataset
 
-# List to store execution times for each method
-times_without_masking = []
-times_with_masking = []
+# Dictionary to store execution times and row counts for each dataset
+dataset_info = {
+    "without_masking": {dataset: {'times': [], 'row_count': None} for dataset in datasets},
+    "with_masking": {dataset: {'times': [], 'row_count': None} for dataset in datasets},
+}
 
-# Running without drain_masking
-for _ in range(1):
-    enricher_copy = er.EventLogEnricher(df)  # Assuming you want to use a fresh copy for each iteration
-    time_start = time.time()
-    df_temp = enricher_copy.normalize()
-    df_temp = enricher_copy.parse_drain(reparse=True)
-    elapsed_time = time.time() - time_start
-    times_without_masking.append(elapsed_time)
+for dataset_name in datasets:
+    loader = create_correct_loader(dataset_name)
+    df = loader.execute()
+    
+    # Store the row count for the current dataset
+    row_count = df.shape[0]
+    dataset_info["without_masking"][dataset_name]['row_count'] = row_count
+    dataset_info["with_masking"][dataset_name]['row_count'] = row_count
+    
+    enricher = er.EventLogEnricher(df)
 
-# Running with drain_masking
-for _ in range(1):
-    enricher_copy = er.EventLogEnricher(df)  # Assuming you want to use a fresh copy for each iteration
-    time_start = time.time()
-    df_temp = enricher_copy.parse_drain(drain_masking=True, reparse=True)
-    elapsed_time = time.time() - time_start
-    times_with_masking.append(elapsed_time)
+    # Running without drain_masking
+    for _ in range(1):
+        enricher_copy = er.EventLogEnricher(df)  # Use a fresh copy for each iteration
+        time_start = time.time()
+        df_temp = enricher_copy.normalize()
+        df_temp = enricher_copy.parse_drain(reparse=True)
+        elapsed_time = time.time() - time_start
+        dataset_info["without_masking"][dataset_name]['times'].append(elapsed_time)
 
-# Calculate average times
-avg_time_without_masking = sum(times_without_masking) / len(times_without_masking)
-avg_time_with_masking = sum(times_with_masking) / len(times_with_masking)
+    # Running with drain_masking
+    for _ in range(1):
+        enricher_copy = er.EventLogEnricher(df)  # Use a fresh copy for each iteration
+        time_start = time.time()
+        df_temp = enricher_copy.parse_drain(drain_masking=True, reparse=True)
+        elapsed_time = time.time() - time_start
+        dataset_info["with_masking"][dataset_name]['times'].append(elapsed_time)
 
-# Print out results
-print(f'Without Drainmasking: LogLead  average time over 10 runs: {avg_time_without_masking:.2f} seconds. {df.shape[0]} rows processed')
-print(f'With Drainmasking: LogLead  average time over 10 runs: {avg_time_with_masking:.2f} seconds. {df.shape[0]} rows processed')
+# Process the times and print out results for each dataset
+for dataset_name in datasets:
+    avg_time_without_masking = sum(dataset_info["without_masking"][dataset_name]['times']) / len(dataset_info["without_masking"][dataset_name]['times'])
+    avg_time_with_masking = sum(dataset_info["with_masking"][dataset_name]['times']) / len(dataset_info["with_masking"][dataset_name]['times'])
+
+    row_count_without_masking = dataset_info["without_masking"][dataset_name]['row_count']
+    row_count_with_masking = dataset_info["with_masking"][dataset_name]['row_count']
+
+    print(f'{dataset_name} - Without Drainmasking: average time: {avg_time_without_masking:.2f} seconds. {row_count_without_masking} rows processed')
+    print(f'{dataset_name} - With Drainmasking: average time: {avg_time_with_masking:.2f} seconds. {row_count_with_masking} rows processed')
+
+ 
+    
+    
 

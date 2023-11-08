@@ -185,20 +185,20 @@ class SupervisedAnomalyDetection:
             self.test_df = df.head(test_size)
             self.train_df = df.tail(-test_size)
         
-            #Prepare all data for running
-            self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name, oov_analysis)
-            self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name, oov_analysis)
+        #Prepare all data for running
+        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name, oov_analysis)
+        self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name, oov_analysis)
 
-            #No anomalies dataset is used for some unsupervised algos. 
-            self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
-            self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
-            if oov_analysis:
-                print(self.test_df)
-                oovtime = time.time()
-                oov_counts = np.array(self.test_df["oov_count"])
-                ano_labels = np.array(self.labels_test_no_anos).astype(int)
-                auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
-                print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
+        #No anomalies dataset is used for some unsupervised algos. 
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
+        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
+        if oov_analysis:
+            print(self.test_df)
+            oovtime = time.time()
+            oov_counts = np.array(self.test_df["oov_count"])
+            ano_labels = np.array(self.labels_test_no_anos).astype(int)
+            auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
+            print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
 
         
         
