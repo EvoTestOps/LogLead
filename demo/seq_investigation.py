@@ -28,21 +28,21 @@ df = preprocessor.execute()
 df_seq = preprocessor.df_sequences
 
 #Eventmax length--------------------------------
-event_enricher = er.EventLogEnhancer(df)
-df = event_enricher.length()
-seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
-seq_enricher.eve_len()
-seq_enricher.start_time()
-seq_enricher.end_time()
-seq_enricher.seq_len()
-seq_enricher.duration()
+event_enhancer = er.EventLogEnhancer(df)
+df = event_enhancer.length()
+seq_enhancer = er.SequenceEnhancer(df = df, df_sequences = df_seq)
+seq_enhancer.eve_len()
+seq_enhancer.start_time()
+seq_enhancer.end_time()
+seq_enhancer.seq_len()
+seq_enhancer.duration()
 
 
 df_seq = None
 if (b_hadoop):
-       df_seq = seq_enricher.df_sequences.filter(pl.col("app_name")=="WordCount") #"PageRank" to change app
+       df_seq = seq_enhancer.df_sequences.filter(pl.col("app_name")=="WordCount") #"PageRank" to change app
 
-df_seq = seq_enricher.df_sequences.select(
+df_seq = seq_enhancer.df_sequences.select(
               "normal",
               "eve_len_max",
               "eve_len_min",
@@ -119,7 +119,7 @@ for condition_name, count in filtered_counts.items():
 
 
 #Exploration of data. -------------------------------------------------------------
-df_seq = seq_enricher.df_sequences
+df_seq = seq_enhancer.df_sequences
 
 if (b_hadoop):
        df_seq.filter((pl.col("normal")==False) & 

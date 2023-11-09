@@ -7,7 +7,7 @@ sys.path.append('..')
 import polars as pl
 import copy
 import loglead.loader as load
-import loglead.enricher as er
+import loglead.enhancer as er
 from loglead.bertembedding import BertEmbeddings
 full_data = "/home/ubuntu/Datasets"
 

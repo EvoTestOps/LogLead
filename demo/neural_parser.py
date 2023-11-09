@@ -43,8 +43,8 @@ if loader != None:
 #TODO does not work df_seqs like hdfs if they have null
 df = df.filter(pl.col("m_message").is_not_null()) 
 #Create bert embeddings
-enricher = er.EventLogEnhancer(df)
-df = enricher.create_neural_emb("e_basebert_emb") #238second / whole thing 4:17 hadoop
+enhancer = er.EventLogEnhancer(df)
+df = enhancer.create_neural_emb("e_basebert_emb") #238second / whole thing 4:17 hadoop
 
 #Save the file so no need to rerun later bert
 df.write_parquet(f"{dataset}_events_bert_emb.parquet")

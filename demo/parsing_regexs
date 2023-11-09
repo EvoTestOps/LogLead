@@ -41,21 +41,21 @@ if loader != None:
 
 #Drain parsing with and without LogLEAD masking --------------------------------------------------------
 #Faster by 60%
-enricher = er.EventLogEnricher(df)
+enhancer = er.EventLogEnhancer(df)
 #Normalize message regexes
-df_d = enricher.normalize()
-df_d = enricher.parse_drain(reparse=True)
+df_d = enhancer.normalize()
+df_d = enhancer.parse_drain(reparse=True)
 #This is equal to above. With Drainmasking Compared to this
-df_d = enricher.parse_drain(drain_masking=True,reparse=True)
+df_d = enhancer.parse_drain(drain_masking=True,reparse=True)
 
 #Drain, Lenma and Spell parsing----------------------------------------------------------------
-enricher = er.EventLogEnricher(df)
-df = enricher.normalize()
-df = enricher.words(column = "e_message_normalized")
-enricher.df = enricher.df[0:20000] 
-df_parsers = enricher.parse_lenma() # Takes about 10s in HDFS data
-df_parsers = enricher.parse_spell()
-df_parsers = enricher.parse_drain()
+enhancer = er.EventLogEnhancer(df)
+df = enhancer.normalize()
+df = enhancer.words(column = "e_message_normalized")
+enhancer.df = enhancer.df[0:20000] 
+df_parsers = enhancer.parse_lenma() # Takes about 10s in HDFS data
+df_parsers = enhancer.parse_spell()
+df_parsers = enhancer.parse_drain()
 
 #Check the results-------------------------------------------------------
 import polars as pl

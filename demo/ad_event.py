@@ -39,20 +39,20 @@ if loader != None:
               df.write_parquet("tb_002.parquet")
 #Null should be handeled in the loader. However, if they exist they get killed here
 df = df.filter(pl.col("m_message").is_not_null())
-#Enrichment-------------------------------------------------
-enricher =  er.EventLogEnhancer(df)
+#Enhancement-------------------------------------------------
+enhancer =  er.EventLogEnhancer(df)
 
 #Normalization before 
 normalize = True
 column = "m_message" #the default
 if normalize:
        regexs = [('0','\d'),('0','0+')]
-       df = enricher.normalize(regexs, to_lower=True)
+       df = enhancer.normalize(regexs, to_lower=True)
        column="e_message_normalized"
 
-#df = enricher.words(column)
-#df = enricher.alphanumerics(column)
-#df = enricher.trigrams(column) #carefull might be slow
+#df = enhancer.words(column)
+#df = enhancer.alphanumerics(column)
+#df = enhancer.trigrams(column) #carefull might be slow
 
 #Split to words in sklearn
 sad =  ad.SupervisedAnomalyDetection(item_list_col="m_message")
@@ -61,7 +61,7 @@ sad.evaluate_all_ads()
 
 
 #Split to words in polars.
-df = enricher.words(column)
+df = enhancer.words(column)
 sad =  ad.SupervisedAnomalyDetection(item_list_col="e_words")
 sad.test_train_split (df, test_frac=0.95)
 sad.evaluate_all_ads()

@@ -53,22 +53,22 @@ for dataset_name in datasets:
     dataset_info["without_masking"][dataset_name]['row_count'] = row_count
     dataset_info["with_masking"][dataset_name]['row_count'] = row_count
     
-    enricher = er.EventLogEnhancer(df)
+    enhancer = er.EventLogEnhancer(df)
 
     # Running without drain_masking
     for _ in range(1):
-        enricher_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
+        enhancer_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
-        df_temp = enricher_copy.normalize()
-        df_temp = enricher_copy.parse_drain(reparse=True)
+        df_temp = enhancer_copy.normalize()
+        df_temp = enhancer_copy.parse_drain(reparse=True)
         elapsed_time = time.time() - time_start
         dataset_info["without_masking"][dataset_name]['times'].append(elapsed_time)
 
     # Running with drain_masking
     for _ in range(1):
-        enricher_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
+        enhancer_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
-        df_temp = enricher_copy.parse_drain(drain_masking=True, reparse=True)
+        df_temp = enhancer_copy.parse_drain(drain_masking=True, reparse=True)
         elapsed_time = time.time() - time_start
         dataset_info["with_masking"][dataset_name]['times'].append(elapsed_time)
 
