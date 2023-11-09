@@ -1,5 +1,5 @@
 #Separate demo files
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 import polars as pl
 
 #Which one to run. Only one true. 
@@ -28,9 +28,9 @@ df = preprocessor.execute()
 df_seq = preprocessor.df_sequences
 
 #Eventmax length--------------------------------
-event_enricher = er.EventLogEnricher(df)
+event_enricher = er.EventLogEnhancer(df)
 df = event_enricher.length()
-seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
+seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
 seq_enricher.eve_len()
 seq_enricher.start_time()
 seq_enricher.end_time()

@@ -25,7 +25,7 @@ masking_patterns_drain = [
 ]
 
 
-class EventLogEnricher:
+class EventLogEnhancer:
     def __init__(self, df):
         self.df = df
 
@@ -222,7 +222,7 @@ class EventLogEnricher:
         # return base_code
 
 
-class SequenceEnricher:
+class SequenceEnhancer:
     def __init__(self, df, df_sequences):
         self.df = df
         self.df_sequences = df_sequences

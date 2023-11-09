@@ -1,12 +1,12 @@
 #Sequence levels prediction
 import sys
 sys.path.append('..')
-import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
 import time
 
 full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
-dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small
+dataset = "hdfs" #hdfs, pro, hadoop, tb, tb-small
 
 df = None
 df_seq = None
@@ -27,17 +27,17 @@ elif dataset=="tb-small":
        loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird_2k.log") #Only 2k lines
 elif dataset=="hdfs_s_parq":
        import polars as pl
-       df = pl.read_parquet(f"{private_data}/hdfs_events_02.parquet")
-       df_seq = pl.read_parquet(f"{private_data}/hdfs_seqs_02.parquet")
+       df = pl.read_parquet(f"{private_data}/hdfs_events_002.parquet")
+       df_seq = pl.read_parquet(f"{private_data}/hdfs_seqs_002.parquet")
 
 if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):
-              df = loader.reduce_dataframes(frac=0.2)
+              df = loader.reduce_dataframes(frac=0.02)
        df_seq = loader.df_sequences       
        if (dataset == "hdfs"):
-              df.write_parquet(f"{private_data}/hdfs_events_02.parquet")
-              df_seq.write_parquet(f"{private_data}/hdfs_seqs_02.parquet")
+              df.write_parquet(f"{private_data}/hdfs_events_002.parquet")
+              df_seq.write_parquet(f"{private_data}/hdfs_seqs_002.parquet")
               
 
 #df = loader.execute()
@@ -48,14 +48,14 @@ if loader != None:
   
 #-Event enrichment----------------------------------------------
 #Parsing in event level
-enricher = er.EventLogEnricher(df)
+enricher = er.EventLogEnhancer(df)
 df = enricher.length()
 df = enricher.parse_drain()
 df = enricher.words()
 df = enricher.alphanumerics()
 
 #Collect events to sequence level as list[str]
-seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
+seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
 seq_enricher.events()
 seq_enricher.eve_len()
 seq_enricher.start_time()
@@ -83,18 +83,11 @@ sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
 sad.evaluate_all_ads(disabled_methods=["train_RarityModel"])#Rarity model not working here for some reason. 
 
 # AD using only event column:
-sad =  ad.SupervisedAnomalyDetection(item_list_col="events")
+sad =  ad.SupervisedAnomalyDetection(item_list_col="e_event_id")
 sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
 sad.evaluate_all_ads()
 
 #Events + Numeric
-sad =  ad.SupervisedAnomalyDetection(item_list_col="events", numeric_cols=numeric_cols)
+sad =  ad.SupervisedAnomalyDetection(item_list_col="e_event_id", numeric_cols=numeric_cols)
 sad.test_train_split (seq_enricher.df_sequences, test_frac=0.95)
 sad.evaluate_all_ads()
-
-
-#OLD-WAY__________________________________________________________________________
-#Split
-df_seq_train, df_seq_test = ad.test_train_split(seq_enricher.df_sequences, test_frac=0.95)
-sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
-sad.dep_evaluate_all_ads(df_seq_train, df_seq_test)

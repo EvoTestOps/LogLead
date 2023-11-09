@@ -32,7 +32,7 @@ df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
 df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 
 
-seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
+seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
 seq_enricher.tokens("e_words")
 seq_enricher.events("e_event_id")
 seq_enricher.events("e_event_lenma_id")

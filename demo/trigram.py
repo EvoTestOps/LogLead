@@ -1,5 +1,5 @@
 #Sequence levels prediction
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 import polars as pl
 import math
 from collections import Counter
@@ -68,7 +68,7 @@ prevtime =  time.time()
   
 #-Event enrichment----------------------------------------------
 #Parsing in event level
-enricher_hdfs = er.EventLogEnricher(df)
+enricher_hdfs = er.EventLogEnhancer(df)
 df = enricher_hdfs.length()
 df = enricher_hdfs.trigrams()
 
@@ -300,7 +300,7 @@ max_ano_score  555.000   10346 181   278930    6492  0.9828    0.6144    0.9775 
 #Tried 4 different versions to handle the test, but they are all over 30min
 
 #Event levels prediction
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 import polars as pl
 import math
 from collections import Counter
@@ -329,7 +329,7 @@ df = preprocessor.execute()
 print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
-enricher = er.EventLogEnricher(df)
+enricher = er.EventLogEnhancer(df)
 
 regexs = [('0','\d'),('0','0+')]
 df = enricher.normalize(regexs, to_lower=True)

@@ -3,7 +3,7 @@
 import sys
 sys.path.append('..')
 
-import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
 import polars as pl
 
 full_data = "/home/ubuntu/Datasets"
@@ -40,7 +40,7 @@ if loader != None:
 #Null should be handeled in the loader. However, if they exist they get killed here
 df = df.filter(pl.col("m_message").is_not_null())
 #Enrichment-------------------------------------------------
-enricher =  er.EventLogEnricher(df)
+enricher =  er.EventLogEnhancer(df)
 
 #Normalization before 
 normalize = True
@@ -65,13 +65,6 @@ df = enricher.words(column)
 sad =  ad.SupervisedAnomalyDetection(item_list_col="e_words")
 sad.test_train_split (df, test_frac=0.95)
 sad.evaluate_all_ads()
-
-#OLD-WAY__________________________________________________________________________
-#Split
-df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.95)
-sad = ad.SupervisedAnomalyDetection("e_words", None, None)
-sad.dep_evaluate_all_ads(df_eve_train, df_eve_test)
-
 
 # res = sad.dep_train_LR(df_eve_train)
 # res = sad.dep_predict(df_eve_test)

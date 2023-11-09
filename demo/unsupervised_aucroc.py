@@ -7,7 +7,7 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-import loglead.loader as load, loglead.enricher as er, loglead.anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
 import polars as pl
 
 full_data = "/home/ubuntu/Datasets"
@@ -17,7 +17,7 @@ loader = load.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
 df = loader.execute()
 df = loader.reduce_dataframes(frac=0.05)
 df = df.filter(pl.col("m_message").is_not_null())
-enricher =  er.EventLogEnricher(df)
+enricher =  er.EventLogEnhancer(df)
 
 regexs = [('0','\d'),('0','0+')]
 df = enricher.normalize(regexs, to_lower=True)
@@ -38,14 +38,14 @@ df = loader.reduce_dataframes(frac=1)
 df_seq = loader.df_sequences       
 
 df = df.filter(pl.col("m_message").is_not_null())
-enricher =  er.EventLogEnricher(df)
+enricher =  er.EventLogEnhancer(df)
 
 regexs = [('0','\d'),('0','0+')]
 df = enricher.normalize(regexs, to_lower=True)
 df = enricher.trigrams("e_message_normalized")
 
 
-seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
+seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
 seq_enricher.tokens(token="e_cgrams")
 sad =  ad.SupervisedAnomalyDetection(item_list_col="e_cgrams")
 sad.test_train_split (seq_enricher.df_sequences, test_frac=0.7, vec_name="TfidfVectorizer",oov_analysis=True)
@@ -62,14 +62,14 @@ df = loader.reduce_dataframes(frac=0.05)
 df_seq = loader.df_sequences       
 
 df = df.filter(pl.col("m_message").is_not_null())
-enricher =  er.EventLogEnricher(df)
+enricher =  er.EventLogEnhancer(df)
 
 regexs = [('0','\d'),('0','0+')]
 df = enricher.normalize(regexs, to_lower=True)
 df = enricher.trigrams("e_message_normalized")
 
 
-seq_enricher = er.SequenceEnricher(df = df, df_sequences = df_seq)
+seq_enricher = er.SequenceEnhancer(df = df, df_sequences = df_seq)
 seq_enricher.tokens(token="e_cgrams")
 sad =  ad.SupervisedAnomalyDetection(item_list_col="e_cgrams")
 sad.test_train_split (seq_enricher.df_sequences, test_frac=0.7, vec_name="TfidfVectorizer",oov_analysis=True)

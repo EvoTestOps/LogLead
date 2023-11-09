@@ -7,7 +7,7 @@ sys.path.append('..')
 import polars as pl
 
 import loglead.loader as load
-import loglead.enricher as er
+import loglead.enhancer as er
 import demo.p1_logparser_load as logparser
 
 full_data = "/home/ubuntu/Datasets"
@@ -53,11 +53,11 @@ for dataset_name in datasets:
     dataset_info["without_masking"][dataset_name]['row_count'] = row_count
     dataset_info["with_masking"][dataset_name]['row_count'] = row_count
     
-    enricher = er.EventLogEnricher(df)
+    enricher = er.EventLogEnhancer(df)
 
     # Running without drain_masking
     for _ in range(1):
-        enricher_copy = er.EventLogEnricher(df)  # Use a fresh copy for each iteration
+        enricher_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
         df_temp = enricher_copy.normalize()
         df_temp = enricher_copy.parse_drain(reparse=True)
@@ -66,7 +66,7 @@ for dataset_name in datasets:
 
     # Running with drain_masking
     for _ in range(1):
-        enricher_copy = er.EventLogEnricher(df)  # Use a fresh copy for each iteration
+        enricher_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
         df_temp = enricher_copy.parse_drain(drain_masking=True, reparse=True)
         elapsed_time = time.time() - time_start

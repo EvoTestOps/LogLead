@@ -1,6 +1,6 @@
 #
 #Separate demo files
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 
 
 gelf_processor = load.GELFLoader(filename="gelf.log")
@@ -8,7 +8,7 @@ df_gelf = gelf_processor.execute()
 
 #Quick stuff to test:
 
-enricher_gelf = er.EventLogEnricher(df_gelf)
+enricher_gelf = er.EventLogEnhancer(df_gelf)
 df_gelf = enricher_gelf.words()
 df_gelf = enricher_gelf.alphanumerics()
 df_gelf = enricher_gelf.trigrams()

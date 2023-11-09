@@ -1,5 +1,5 @@
 #Separate demo files
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 import polars as pl
 
 hadoop_processor = load.HadoopLoader(filename="../../../Datasets/hadoop/",

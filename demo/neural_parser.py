@@ -1,6 +1,6 @@
 #
 #Separate demo files
-import loglead.loader as load, loglead.enricher as er, anomaly_detection as ad
+import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 
 dataset = "tb_s_emb" #hdfs, pro, hadoop, tb, tb_small (has no anomalies), tb_s_parq tb_s_emb
 df = None
@@ -43,7 +43,7 @@ if loader != None:
 #TODO does not work df_seqs like hdfs if they have null
 df = df.filter(pl.col("m_message").is_not_null()) 
 #Create bert embeddings
-enricher = er.EventLogEnricher(df)
+enricher = er.EventLogEnhancer(df)
 df = enricher.create_neural_emb("e_basebert_emb") #238second / whole thing 4:17 hadoop
 
 #Save the file so no need to rerun later bert
