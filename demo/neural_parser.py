@@ -1,34 +1,39 @@
 #
 #Separate demo files
-import loglead.loader as load, loglead.enhancer as er, anomaly_detection as ad
 
-dataset = "tb_s_emb" #hdfs, pro, hadoop, tb, tb_small (has no anomalies), tb_s_parq tb_s_emb
+import sys
+sys.path.append('..')
+full_data = "/home/ubuntu/Datasets"
+private_data ="../private_data"
+import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
+
+dataset = "tb" #hdfs, pro, hadoop, tb, tb_small (has no anomalies), tb_s_parq tb_s_emb
 df = None
 df_seq = None
 loader = None
 if dataset=="hdfs":
-       loader = load.HadoopLoader(filename="../../../Datasets/hadoop/",
+       loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                                  filename_pattern  ="*.log",
-                                                 labels_file_name="../../../Datasets/hadoop/abnormal_label_accurate.txt")
+                                                 labels_file_name="{full_data}/hadoop/abnormal_label_accurate.txt")
 elif dataset=="hdfs":
-       loader = load.HDFSLoader(filename="../../../Datasets/hdfs/HDFS.log", 
-                                          labels_file_name="../../../Datasets/hdfs/anomaly_label.csv")
+       loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
+                                          labels_file_name="{full_data}/hdfs/anomaly_label.csv")
 elif dataset=="pro":
-       loader = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
+       loader = load.ProLoader(filename=f"{full_data}/profilence/*.txt")
 elif dataset=="tb":
-       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
 elif dataset=="tb_small":
-       loader = load.ThunderbirdLoader(filename="../../../Datasets/thunderbird/Thunderbird_2k.log") #Only 2k lines
+       loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird_2k.log") #Only 2k lines
 elif dataset=="tb_s_parq":
        import polars as pl
-       df = pl.read_parquet("tb_002.parquet")
+       df = pl.read_parquet(f"{private_data}/tb_002.parquet")
 elif dataset=="hadoop_emb":
        import polars as pl
-       df = pl.read_parquet("hadoop_events_bert_emb.parquet")      
-       df_seq = pl.read_parquet("hadoop_seqs_bert_emb.parquet") 
+       df = pl.read_parquet(f"{private_data}/hadoop_events_bert_emb.parquet")      
+       df_seq = pl.read_parquet(f"{private_data}/hadoop_seqs_bert_emb.parquet") 
 elif dataset=="tb_s_emb":
        import polars as pl
-       df = pl.read_parquet("tb_s_emb_events_bert_emb.parquet")      
+       df = pl.read_parquet(f"{private_data}/tb_s_emb_events_bert_emb.parquet")      
 
 
 if loader != None:
@@ -37,14 +42,15 @@ if loader != None:
               df = loader.reduce_dataframes(frac=0.02)
        df_seq = loader.df_sequences 
        if (dataset == "tb"):
-              df.write_parquet("tb_002.parquet")
+              df.write_parquet(f"{private_data}/tb_002.parquet")
               
 #Null should be handeled in the loader. However, if they exist they get killed here
 #TODO does not work df_seqs like hdfs if they have null
+import polars as pl
 df = df.filter(pl.col("m_message").is_not_null()) 
 #Create bert embeddings
 enhancer = er.EventLogEnhancer(df)
-df = enhancer.create_neural_emb("e_basebert_emb") #238second / whole thing 4:17 hadoop
+df = enhancer.create_neural_emb() #238second / whole thing 4:17 hadoop
 
 #Save the file so no need to rerun later bert
 df.write_parquet(f"{dataset}_events_bert_emb.parquet")

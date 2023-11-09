@@ -12,10 +12,10 @@ loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
 loader.execute()
 
 df = loader.reduce_dataframes(0.001)
-df = loader.reduce_dataframes(0.1)
+#df = loader.reduce_dataframes(0.1)
 df_seq =  loader.df_sequences
 
-enchancer = er.EventLogEnricher(df)
+enchancer = er.EventLogEnhancer(df)
 df = enchancer.normalize()
 df = enchancer.words(column="e_message_normalized")
 df = enchancer.parse_drain()
@@ -23,13 +23,13 @@ df = enchancer.parse_spell()
 df = enchancer.parse_lenma()
 df = enchancer.create_neural_emb()
 
-#df.write_parquet(f"{private_data}/P4_Parsed_hdfs_events_0001.parquet")
-#df_seq.write_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_0001.parquet")
+df.write_parquet(f"{private_data}/P4_Parsed_hdfs_events_0001.parquet")
+df_seq.write_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_0001.parquet")
 #df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_0001.parquet")
 #df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_0001.parquet")
 
-df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
-df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
+#df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
+#df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 
 
 seq_enhancer = er.SequenceEnhancer(df = df, df_sequences = df_seq)

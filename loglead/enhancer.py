@@ -167,7 +167,7 @@ class EventLogEnhancer:
         self._handle_prerequisites(["m_message"])
         if "e_bert_emb" not in self.df.columns:
             #Lazy import only if needed
-            from ..parsers.bert.bertembedding import BertEmbeddings
+            from parsers.bert.bertembedding import BertEmbeddings
             if "e_message_normalized" not in self.df.columns:
                 self.normalize()
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")

@@ -8,7 +8,7 @@ import polars as pl
 import copy
 import loglead.loader as load
 import loglead.enhancer as er
-from loglead.bertembedding import BertEmbeddings
+from parsers.bert.bertembedding import BertEmbeddings
 full_data = "/home/ubuntu/Datasets"
 
 
@@ -26,7 +26,7 @@ df200k = copy.deepcopy(loader).reduce_dataframes(0.02)
 datas =  [df50k, df100k, df200k]
 parsers = ["drain", "spell", "lenma", "neural"]
 parsers = ["neural"]
-
+parsers = ["drain", "spell", "lenma"]
 
 import time
 import statistics
@@ -35,7 +35,7 @@ for data in datas:
     for parser in parsers:
         elapsed_times = []
         for _ in range(10):
-            enricher = er.EventLogEnricher(df)
+            enricher = er.EventLogEnhancer(df)
             start_time = time.time()
             df = enricher.normalize()
             if parser == "drain":
