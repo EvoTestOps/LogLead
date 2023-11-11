@@ -71,17 +71,18 @@ class EventAnomalyDetection:
     
 
 class RarityModel:
-    def __init__(self, threshold = 10):
+    def __init__(self, threshold = 10, common_threshold = 0.01):
         self.threshold = threshold
         self.score_vector = None
         self.scores = None
         self.is_norm = None
+        self.common_threshold = common_threshold
         
     
     def fit(self, X_train, labels=None):  
-        def rarity_score(freq, total_ngrams, common_threshold = 0.01):
+        def rarity_score(freq, total_ngrams):
             normalized_freq = freq / total_ngrams
-            if normalized_freq > common_threshold:
+            if normalized_freq > self.common_threshold:
                 return 0  # Common ngram, rarity score is 0     
             score = -math.log(normalized_freq) ** 3
             if freq == 0:
@@ -92,8 +93,26 @@ class RarityModel:
         train_counts = np.array(X_train.sum(axis=0))[0]
         self.score_vector = np.array([rarity_score(count, total_ngrams) for count in train_counts])
         
-    
     def predict(self, X_test):
+        X_test_csr = X_test.tocsr()
+        non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)
+        # Calculate scores
+        self.scores = X_test_csr.dot(self.score_vector)
+        self.scores = self.scores.astype(np.float64)
+        # Define a special value to be used when non_zero_counts is zero
+        OOV_string_value =  self.threshold +1 # Ensure that OOV is always above threshold
+        # Identifying indices where non_zero_counts is zero
+        zero_indices = non_zero_counts == 0
+        print(f"we found {sum(zero_indices)} full OOV rows")
+        # Assigning the special value to scores at those indices
+        self.scores[zero_indices] = OOV_string_value
+        # For non-zero counts, normalize the scores
+        self.scores[~zero_indices] /= non_zero_counts[~zero_indices]
+        # Comparing the scores to the threshold
+        self.is_norm = (self.scores < self.threshold).astype(int)
+        return self.is_norm
+    
+    def _predict(self, X_test):
         X_test_csr = X_test.tocsr()
         # Getting the count of non-zero elements along axis 1 (columns) for each instance
         non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  # Convert to float64 here
@@ -273,8 +292,8 @@ class SupervisedAnomalyDetection:
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
         predictions = self.model.predict(X_test_to_use)
         #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
-            predictions = np.where(predictions > 0, 1, 0)
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM, RarityModel)):
+            predictions = np.where(predictions < 0, 1, 0)
         df_seq = self.test_df.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if self.print_scores:
             self._print_evaluation_scores(self.labels_test, predictions, self.model)
