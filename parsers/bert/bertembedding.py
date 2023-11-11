@@ -58,11 +58,7 @@ class BertEmbeddings:
                 token_vecs = hidden_states[-1]
 
             if self.basebert == 'albert':
-                outputs = self.model(inputs)
-
-                # `outputs` is a tuple with various elements. The hidden states are in the 3rd element.
                 hidden_states = outputs['hidden_states']
-
                 # The last layer is at -1 index. Each layer contains embeddings for all tokens.
                 token_vecs = hidden_states[-1]
 
