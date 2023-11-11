@@ -49,24 +49,16 @@ class BertEmbeddings:
             # Put the model in "evaluation" mode, meaning feed-forward operation.
             self.model.trainable = False
 
+            inputs = {'input_ids': tokenized_batch['input_ids'],
+                      'attention_mask': tokenized_batch['attention_mask']}
+            outputs = self.model(inputs)
+
             if self.basebert == 'basebert':
-
-                inputs = {'input_ids': tokenized_batch['input_ids'],
-                          'attention_mask': tokenized_batch['attention_mask']}
-
-                outputs = self.model(inputs)
-
                 hidden_states = outputs[2]
                 token_vecs = hidden_states[-1]
 
             if self.basebert == 'albert':
-
-                # Predict hidden states features for each layer
-                outputs = self.model(tokenized_batch)
-
-                # `outputs` is a tuple with various elements. The hidden states are in the 3rd element.
                 hidden_states = outputs['hidden_states']
-
                 # The last layer is at -1 index. Each layer contains embeddings for all tokens.
                 token_vecs = hidden_states[-1]
 
