@@ -43,7 +43,7 @@ if loader != None:
 #df = loader.execute()
 #if dataset!="hadoop":
 #    df = loader.reduce_dataframes(frac=0.02)
-#df_seq = loader.df_sequences
+df_seq = loader.df_sequences
 
   
 #-Event enrichment----------------------------------------------
@@ -74,6 +74,8 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 sad = ad.SupervisedAnomalyDetection(item_list_col="e_words")
 sad.test_train_split (seq_enhancer.df_sequences, test_frac=0.95)
 sad.evaluate_all_ads()
+#res = sad.train_DT()
+#res = sad.predict()
 
 # AD using only numeric columns:
 #Defining numeric columns to be inclded

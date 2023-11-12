@@ -252,7 +252,9 @@ class SequenceEnhancer:
         return self.df_sequences
 
     def tokens(self, token="e_words"):
-        df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
+        #df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
+        #Same as above but the above crashes due to out of memory problems. We might need this fix also in other rows
+        df_temp = self.df.select("seq_id", token).explode(token).group_by('seq_id').agg(pl.col(token))
         # Join this result with df_sequences on seq_id
         self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
         return self.df_sequences
