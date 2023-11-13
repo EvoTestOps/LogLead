@@ -187,7 +187,9 @@ class EventLogEnhancer:
         if "e_message_len" not in self.df.columns:
             self.df = self.df.with_columns(
                 e_message_len_char=pl.col("m_message").str.n_chars(),
-                e_message_len_lines=pl.col("m_message").str.count_matches(r"(\n|\r|\r\n)")
+                e_message_len_lines=pl.col("m_message").str.count_matches(r"(\n|\r|\r\n)"),
+                #Number of words given by sklearn default splitter in CountVectortizer https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.CountVectorizer.html
+                e_message_len_words=pl.col("m_message").str.count_matches(r"(?u)\b\w\w+\b") + 1 
             )
         return self.df
 
