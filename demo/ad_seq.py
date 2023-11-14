@@ -6,6 +6,8 @@ import time
 
 full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
+private_data ="private_data"
+
 dataset = "hdfs" #hdfs, pro, hadoop, tb, tb-small
 
 df = None
@@ -43,7 +45,7 @@ if loader != None:
 #df = loader.execute()
 #if dataset!="hadoop":
 #    df = loader.reduce_dataframes(frac=0.02)
-df_seq = loader.df_sequences
+#df_seq = loader.df_sequences
 
   
 #-Event enrichment----------------------------------------------

@@ -45,10 +45,9 @@ enhancer =  er.EventLogEnhancer(df)
 #Normalization before 
 normalize = True
 column = "m_message" #the default
-if normalize:
-       regexs = [('0','\d'),('0','0+')]
-       df = enhancer.normalize(regexs, to_lower=True)
-       column="e_message_normalized"
+#if normalize:
+#       regexs = [('0','\d'),('0','0+')]
+df = enhancer.normalize()
 
 #df = enhancer.words(column)
 #df = enhancer.alphanumerics(column)
