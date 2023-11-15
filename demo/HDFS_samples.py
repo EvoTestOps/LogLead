@@ -23,7 +23,9 @@ sample_data="../samples"
 #Load HDFS from sample data
 df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
 df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
-print(f"Read HDFS 2% sample numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
+print(f"Read HDFS 2% sample. Numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
+ano_count = df_seqs["anomaly"].sum()
+print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/len(df_seqs)*100:.2f}%")
 
 
 #_________________________________________________________________________________

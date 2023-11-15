@@ -22,7 +22,9 @@ sample_data="../samples"
 #Part 2 load data from sample file
 #Load TB from sample data
 df = pl.read_parquet(f"{sample_data}/tb_0125percent.parquet")
-print(f"Read TB 0.125% sample numbers of events: {len(df)}")
+print(f"Read TB 0.125% sample. Numbers of events: {len(df)}")
+ano_count = df["anomaly"].sum()
+print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(df)*100:.2f}%")
 
 
 #_________________________________________________________________________________

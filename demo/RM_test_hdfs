@@ -5,7 +5,6 @@ import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection
 import time
 import polars as pl
 
-
 full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
 dataset = "hdfs_s_parq" #hdfs, pro, hadoop, tb, tb-small
@@ -17,13 +16,10 @@ loader = None
 #df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
 #df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 
-
-
 #df = loader.execute()
 #if dataset!="hadoop":
 #    df = loader.reduce_dataframes(frac=0.02)
 #df_seq = loader.df_sequences
-
 
 df = pl.read_parquet(f"{private_data}/hdfs_events_002.parquet")
 df_seq = pl.read_parquet(f"{private_data}/hdfs_seqs_002.parquet")
