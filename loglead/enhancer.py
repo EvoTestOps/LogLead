@@ -189,7 +189,8 @@ class EventLogEnhancer:
                 e_message_len_char=pl.col("m_message").str.n_chars(),
                 e_message_len_lines=pl.col("m_message").str.count_matches(r"(\n|\r|\r\n)"),
                 #Number of words given by sklearn default splitter in CountVectortizer https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.CountVectorizer.html
-                e_message_len_words=pl.col("m_message").str.count_matches(r"(?u)\b\w\w+\b") + 1 
+                e_message_len_words_sklearn=pl.col("m_message").str.count_matches(r"(?u)\b\w\w+\b"),
+                e_message_len_words_ws=pl.col("m_message").str.count_matches(r"\s+")+1  
             )
         return self.df
 
@@ -225,41 +226,41 @@ class EventLogEnhancer:
 
 
 class SequenceEnhancer:
-    def __init__(self, df, df_sequences):
+    def __init__(self, df, df_seq):
         self.df = df
-        self.df_sequences = df_sequences
+        self.df_seq = df_seq
 
     def start_time(self):
         df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').min().alias('start_time'))
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def end_time(self):
         df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').max().alias('end_time'))
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def seq_len(self):
         # Count the number of rows for each seq_id
         df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def events(self, event_col = "e_event_id"):
         # Aggregate event ids into a list for each seq_id
         df_temp = self.df.group_by('seq_id').agg(pl.col(event_col).alias(event_col))
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def tokens(self, token="e_words"):
         #df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
         #Same as above but the above crashes due to out of memory problems. We might need this fix also in other rows
         df_temp = self.df.select("seq_id", token).explode(token).group_by('seq_id').agg(pl.col(token))
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def duration(self):
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
@@ -268,8 +269,8 @@ class SequenceEnhancer:
             (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('duration_sec')
         )
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
 
     def eve_len(self):
         # Count the number of rows for each seq_id
@@ -281,8 +282,8 @@ class SequenceEnhancer:
             eve_len_over1=(pl.col('e_message_len_char') > 1).sum()
         )
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences    
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq    
     
     def embeddings(self, embedding_column="e_bert_emb"):
         # Aggregate by averaging the embeddings for each sequence (seq_id)
@@ -290,5 +291,5 @@ class SequenceEnhancer:
         df_temp = df_temp.group_by('seq_id').mean()
         df_temp = df_temp.select(pl.col("seq_id"),pl.concat_list(pl.col("*").exclude("seq_id")).alias(embedding_column))
         # Join this result with df_sequences on seq_id
-        self.df_sequences = self.df_sequences.join(df_temp, on='seq_id')
-        return self.df_sequences
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq

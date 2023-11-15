@@ -180,7 +180,7 @@ def test_train_split(df, test_frac):
     train_df = df.tail(-test_size)
     return train_df, test_df
 
-class SupervisedAnomalyDetection:
+class AnomalyDetection:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
                  store_scores=False, print_scores=True):
         self.item_list_col = item_list_col
@@ -193,21 +193,21 @@ class SupervisedAnomalyDetection:
         self.train_vocabulary = None
 
         
-    def test_train_split(self, df, new_split=True,  test_frac=0.9, vec_name="CountVectorizer", oov_analysis=False):
-        if new_split:
-            # Shuffle the DataFrame
-            df = df.sample(fraction = 1.0, shuffle=True)
-            # Split ratio
-            test_size = int(test_frac * df.shape[0])
+    def test_train_split(self, df, test_frac=0.9, vec_name="CountVectorizer", oov_analysis=False):
+        # Shuffle the DataFrame
+        df = df.sample(fraction = 1.0, shuffle=True)
+        # Split ratio
+        test_size = int(test_frac * df.shape[0])
 
-            # Split the DataFrame using head and tail
-            self.test_df = df.head(test_size)
-            self.train_df = df.tail(-test_size)
+        # Split the DataFrame using head and tail
+        self.test_df = df.head(test_size)
+        self.train_df = df.tail(-test_size)
+        self.prepare_train_test_data(vec_name=vec_name, oov_analysis=oov_analysis)
         
+    def prepare_train_test_data(self, vec_name="CountVectorizer", oov_analysis=False):
         #Prepare all data for running
         self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name, oov_analysis)
         self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name, oov_analysis)
-
         #No anomalies dataset is used for some unsupervised algos. 
         self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
@@ -218,7 +218,6 @@ class SupervisedAnomalyDetection:
             ano_labels = np.array(self.labels_test_no_anos).astype(int)
             auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
             print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
-
         
         
     def _prepare_data(self, train, df_seq, vec_name, oov_analysis=False):

@@ -54,14 +54,14 @@ df = enhancer.normalize()
 #df = enhancer.trigrams(column) #carefull might be slow
 
 #Split to words in sklearn
-sad =  ad.SupervisedAnomalyDetection(item_list_col="m_message")
+sad =  ad.AnomalyDetection(item_list_col="m_message")
 sad.test_train_split (df, test_frac=0.95)
 sad.evaluate_all_ads()
 
 
 #Split to words in polars.
 df = enhancer.words(column)
-sad =  ad.SupervisedAnomalyDetection(item_list_col="e_words")
+sad =  ad.AnomalyDetection(item_list_col="e_words")
 sad.test_train_split (df, test_frac=0.95)
 sad.evaluate_all_ads()
 

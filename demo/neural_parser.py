@@ -61,10 +61,10 @@ if dataset in ("hadoop", "hdfs", "profilence"):
 df_eve_train, df_eve_test = ad.test_train_split(df, test_frac=0.98)
 #-------------------------------------------------------------
 #Predict using embeddings
-sad = ad.SupervisedAnomalyDetection(emb_list_col="e_basebert_emb")
+sad = ad.AnomalyDetection(emb_list_col="e_basebert_emb")
 sad.evaluate_all_ads(df_eve_train, df_eve_test)
 
-sad = ad.SupervisedAnomalyDetection(None, None, "e_bert_emb")
+sad = ad.AnomalyDetection(None, None, "e_bert_emb")
 sad.evaluate_all_ads(df_eve_train, df_eve_test)
 
 
