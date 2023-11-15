@@ -8,7 +8,7 @@ sys.path.append('..')
 import polars as pl
 
 import loglead.loader as load
-import demo.p1_logparser_load as logparser
+import demo.paper.t1_logparser_load as logparser
 
 full_data = "/home/ubuntu/Datasets"
 
@@ -43,7 +43,7 @@ def create_correct_loader(dataset):
 for key, value in loglead_format.items():
     print(f"Processing: {key}, {value}")
     loglead_times = []
-    for _ in range(10):
+    for _ in range(1):
         print(f"r{_}", end=", ")
         time_start = time.time()
         loader = create_correct_loader(key)

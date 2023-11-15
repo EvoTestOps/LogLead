@@ -134,6 +134,7 @@ dependencies:
   - qt-main=5.15.2=h53bd1ea_10
   - re2=2022.04.01=h295c915_0
   - readline=8.2=h5eee18b_0
+  - regex=2023.10.3=py311h5eee18b_0
   - scikit-learn=1.2.2=py311h6a678d5_1
   - scipy=1.11.3=py311h08b1b3b_0
   - setuptools=68.0.0=py311h06a4308_0
@@ -157,7 +158,7 @@ dependencies:
   - zlib=1.2.13=h5eee18b_0
   - zstd=1.5.5=hc292b87_0
   - pip:
-    - cachetools==4.2.1
-    - drain3==0.9.11
-    - jsonpickle==1.5.1
-    - polars==0.19.13
+      - cachetools==4.2.1
+      - drain3==0.9.11
+      - jsonpickle==1.5.1
+      - polars==0.19.13
