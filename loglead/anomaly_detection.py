@@ -33,15 +33,15 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-
-class EventAnomalyDetection:
+#Delete
+""" class EventAnomalyDetection:
     def __init__(self, df):
         self.df = df
 
     def compute_ano_score(self, col_name, model_size):
-        """
-        :param col_name: A string that should be "e_words", "e_alphanumerics", or "e_cgrams"
-        """
+        
+        #:param col_name: A string that should be "e_words", "e_alphanumerics", or "e_cgrams"
+        
         #Export the column out from polars
         exported = self.df.select(pl.col(col_name).reshape([-1])).to_series().to_list()
         #Do a token count for whole data set
@@ -68,9 +68,9 @@ class EventAnomalyDetection:
         #    (pl.col("not_in_len") / pl.col("token_len")).alias("as_" + col_name),
         #)
         return self.df
-    
-
-class RarityModel:
+ """    
+#Delete?
+""" class RarityModel:
     def __init__(self, threshold = 10, common_threshold = 0.01):
         self.threshold = threshold
         self.score_vector = None
@@ -143,42 +143,8 @@ class RarityModel:
         plt.tight_layout()
         plt.show()
 
+ """
 
-
-
-def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=True):
-    # Compute the ROC curve
-    fpr, tpr, thresholds = roc_curve(labels, preds)
-    # Compute the AUC from the points of the ROC curve
-    roc_auc = auc(fpr, tpr)
-
-    if plot:
-        # Plot the ROC curve
-        plt.figure()
-        lw = 2
-        plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
-        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(titlestr)
-        plt.legend(loc="lower right")
-        plt.show()
-
-    return roc_auc
-
-    
-def test_train_split(df, test_frac):
-    # Shuffle the DataFrame
-    df = df.sample(fraction = 1.0, shuffle=True)
-    # Split ratio
-    test_size = int(test_frac * df.shape[0])
-
-    # Split the DataFrame using head and tail
-    test_df = df.head(test_size)
-    train_df = df.tail(-test_size)
-    return train_df, test_df
 
 class AnomalyDetection:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
@@ -211,13 +177,14 @@ class AnomalyDetection:
         #No anomalies dataset is used for some unsupervised algos. 
         self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
-        if oov_analysis:
-            print(self.test_df)
-            oovtime = time.time()
-            oov_counts = np.array(self.test_df["oov_count"])
-            ano_labels = np.array(self.labels_test_no_anos).astype(int)
-            auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
-            print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
+        #Delete
+        # if oov_analysis:
+        #     print(self.test_df)
+        #     oovtime = time.time()
+        #     oov_counts = np.array(self.test_df["oov_count"])
+        #     ano_labels = np.array(self.labels_test_no_anos).astype(int)
+        #     auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
+        #     print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
         
         
     def _prepare_data(self, train, df_seq, vec_name, oov_analysis=False):
@@ -281,17 +248,17 @@ class AnomalyDetection:
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
-    def dep_train_model(self, df_seq, model):
-        X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
-        self.model = model
-        self.model.fit(X_train, labels)
+    #def dep_train_model(self, df_seq, model):
+    #    X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
+    #    self.model = model
+    #    self.model.fit(X_train, labels)
     
     def predict(self, custom_plot=False):
         #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
         predictions = self.model.predict(X_test_to_use)
-        #IsolationForrest does not give binary predictions. Convert
-        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM, RarityModel)):
+        #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
             predictions = np.where(predictions < 0, 1, 0)
         df_seq = self.test_df.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
         if self.print_scores:
@@ -335,20 +302,20 @@ class AnomalyDetection:
 
     def train_XGB(self):
         self.train_model(XGBClassifier())
-        
-    def train_RarityModel(self, filter_anos=True, threshold=500):
-        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
-        
-    def _evaluate_all_ads(self):
-        for method_name in sorted(dir(self)):
-            if method_name.startswith("train_") and not  method_name.startswith("train_model") :
-                method = getattr(self, method_name)
-                if callable(method):
-                    time_start = time.time()
-                    method()
-                    self.predict()
-                    print(f'Total time: {time.time()-time_start:.2f} seconds')
-
+#Delete        
+#    def train_RarityModel(self, filter_anos=True, threshold=500):
+#        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
+#        
+#    def _evaluate_all_ads(self):
+#        for method_name in sorted(dir(self)):
+#            if method_name.startswith("train_") and not  method_name.startswith("train_model") :
+#                method = getattr(self, method_name)
+#                if callable(method):
+#                    time_start = time.time()
+#                    method()
+#                    self.predict()
+#                    print(f'Total time: {time.time()-time_start:.2f} seconds')
+#
     def evaluate_all_ads(self, disabled_methods=[]):
         for method_name in sorted(dir(self)):
             if (method_name.startswith("train_") 
@@ -415,8 +382,9 @@ class AnomalyDetection:
         if isinstance(self.model, IsolationForest):
             y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
             auc_roc_analysis(y_test, y_pred, titlestr)
-        if isinstance(self.model, RarityModel):
-            auc_roc_analysis(y_test, model.scores, titlestr)
+#Delete
+#        if isinstance(self.model, RarityModel):
+#            auc_roc_analysis(y_test, model.scores, titlestr)
         if isinstance(self.model, KMeans):
             y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
             auc_roc_analysis(y_test, y_pred, titlestr)
@@ -539,3 +507,39 @@ class ModelResultsStorage:
                 print(f"Accuracy: {acc:.4f}")
             if score_type in ['f1', 'all']:
                 print(f"F1 Score: {f1:.4f}")
+
+
+
+def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=True):
+    # Compute the ROC curve
+    fpr, tpr, thresholds = roc_curve(labels, preds)
+    # Compute the AUC from the points of the ROC curve
+    roc_auc = auc(fpr, tpr)
+
+    if plot:
+        # Plot the ROC curve
+        plt.figure()
+        lw = 2
+        plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(titlestr)
+        plt.legend(loc="lower right")
+        plt.show()
+
+    return roc_auc
+
+    
+def test_train_split(df, test_frac):
+    # Shuffle the DataFrame
+    df = df.sample(fraction = 1.0, shuffle=True)
+    # Split ratio
+    test_size = int(test_frac * df.shape[0])
+
+    # Split the DataFrame using head and tail
+    test_df = df.head(test_size)
+    train_df = df.tail(-test_size)
+    return train_df, test_df

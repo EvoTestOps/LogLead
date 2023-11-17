@@ -35,7 +35,7 @@ loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                             labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
 df = loader.execute()
 df = loader.reduce_dataframes(frac=1)
-df_seq = loader.df_sequences       
+df_seq = loader.df_seq       
 
 df = df.filter(pl.col("m_message").is_not_null())
 enricher =  er.EventLogEnhancer(df)
@@ -59,7 +59,7 @@ loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
                                     labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 df = loader.execute()
 df = loader.reduce_dataframes(frac=0.05)
-df_seq = loader.df_sequences       
+df_seq = loader.df_seq       
 
 df = df.filter(pl.col("m_message").is_not_null())
 enricher =  er.EventLogEnhancer(df)

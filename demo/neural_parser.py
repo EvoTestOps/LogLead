@@ -40,7 +40,7 @@ if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):
               df = loader.reduce_dataframes(frac=0.02)
-       df_seq = loader.df_sequences 
+       df_seq = loader.df_seq 
        if (dataset == "tb"):
               df.write_parquet(f"{private_data}/tb_002.parquet")
               

@@ -15,17 +15,17 @@ class BaseLoader:
     _csv_separator = "\a" 
     _mandatory_columns = ["m_message", "m_timestamp"]
     
-    def __init__(self, filename, df=None, df_sequences=None):
+    def __init__(self, filename, df=None, df_seq=None):
         self.filename = filename
         self.df = df #Event level dataframe
-        self.df_sequences = df_sequences #sequence level dataframe
+        self.df_seq = df_seq #sequence level dataframe
 
     def load(self):
-        print(f"WARNING! You using dummy loader. This will results in dataframe with single column only titled: m_message"
+        print(f"WARNING! You are using dummy loader. This results in dataframe with single column only titled: m_message"
               f"Consider implmenting dataset specific loader")
         self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
                         separator=self._csv_separator, ignore_errors=True)
-        self.df = df.rename({"column_1": "m_message"})
+        self.df = self.df.rename({"column_1": "m_message"})
         
     def preprocess(self):
         raise NotImplementedError
@@ -44,9 +44,9 @@ class BaseLoader:
         if self.df is not None and  "normal" in self.df.columns:
             # Create the 'anomaly' column by inverting the boolean values of the 'normal' column
             self.df = self.df.with_columns(pl.col("normal").not_().alias("anomaly"))
-        if self.df_sequences is not None and "normal" in self.df_sequences:
+        if self.df_seq is not None and "normal" in self.df_seq:
             # Create the 'anomaly' column by inverting the boolean values of the 'normal' column
-            self.df_sequences = self.df_sequences.with_columns(pl.col("normal").not_().alias("anomaly"))
+            self.df_seq = self.df_seq.with_columns(pl.col("normal").not_().alias("anomaly"))
         self._mandatory_columns = ["m_message"]
 
     
@@ -59,7 +59,7 @@ class BaseLoader:
         # Print the results
         if null_counts:
             for col, count in null_counts.items():
-                print(f"WARNING! Column '{col}' has {count} null values. You have 4 options:"
+                print(f"WARNING! Column '{col}' has {count} null values out of {len(self.df)}. You have 4 options:"
                         f" 1) Do nothing and hope for the best"
                         f", 2) Drop the column that has nulls"
                         f", 3) Filter out rows that have nulls"
@@ -101,18 +101,11 @@ class BaseLoader:
         return non_matching_lines_df, non_matching_lines_count, matching_lines_df, matching_lines_count 
 
     def reduce_dataframes(self, frac=0.5):
-        """
-        Reduce the size of and update df accordingly.
-        
-        Parameters:
-        - fraction: The fraction of rows to retain. Default is 0.5 (50%).
-        """
-        
         # If df_sequences is present, reduce its size
-        if hasattr(self, 'df_sequences') and self.df_sequences is not None:
-            self.df_sequences = self.df_sequences.sample(fraction=frac)
+        if hasattr(self, 'df_seq') and self.df_seq is not None:
+            self.df_seq = self.df_seq.sample(fraction=frac)
             # Update df to include only the rows that have seq_id values present in the filtered df_sequences
-            self.df = self.df.filter(pl.col("seq_id").is_in(self.df_sequences["seq_id"]))
+            self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"]))
         else:
             # If df_sequences is not present, just reduce df
             self.df = self.df.sample(fraction=frac)
@@ -149,9 +142,9 @@ class ProLoader(BaseLoader):
         self.df = pl.concat([self.df, df_seq_id], how="horizontal")  
         self._parse_datetimes()
         #Dataframe for aggrating to sequence level
-        self.df_sequences = self.df.select(pl.col("seq_id")).unique()   
+        self.df_seq = self.df.select(pl.col("seq_id")).unique()   
         #Filename holds the anomaly info. 
-        self.df_sequences = self.df_sequences.with_columns(
+        self.df_seq = self.df_seq.with_columns(
             pl.col("seq_id").str.starts_with("success").alias("normal"),
         )
 
@@ -169,11 +162,11 @@ class ProLoader(BaseLoader):
 
 
 class HadoopLoader(BaseLoader):
-    def __init__(self, filename, df=None, df_sequences=None, filename_pattern=None, labels_file_name=None):
+    def __init__(self, filename, df=None, df_seq=None, filename_pattern=None, labels_file_name=None):
         self.labels_file_name = labels_file_name
         self.filename_pattern = filename_pattern
         self.event_pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}'#Each log line should start with this
-        super().__init__(filename, df, df_sequences)
+        super().__init__(filename, df, df_seq)
 
     # see details https://github.com/logpai/loghub/blob/master/Hadoop/Hadoop_2k.log_structured.csv
     def _extract_process(self):
@@ -261,10 +254,10 @@ class HadoopLoader(BaseLoader):
         self._parse_datetimes()
         self.df = self.df.with_columns(pl.col("m_message").fill_null("<EMPTY LOG MESSAGE>"))
         #Aggregate labels to sequence dataframe info that is at Application ID level
-        self.df_sequences = self.df.select(pl.col("seq_id")).unique() #sequence level dataframe
+        self.df_seq = self.df.select(pl.col("seq_id")).unique() #sequence level dataframe
         label_df = self._parse_labels() #parse labels
-        self.df_sequences = self.df_sequences.join(label_df, left_on='seq_id', right_on="app_id") #merge
-        self.df_sequences = self.df_sequences.with_columns(
+        self.df_seq = self.df_seq.join(label_df, left_on='seq_id', right_on="app_id") #merge
+        self.df_seq = self.df_seq.with_columns(
             pl.col("Label").str.starts_with("Normal").alias("normal"),
         )
         
@@ -310,9 +303,9 @@ class HadoopLoader(BaseLoader):
 # Processor for the HDFS log file
 class HDFSLoader(BaseLoader):
     
-    def __init__(self, filename, df=None, df_sequences=None, labels_file_name=None):
+    def __init__(self, filename, df=None, df_seq=None, labels_file_name=None):
         self.labels_file_name = labels_file_name
-        super().__init__(filename, df, df_sequences)
+        super().__init__(filename, df, df_seq)
           
     def load(self):
         self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, separator=self._csv_separator)
@@ -323,13 +316,13 @@ class HDFSLoader(BaseLoader):
         self._extract_seq_id()
         self._parse_datetimes()
         #Aggregate labels to sequence dataframe info that is at BlockID level
-        self.df_sequences = self.df.select(pl.col("seq_id")).unique()  
+        self.df_seq = self.df.select(pl.col("seq_id")).unique()  
         df_temp = pl.read_csv(self.labels_file_name, has_header=True)
-        self.df_sequences = self.df_sequences.join(df_temp, left_on='seq_id', right_on="BlockId")
-        self.df_sequences = self.df_sequences.with_columns(
+        self.df_seq = self.df_seq.join(df_temp, left_on='seq_id', right_on="BlockId")
+        self.df_seq = self.df_seq.with_columns(
             pl.col("Label").str.starts_with("Normal").alias("normal"),
         )
-        self.df_sequences = self.df_sequences.drop("Label")
+        self.df_seq = self.df_seq.drop("Label")
 
     def _extract_seq_id(self):
         #seq_id = self.df.select(pl.col("m_message").str.extract(r"blk_(-?\d+)", group_index=1).alias("seq_id"))

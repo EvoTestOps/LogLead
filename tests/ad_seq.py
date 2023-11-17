@@ -36,7 +36,7 @@ if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):
               df = loader.reduce_dataframes(frac=0.02)
-       df_seq = loader.df_sequences       
+       df_seq = loader.df_seq       
        if (dataset == "hdfs"):
               df.write_parquet(f"{private_data}/hdfs_events_002.parquet")
               df_seq.write_parquet(f"{private_data}/hdfs_seqs_002.parquet")

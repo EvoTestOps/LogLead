@@ -25,7 +25,7 @@ elif (b_profilence):
        preprocessor = load.ProLoader(filename="../../../Datasets/profilence/*.txt")
 
 df = preprocessor.execute()
-df_seq = preprocessor.df_sequences
+df_seq = preprocessor.df_seq
 
 #Eventmax length--------------------------------
 event_enhancer = er.EventLogEnhancer(df)

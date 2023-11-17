@@ -55,20 +55,23 @@ for i in range(10):
     sad.test_train_split (seq_enhancer.df_seq, test_frac=0.95)
     sad.evaluate_all_ads(disabled_methods=disable)
     print(".", end="")
+    
     sad.item_list_col = "e_event_id"
-    #sad.test_train_split (seq_enhancer.df_sequences, new_split=False)
     sad.prepare_train_test_data()
     sad.evaluate_all_ads(disabled_methods=disable)
     print(".", end="")
+    
     sad.item_list_col ="e_event_lenma_id"
     sad.prepare_train_test_data()
     sad.evaluate_all_ads(disabled_methods=disable)
     print(".", end="")
+    
     sad.item_list_col ="e_event_spell_id"
     sad.prepare_train_test_data()
     sad.evaluate_all_ads(disabled_methods=disable)
     print(".")
     sad.item_list_col =None
+    
     sad.emb_list_col = "e_bert_emb"
     sad.prepare_train_test_data()
     sad.evaluate_all_ads(disabled_methods=disable)
@@ -76,7 +79,4 @@ for i in range(10):
 
 #-----------------------------------------------
 print(sad.storage.calculate_average_scores(score_type="f1").to_csv())
-sad.storage.print_confusion_matrices()
-sad.storage.print_confusion_matrices("LogisticRegression","e_bert_emb")
-sad.storage.print_scores()
-sad.storage.print_scores("LogisticRegression","e_bert_emb", score_type="f1")
+

@@ -59,7 +59,7 @@ print(f"event length lines:   {df['e_message_len_lines'][row_index]}")
 print(f"event length words:   {df['e_message_len_words_ws'][row_index]}")
 
 #_________________________________________________________________________________________
-#Part 4 we do some anomaly detection
+#Part 5 we do some anomaly detection. No part 4 as TB is not labeled on sequence level
 print(f"\nStarting anomaly detection of TB Events")
 numeric_cols = ["e_message_len_char",  "e_message_len_lines",]
 sad = ad.AnomalyDetection()
@@ -96,3 +96,28 @@ df_seq = sad.predict()
 #Use Decision Tree
 sad.train_DT()
 df_seq = sad.predict()
+
+#____________________________________________________________
+#Part 6 run all anomaly detectors and store score to Pandas table for easy storage
+print(f"Running all anomaly detectors with Words and Trigrams and storing results")
+print(f"We run everything two times - Adjust as needed")
+
+sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+for i in range(2): #We do just two loop in this demo
+    sad.item_list_col = "e_words"
+    sad.test_train_split (df, test_frac=0.90)
+    sad.evaluate_all_ads()
+    
+    #We keep existing split but need to prepare everything with trigrams
+    sad.item_list_col = "e_cgrams"
+    sad.prepare_train_test_data()
+    sad.evaluate_all_ads()
+
+
+print(f"Inspecting results. Averages of runs:")
+print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
+print(f"Confusion matrixes can also be inspected")
+sad.storage.print_confusion_matrices("LogisticRegression","e_cgrams")
+
+
+

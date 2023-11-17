@@ -46,7 +46,7 @@ elif (b_profilence):
 df = preprocessor.execute()
 if (not b_hadoop):
     df = preprocessor.reduce_dataframes(frac=1)
-df_seq = preprocessor.df_sequences
+df_seq = preprocessor.df_seq
 
 print(f'Time preprocess: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()

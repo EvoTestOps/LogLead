@@ -34,7 +34,7 @@ if loader != None:
        df = loader.execute()
        if (dataset != "hadoop"):
               df = loader.reduce_dataframes(frac=0.02)
-       df_seq = loader.df_sequences 
+       df_seq = loader.df_seq 
        if (dataset == "tb"):
               df.write_parquet("tb_002.parquet")
 #Null should be handeled in the loader. However, if they exist they get killed here

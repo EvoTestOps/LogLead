@@ -77,11 +77,12 @@ df_seqs = seq_enhancer.start_time()
 df_seqs = seq_enhancer.end_time()
 df_seqs = seq_enhancer.duration()
 print(f"sequence duration: {df_seqs.filter(pl.col('seq_id') == seq_id)['duration'][0]}")
-df_seqs = seq_enhancer.tokens()
+df_seqs = seq_enhancer.tokens(token="e_cgrams")
+df_seqs = seq_enhancer.tokens(token="e_words")
 print(f"Sequence level dataframe without aggregated info: {df_seqs.filter(pl.col('seq_id') == seq_id)}")
 
 #_________________________________________________________________________________________
-#Part 5 we do some anomaly detection
+#Part 5 Do some anomaly detection
 print(f"\nStarting anomaly detection of HDFS Sequences")
 numeric_cols = ["seq_len",  "duration_sec",]
 sad = ad.AnomalyDetection()
@@ -118,4 +119,27 @@ df_seq = sad.predict()
 #Use Decision Tree
 sad.train_DT()
 df_seq = sad.predict()
+
+#____________________________________________________________
+#Part 6 run all anomaly detectors and store score to Pandas table for easy storage
+print(f"Running all anomaly detectors with Words and Trigrams and storing results")
+print(f"We run everything two times - Adjust as needed")
+
+sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+for i in range(2): #We do just two loop in this demo
+    sad.item_list_col = "e_words"
+    sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
+    sad.evaluate_all_ads()
+    
+    #We keep existing split but need to prepare everything with trigrams
+    sad.item_list_col = "e_cgrams"
+    sad.prepare_train_test_data()
+    sad.evaluate_all_ads()
+
+
+print(f"Inspecting results. Averages of runs:")
+print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
+print(f"Confusion matrixes can also be inspected")
+sad.storage.print_confusion_matrices("LogisticRegression","e_cgrams")
+
 
