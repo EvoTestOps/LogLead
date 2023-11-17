@@ -120,6 +120,8 @@ class EventLogEnhancer:
         if reparse or "e_event_lenma_id" not in self.df.columns:
 
             self.lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
+            if "row_nr" in self.df.columns:
+                self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
             self.df = self.df.with_columns(
                 lenma_obj=pl.struct(["e_words", "row_nr"])
@@ -147,7 +149,7 @@ class EventLogEnhancer:
             self.spell = lcsmap(r'\s+')
             self.df = self.df.with_columns(
                 spell_obj=pl.col("e_message_normalized")
-                .map_elements(lambda x: self.spell.insert(x)))
+                    .map_elements(lambda x: self.spell.insert(x)))
 
             def extract_id(obj):
                 template_str = " ".join(obj._lcsseq)

@@ -103,9 +103,21 @@ class BaseLoader:
     def reduce_dataframes(self, frac=0.5):
         # If df_sequences is present, reduce its size
         if hasattr(self, 'df_seq') and self.df_seq is not None:
-            self.df_seq = self.df_seq.sample(fraction=frac)
-            # Update df to include only the rows that have seq_id values present in the filtered df_sequences
+             # Sample df_seq
+            df_seq_temp = self.df_seq.sample(fraction=frac)
+
+            # Check if df_seq still has at least one row
+            if len(df_seq_temp) == 0:
+                # If df_seq is empty after sampling, randomly select one row from the original df_seq
+                self.df_seq = self.df_seq.sample(n=1)
+            else:
+                self.df_seq = df_seq_temp
+            # Update df to include only the rows that have seq_id values present in the filtered df_seq
             self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"]))
+
+            #self.df_seq = self.df_seq.sample(fraction=frac)
+            # Update df to include only the rows that have seq_id values present in the filtered df_sequences
+            #self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"]))
         else:
             # If df_sequences is not present, just reduce df
             self.df = self.df.sample(fraction=frac)
