@@ -252,4 +252,3 @@ dependencies:
     - jsonpickle==1.5.1
     - milksnake==0.1.6
     - polars==0.19.8
-    - spellpy==0.0.9
