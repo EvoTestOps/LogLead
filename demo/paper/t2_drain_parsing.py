@@ -8,9 +8,9 @@ import polars as pl
 
 import loglead.loader as load
 import loglead.enhancer as er
-import demo.p1_logparser_load as logparser
 
-full_data = "/home/ubuntu/Datasets"
+#full_data = "/home/ubuntu/Datasets"
+full_data = "/home/mmantyla/Datasets"
 
 datasets = ["hdfs", "hadoop", "bgl"]
 
@@ -25,8 +25,7 @@ def create_correct_loader(dataset):
     elif(dataset=="hadoop"):    
         loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
                                         filename_pattern  ="*.log",
-                                        labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")    
-        
+                                        labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
         
     return loader
 

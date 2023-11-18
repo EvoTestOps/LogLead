@@ -10,17 +10,19 @@ import polars as pl
 import loglead.loader as load
 import demo.paper.t1_logparser_load as logparser
 
-full_data = "/home/ubuntu/Datasets"
+# Base directory for datasets
+#full_data = "/home/ubuntu/Datasets"
+full_data = "/home/mmantyla/Datasets"
 
 logparser_format = {
-#    "hdfs" : "<Date> <Time> <Pid> <Level> <Component>: <Content>",
-#    "bgl" : "<Label> <Timestamp> <Date> <Node> <Time> <NodeRepeat> <Type> <Component> <Level> <Content>",
-    "tb" : "<Label> <Timestamp> <Date> <User> <Month> <Day> <Time> <Location> <Component>(\[<PID>\])?: <Content>"
+    "hdfs" : "<Date> <Time> <Pid> <Level> <Component>: <Content>",
+    "bgl" : "<Label> <Timestamp> <Date> <Node> <Time> <NodeRepeat> <Type> <Component> <Level> <Content>",
+#    "tb" : "<Label> <Timestamp> <Date> <User> <Month> <Day> <Time> <Location> <Component>(\[<PID>\])?: <Content>"
 }
 
 loglead_format = {
-#    "hdfs" : ["date", "time", "id", "level", "component", "m_message"],
-#    "bgl" : ["label", "timestamp", "date", "node", "time", "noderepeat", "type", "component", "level", "m_message"],
+    "hdfs" : ["date", "time", "id", "level", "component", "m_message"],
+    "bgl" : ["label", "timestamp", "date", "node", "time", "noderepeat", "type", "component", "level", "m_message"],
 #    "tb" : ["label", "timestamp", "date", "userid", "month", "day", "time", "location", "component_pid", "m_message"],
     "hadoop" : ["date", "time","level", "component","m_message"]
 }
@@ -43,7 +45,7 @@ def create_correct_loader(dataset):
 for key, value in loglead_format.items():
     print(f"Processing: {key}, {value}")
     loglead_times = []
-    for _ in range(1):
+    for _ in range(10):
         print(f"r{_}", end=", ")
         time_start = time.time()
         loader = create_correct_loader(key)

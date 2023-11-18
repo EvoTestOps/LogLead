@@ -11,6 +11,7 @@ loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
                                             labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 loader.execute()
 
+#Reduce as needed.
 #df = loader.reduce_dataframes(0.001)
 #df = loader.reduce_dataframes(0.1)
 df = loader.df
@@ -24,10 +25,12 @@ df = enchancer.parse_spell()
 df = enchancer.parse_lenma()
 df = enchancer.create_neural_emb()
 
+#Perform an intermediate save here. 
 #df.write_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
 #df_seq.write_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 #df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01percent.parquet")
 #df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01percent.parquet")
+#Continue by loading from file
 df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
 df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 

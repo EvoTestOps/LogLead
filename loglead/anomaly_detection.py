@@ -33,119 +33,6 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-#Delete
-""" class EventAnomalyDetection:
-    def __init__(self, df):
-        self.df = df
-
-    def compute_ano_score(self, col_name, model_size):
-        
-        #:param col_name: A string that should be "e_words", "e_alphanumerics", or "e_trigrams"
-        
-        #Export the column out from polars
-        exported = self.df.select(pl.col(col_name).reshape([-1])).to_series().to_list()
-        #Do a token count for whole data set
-        counts = Counter(exported)  # 13s all hdfs
-        #Create model consisting of top n (=model_tize) tokens
-        top_tokens = [word for word, count in counts.most_common(model_size)]
-        top_tokens = pl.Series(top_tokens, dtype=pl.Utf8)
-        top_tokens = top_tokens.reshape([1, len(top_tokens)])
-
-        self.df = self.df.with_columns(
-            not_in_top_t=pl.col(col_name).list.set_difference(top_tokens),
-            token_len=pl.col(col_name).list.lengths(),
-        )
-        self.df = self.df.with_columns(
-            not_in_len=pl.col("not_in_top_t").list.lengths(),
-        )
-        
-        final_col_name = f"as_{model_size}_{col_name}"
-        self.df = self.df.with_columns(
-            (pl.col("not_in_len") / pl.col("token_len")).alias(final_col_name),
-        )
-        
-        #self.df = self.df.with_columns(
-        #    (pl.col("not_in_len") / pl.col("token_len")).alias("as_" + col_name),
-        #)
-        return self.df
- """    
-#Delete?
-""" class RarityModel:
-    def __init__(self, threshold = 10, common_threshold = 0.01):
-        self.threshold = threshold
-        self.score_vector = None
-        self.scores = None
-        self.is_norm = None
-        self.common_threshold = common_threshold
-        
-    
-    def fit(self, X_train, labels=None):  
-        def rarity_score(freq, total_ngrams):
-            normalized_freq = freq / total_ngrams
-            if normalized_freq > self.common_threshold:
-                return 0  # Common ngram, rarity score is 0     
-            score = -math.log(normalized_freq) ** 3
-            if freq == 0:
-                return (-math.log(1/total_ngrams) ** 3 )*2
-            return score
-        
-        total_ngrams = X_train.sum()
-        train_counts = np.array(X_train.sum(axis=0))[0]
-        self.score_vector = np.array([rarity_score(count, total_ngrams) for count in train_counts])
-        
-    def predict(self, X_test):
-        X_test_csr = X_test.tocsr()
-        non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)
-        # Calculate scores
-        self.scores = X_test_csr.dot(self.score_vector)
-        self.scores = self.scores.astype(np.float64)
-        # Define a special value to be used when non_zero_counts is zero
-        OOV_string_value =  self.threshold +1 # Ensure that OOV is always above threshold
-        # Identifying indices where non_zero_counts is zero
-        zero_indices = non_zero_counts == 0
-        print(f"we found {sum(zero_indices)} full OOV rows")
-        # Assigning the special value to scores at those indices
-        self.scores[zero_indices] = OOV_string_value
-        # For non-zero counts, normalize the scores
-        self.scores[~zero_indices] /= non_zero_counts[~zero_indices]
-        # Comparing the scores to the threshold
-        self.is_norm = (self.scores < self.threshold).astype(int)
-        return self.is_norm
-    
-    def _predict(self, X_test):
-        X_test_csr = X_test.tocsr()
-        # Getting the count of non-zero elements along axis 1 (columns) for each instance
-        non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  # Convert to float64 here
-        non_zero_counts[non_zero_counts == 0] = 1  # Now this line will work as intended
-        self.scores = X_test_csr.dot(self.score_vector)
-        # Ensuring self.scores is a float array
-        self.scores = self.scores.astype(np.float64)
-        # Dividing the scores by the count of non-zero elements
-        self.scores /= non_zero_counts
-        # Comparing the scores to the threshold
-        self.is_norm = (self.scores < self.threshold).astype(int)
-        return self.is_norm
-    
-    def custom_plot(self, labels):
-        import matplotlib.pyplot as plt
-        
-        # Convert labels to a boolean array if they are not already
-        labels_bool = np.array(labels).astype(bool)
-        scores_norm = self.scores[labels_bool]  # 0 for normal in this case
-        scores_ano = self.scores[~labels_bool]  # 1 for anomalous in this case
-        plt.figure(figsize=(10, 5))
-        plt.hist(scores_norm, bins=50, color='blue', alpha=0.5, label='scores_norm')
-        plt.hist(scores_ano, bins=50, color='red', alpha=0.5, label='scores_ano')
-        plt.xlabel('Value')
-        plt.ylabel('Frequency')
-        plt.title('Distribution of scores_norm and scores_ano')
-        plt.legend(loc='upper right')
-        plt.tight_layout()
-        plt.show()
-
- """
-
-
 class AnomalyDetection:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
                  store_scores=False, print_scores=True):
@@ -177,15 +64,7 @@ class AnomalyDetection:
         #No anomalies dataset is used for some unsupervised algos. 
         self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
-        #Delete
-        # if oov_analysis:
-        #     print(self.test_df)
-        #     oovtime = time.time()
-        #     oov_counts = np.array(self.test_df["oov_count"])
-        #     ano_labels = np.array(self.labels_test_no_anos).astype(int)
-        #     auc_roc_analysis(ano_labels, oov_counts, titlestr="OOV ROC")
-        #     print(f"Oov analysis time: {time.time()-oovtime:.3f} seconds")
-        
+     
         
     def _prepare_data(self, train, df_seq, vec_name, oov_analysis=False):
         X = None
@@ -302,20 +181,7 @@ class AnomalyDetection:
 
     def train_XGB(self):
         self.train_model(XGBClassifier())
-#Delete        
-#    def train_RarityModel(self, filter_anos=True, threshold=500):
-#        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
-#        
-#    def _evaluate_all_ads(self):
-#        for method_name in sorted(dir(self)):
-#            if method_name.startswith("train_") and not  method_name.startswith("train_model") :
-#                method = getattr(self, method_name)
-#                if callable(method):
-#                    time_start = time.time()
-#                    method()
-#                    self.predict()
-#                    print(f'Total time: {time.time()-time_start:.2f} seconds')
-#
+
     def evaluate_all_ads(self, disabled_methods=[]):
         for method_name in sorted(dir(self)): 
             if (method_name.startswith("train_") 
@@ -385,9 +251,6 @@ class AnomalyDetection:
             if isinstance(self.model, IsolationForest):
                 y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
                 auc_roc_analysis(y_test, y_pred, titlestr)
-        #Delete
-        #        if isinstance(self.model, RarityModel):
-        #            auc_roc_analysis(y_test, model.scores, titlestr)
             if isinstance(self.model, KMeans):
                 y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
                 auc_roc_analysis(y_test, y_pred, titlestr)
