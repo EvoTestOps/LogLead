@@ -79,7 +79,7 @@ prevtime =  time.time()
 agg_df = (
     df
     .groupby('seq_id')
-    .agg(pl.col('e_cgrams'))
+    .agg(pl.col('e_trigrams'))
     .sort('seq_id')  # Optional: sorting by 'seq_id'
 )
 
@@ -93,10 +93,10 @@ df_train, df_normal_test = ad.test_train_split(normal_data, test_frac=0.5)
 df_test = pl.concat([df_normal_test, anomalous_data], how="vertical")
 
 
-# Collect the data from the e_cgrams column to Python
-e_cgrams_data = df_train['e_cgrams'].to_list()
+# Collect the data from the e_trigrams column to Python
+e_trigrams_data = df_train['e_trigrams'].to_list()
 # Flatten the list of lists into a single list of trigrams
-all_trigrams = list(chain.from_iterable(chain.from_iterable(e_cgrams_data)))
+all_trigrams = list(chain.from_iterable(chain.from_iterable(e_trigrams_data)))
 # Count the occurrences of each trigram
 trigram_counts = Counter(all_trigrams)
 # Create a new DataFrame with the trigrams and their counts
@@ -355,23 +355,23 @@ anomalous_data = df.filter(~df['normal'])
 df_train, df_normal_test = ad.test_train_split(normal_data, test_frac=0.5)
 df_test = pl.concat([df_normal_test, anomalous_data], how="vertical")
 # Replace None sublists with empty lists
-df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
+df_test = df_test.with_columns(pl.col("e_trigrams").fill_null([]))
 
 print(f'Time split: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
 
 #CREATE NORMAL COUNTER AND DF
 
-df_train = df_train.with_columns(pl.col("e_cgrams").fill_null([]))
-#e_cgrams_data = df_train["e_cgrams"] # if null values inside lists: [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+df_train = df_train.with_columns(pl.col("e_trigrams").fill_null([]))
+#e_trigrams_data = df_train["e_trigrams"] # if null values inside lists: [[item if item is not None else "" for item in sublist] for sublist in e_trigrams_data]
 # Now flatten the list
-#all_trigrams = list(chain.from_iterable(e_cgrams_data))
+#all_trigrams = list(chain.from_iterable(e_trigrams_data))
 
-flattened_train = df_train.select(pl.col("e_cgrams").explode())
+flattened_train = df_train.select(pl.col("e_trigrams").explode())
 # Assuming df_train is your DataFrame
 df_ngram_counts = (
-    flattened_train.groupby('e_cgrams')
-    .agg(pl.col('e_cgrams').count().alias('count'))
+    flattened_train.groupby('e_trigrams')
+    .agg(pl.col('e_trigrams').count().alias('count'))
     .sort('count', descending=True)
 )
 
@@ -387,7 +387,7 @@ df_ngram_counts = (
 
 # Count the frequency of ngrams in the training set
 total_ngrams = df_ngram_counts['count'].sum()
-train_ngrams_set = set(df_ngram_counts.sort(pl.col('count'))['e_cgrams'])
+train_ngrams_set = set(df_ngram_counts.sort(pl.col('count'))['e_trigrams'])
 
 print(f'Time create normal set: {time.time() - prevtime:.2f} seconds')
 prevtime =  time.time()
@@ -409,13 +409,13 @@ def rarity_score(freq, total_ngrams, common_threshold = 0.01):
 #This is because we precalculate only based on the training data, not sure what happens to OOV later. 
 
 #Precalculated score vector
-train_trigrams = df_ngram_counts['e_cgrams'].to_list()
+train_trigrams = df_ngram_counts['e_trigrams'].to_list()
 counts = df_ngram_counts['count'].to_list()
 # Create a dictionary from the trigrams and counts, applying the rarity_score function to each count
 score_dict = dict(zip(train_trigrams, [rarity_score(count, total_ngrams) for count in counts]))
 
 # Get the trigrams
-test_trigrams = df_test['e_cgrams'].to_list()
+test_trigrams = df_test['e_trigrams'].to_list()
 
 print(f'Time to list: {time.time() - prevtime:.2f} seconds')
 prevtime = time.time()
@@ -435,8 +435,8 @@ X_csr = X.tocsr()
 score_matrix = X_csr.dot(score_vector)
 df_test = df_test.with_columns(pl.Series(name="score_matrix", values=score_matrix))
 #Divide by length
-df_test = df_test.with_columns(df_test['e_cgrams'].apply(lambda x: len(x)).alias('e_cgrams_length'))
-df_test = df_test.with_columns((df_test['score_matrix'] / df_test['e_cgrams_length']).alias('scores'))
+df_test = df_test.with_columns(df_test['e_trigrams'].apply(lambda x: len(x)).alias('e_trigrams_length'))
+df_test = df_test.with_columns((df_test['score_matrix'] / df_test['e_trigrams_length']).alias('scores'))
 
 
 scores_norm = df_test.filter(df_test['label'] == '-')['scores'].to_list()
@@ -449,10 +449,10 @@ prevtime =  time.time()
 
 #The polars way
 
-df_test = df_test.explode("e_cgrams") #53 seconds
+df_test = df_test.explode("e_trigrams") #53 seconds
 #This needs to be edited. The unique() was initially for just the trigrams, but now it's pretty pointless.
 #test_ngrams_set = df_test.unique()
-joined_df = df_test.join(df_ngram_counts, on='e_cgrams', how='left')
+joined_df = df_test.join(df_ngram_counts, on='e_trigrams', how='left')
 joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
 df_test = joined_df.with_columns(
     pl.col("count").map_elements(lambda value: rarity_score(value, total_ngrams), return_dtype=pl.Float64).alias("rarity_score")
@@ -480,7 +480,7 @@ def collect_list(s: pl.Series) -> pl.Series:
 aggregated_df = (
     df_test.group_by('m_message', 'timestamp')
     .agg(
-        e_cgrams_list=pl.col('e_cgrams').map_elements(collect_list),
+        e_trigrams_list=pl.col('e_trigrams').map_elements(collect_list),
         rarity_score_list=pl.col('rarity_score').map_elements(collect_list),
         label=pl.col('label').first()
     )
@@ -602,7 +602,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 # Assume df is your DataFrame
-df = df.with_columns(pl.col("e_cgrams").fill_null([]))
+df = df.with_columns(pl.col("e_trigrams").fill_null([]))
 
 prevtime = time.time()
 
@@ -610,7 +610,7 @@ prevtime = time.time()
 labels = [(0 if label == '-' else 1) for label in df['label'].to_list()]
 
 # Get the trigrams
-trigrams = df['e_cgrams'].to_list()
+trigrams = df['e_trigrams'].to_list()
 
 print(f'Time to list: {time.time() - prevtime:.2f} seconds')
 prevtime = time.time()
@@ -661,13 +661,13 @@ Test versions:
 #Version 1, mostly python functions
 
 # Replace None sublists with empty lists
-df_test = df_test.with_columns(pl.col("e_cgrams").fill_null([]))
+df_test = df_test.with_columns(pl.col("e_trigrams").fill_null([]))
 
 # Replace None elements with empty strings within each sublist
-e_cgrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_cgrams_data]
+e_trigrams_data = [[item if item is not None else "" for item in sublist] for sublist in e_trigrams_data]
 
 scores = []
-for event_ngrams in df_test["e_cgrams"]:
+for event_ngrams in df_test["e_trigrams"]:
     event_ngrams_set = set(event_ngrams)
     event_ano_scores = [rarity_score(ngram, trigram_counts, total_ngrams) for ngram in event_ngrams_set]
     scores.append(event_ano_scores)
@@ -681,8 +681,8 @@ Test version 2:
 #The row-by-row had to be done with python code though, so it was terribly slow. Over 2 hours for full BGL.
 
 scores = []
-# Iterate through each list of trigrams in df_test["e_cgrams"]
-for event_ngrams in df_test["e_cgrams"]:
+# Iterate through each list of trigrams in df_test["e_trigrams"]
+for event_ngrams in df_test["e_trigrams"]:
     # Convert the list of trigrams to a set to remove duplicates
     event_ngrams_set = set(event_ngrams)
     
@@ -690,7 +690,7 @@ for event_ngrams in df_test["e_cgrams"]:
     event_ngrams_list = list(event_ngrams_set)
     
     # Extract the counts for each trigram from joined_df
-    event_counts_df = joined_df.filter(joined_df['e_cgrams'].is_in(event_ngrams_set))
+    event_counts_df = joined_df.filter(joined_df['e_trigrams'].is_in(event_ngrams_set))
     event_counts = event_counts_df['count'].to_list()
     
     # If event_counts is empty, skip to the next iteration
@@ -717,16 +717,16 @@ df_test_with_scores = df_test.hstack(scores_series)
 Test version 3:
 #Get individual counts with pandas filter, loop inside loop. Even slower, 3 hours. 
 
-test_ngrams_set = df_test.select(pl.col("e_cgrams").explode().unique())
-joined_df = test_ngrams_set.join(df_ngram_counts, on='e_cgrams', how='left')
+test_ngrams_set = df_test.select(pl.col("e_trigrams").explode().unique())
+joined_df = test_ngrams_set.join(df_ngram_counts, on='e_trigrams', how='left')
 joined_df = joined_df.with_columns(pl.col('count').fill_null(0)).sort('count', descending=True)
 
 scores = []
-for event_ngrams in df_test["e_cgrams"]:
+for event_ngrams in df_test["e_trigrams"]:
     event_ano_scores = []
     event_ngrams_set = set(event_ngrams)
     for trigram in event_ngrams_set:
-        count = joined_df.filter(joined_df['e_cgrams']==trigram)['count'][0]
+        count = joined_df.filter(joined_df['e_trigrams']==trigram)['count'][0]
         event_ano_scores.append(rarity_score(count, total_ngrams))
     scores.append(event_ano_scores)
     
@@ -734,10 +734,10 @@ max_scores = [max(score_list) for score_list in scores if score_list]
 
 
 #version 4:
-count_dict = dict(zip(joined_df['e_cgrams'].to_list(), joined_df['count'].to_list()))
+count_dict = dict(zip(joined_df['e_trigrams'].to_list(), joined_df['count'].to_list()))
 
 scores = []
-for event_ngrams in df_test["e_cgrams"]:
+for event_ngrams in df_test["e_trigrams"]:
     event_ano_scores = [rarity_score(count_dict.get(trigram, 0), total_ngrams) for trigram in set(event_ngrams)]
     scores.append(event_ano_scores)
 

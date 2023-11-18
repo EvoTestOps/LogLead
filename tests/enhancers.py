@@ -10,23 +10,24 @@ import loglead.enhancer as eh
 import loglead.loader as load
 
 # Set your directory
-test_data = "/home/mmantyla/Datasets/test_data"  # Replace with the path to your folder
+test_data_path = "/home/mmantyla/Datasets/test_data"  # Replace with the path to your folder
 
 # Get all .parquet files in the directory
-all_files = glob.glob(os.path.join(test_data, "*.parquet"))
-
+all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
+print ("Enhancers test starting.")
 # Extract unique dataset names, excluding '_seq' files
 datasets = set()
 for f in all_files:
     basename = os.path.basename(f)
-    if "_seq" not in basename:
+    #Only use main files (no _seq) that exist after loader (no _eh)
+    if "_lo" in basename and "_seq" not in basename and "_eh" not in basename:
         dataset_name = basename.replace(".parquet", "")
         datasets.add(dataset_name)
 
 # Loop through each dataset and enhance
 for dataset in datasets:
     # Load the event level data
-    primary_file = os.path.join(test_data, f"{dataset}.parquet")
+    primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
     print(f"\nLoading {primary_file}")
     df = pl.read_parquet(primary_file)
     #Kill nulls if they still exist
@@ -47,28 +48,34 @@ for dataset in datasets:
     print ("Drain parsing",   end=", ")
     df = enhancer.parse_drain()
     # Enhance / Aggregate sequence level
-    seq_file = primary_file.replace(f"{dataset}.parquet", f"{dataset}_seq.parquet")
     loader = load.BaseLoader(filename=None, df=None, df_seq = None)
+    seq_file = primary_file.replace(f"{dataset}.parquet", f"{dataset}_seq.parquet")
     if os.path.exists(seq_file):
         df_seq = pl.read_parquet(seq_file)
         loader.df_seq = df_seq
         enhancer_seq = eh.SequenceEnhancer(df = df, df_seq = df_seq)
-        print ("Aggregating drain parsing results",   end=", ")
-        enhancer_seq.events()
+        print ("\nAggregating drain parsing results",   end=", ")
+        df_seq = enhancer_seq.events()
         print ("Aggregating tokens / words",   end=", ")
-        enhancer_seq.tokens()
+        df_seq = enhancer_seq.tokens()
+        df_seq = enhancer_seq.tokens("e_trigrams")
         print ("Aggregating event lengths",   end=", ") 
-        enhancer_seq.eve_len()
+        df_seq = enhancer_seq.eve_len()
         print ("Enhancing sequence duration",   end=", ")
-        enhancer_seq.start_time()
-        enhancer_seq.end_time()
-        enhancer_seq.duration()
+        df_seq = enhancer_seq.start_time()
+        df_seq = enhancer_seq.end_time()
+        df_seq = enhancer_seq.duration()
         print ("Enhancing sequence length in events")
-        enhancer_seq.seq_len()
+        df_seq = enhancer_seq.seq_len()
         #Preparing loader for addition reduction
         loader.df_seq = df_seq
     loader.df = df
-    df = loader.reduce_dataframes(frac=0.01)#Reducing the reduced 100k -> 1k
+    #Save the data used for anomaly_detectors tests. 
+    loader.df.write_parquet(f"{test_data_path}/{dataset}_eh.parquet") 
+    if os.path.exists(seq_file):
+        loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_eh_seq.parquet")
+    #Test the remaining slow parsers.   
+    df = loader.reduce_dataframes(frac=0.01)#Reducing the ~100k -> 1k
     df_seq = loader.df_seq
     print(len(df))
     print ("Spell parsing",   end=", ")
@@ -87,3 +94,4 @@ for dataset in datasets:
         # Add any alternative code here if TensorFlow is not available
 
 
+print ("Enhancers test complete.")

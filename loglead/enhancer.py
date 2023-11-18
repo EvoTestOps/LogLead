@@ -61,10 +61,10 @@ class EventLogEnhancer:
     # https://github.com/pola-rs/polars/issues/10890
     def trigrams(self, column="m_message"):
         self._handle_prerequisites([column])
-        if "e_cgrams" not in self.df.columns:
+        if "e_trigrams" not in self.df.columns:
             self.df = self.df.with_columns(
                 pl.col(column).map_elements(
-                    lambda mes: self._create_cngram(message=mes, ngram=3)).alias("e_cgrams")
+                    lambda mes: self._create_cngram(message=mes, ngram=3)).alias("e_trigrams")
             )
         return self.df
 

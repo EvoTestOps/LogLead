@@ -19,7 +19,7 @@ full_data = "/home/mmantyla/Datasets"
 
 memory_limit_TB = 40
 
-
+print ("Loaders test starting.")
 # Dictionary to store file paths for each dataset
 # If you are missing any datasets. Comment them out. 
 data_files = {
@@ -98,9 +98,9 @@ def check_and_save(dataset, loader):
         print(f"Invalid dataset {dataset}")
         return
     #Save the data used in enhancer tests. 
-    loader.df.write_parquet(f"{test_data_path}/{dataset}.parquet") 
+    loader.df.write_parquet(f"{test_data_path}/{dataset}_lo.parquet") 
     if any(sub in dataset for sub in ["hdfs", "pro", "hadoop"]):
-        loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_seq.parquet")  
+        loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_lo_seq.parquet")  
 
 
 for key, value in data_files.items():
@@ -109,3 +109,5 @@ for key, value in data_files.items():
     loader = create_correct_loader(key)
     loader.execute()
     check_and_save(key, loader)
+
+print ("Loading test complete.")

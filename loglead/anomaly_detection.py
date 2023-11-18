@@ -40,7 +40,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
     def compute_ano_score(self, col_name, model_size):
         
-        #:param col_name: A string that should be "e_words", "e_alphanumerics", or "e_cgrams"
+        #:param col_name: A string that should be "e_words", "e_alphanumerics", or "e_trigrams"
         
         #Export the column out from polars
         exported = self.df.select(pl.col(col_name).reshape([-1])).to_series().to_list()
@@ -323,6 +323,8 @@ class AnomalyDetection:
                 and method_name not in disabled_methods):
                 method = getattr(self, method_name)
                 if callable(method):
+                    if not self.print_scores:
+                        print (f"Running {method_name}")
                     time_start = time.time()
                     method()
                     self.predict()
@@ -332,7 +334,7 @@ class AnomalyDetection:
             print("---------------------------------------------------------------")
 
 
-    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False):
+    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False, auc_roc = False):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -376,18 +378,19 @@ class AnomalyDetection:
             for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
                 print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
                 
-        #AUC-ROC analysis for selected unsupervised models      
-        titlestr = type(self.model).__name__ + " ROC"
-        X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
-        if isinstance(self.model, IsolationForest):
-            y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
-            auc_roc_analysis(y_test, y_pred, titlestr)
-#Delete
-#        if isinstance(self.model, RarityModel):
-#            auc_roc_analysis(y_test, model.scores, titlestr)
-        if isinstance(self.model, KMeans):
-            y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
-            auc_roc_analysis(y_test, y_pred, titlestr)
+        #AUC-ROC analysis for selected unsupervised models
+        if auc_roc:      
+            titlestr = type(self.model).__name__ + " ROC"
+            X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
+            if isinstance(self.model, IsolationForest):
+                y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
+                auc_roc_analysis(y_test, y_pred, titlestr)
+        #Delete
+        #        if isinstance(self.model, RarityModel):
+        #            auc_roc_analysis(y_test, model.scores, titlestr)
+            if isinstance(self.model, KMeans):
+                y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
+                auc_roc_analysis(y_test, y_pred, titlestr)
 
 
 

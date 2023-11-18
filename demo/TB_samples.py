@@ -47,7 +47,7 @@ print(f"as normalized:        {df['e_message_normalized'][row_index]}")
 df = enhancer.words()
 print(f"as words:             {format_as_list(df['e_words'][row_index])}")
 df = enhancer.trigrams()
-print(f"as trigrams:          {format_as_list(df['e_cgrams'][row_index])}")
+print(f"as trigrams:          {format_as_list(df['e_trigrams'][row_index])}")
 df = enhancer.parse_drain()
 print(f"as Drain event id:    {df['e_event_id'][row_index]}")
 #Spell parser takes about 
@@ -109,7 +109,7 @@ for i in range(2): #We do just two loop in this demo
     sad.evaluate_all_ads()
     
     #We keep existing split but need to prepare everything with trigrams
-    sad.item_list_col = "e_cgrams"
+    sad.item_list_col = "e_trigrams"
     sad.prepare_train_test_data()
     sad.evaluate_all_ads()
 
@@ -117,7 +117,7 @@ for i in range(2): #We do just two loop in this demo
 print(f"Inspecting results. Averages of runs:")
 print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
 print(f"Confusion matrixes can also be inspected")
-sad.storage.print_confusion_matrices("LogisticRegression","e_cgrams")
+sad.storage.print_confusion_matrices("LogisticRegression","e_trigrams")
 
 
 
