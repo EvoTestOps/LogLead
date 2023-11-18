@@ -317,7 +317,7 @@ class AnomalyDetection:
 #                    print(f'Total time: {time.time()-time_start:.2f} seconds')
 #
     def evaluate_all_ads(self, disabled_methods=[]):
-        for method_name in sorted(dir(self)):
+        for method_name in sorted(dir(self)): 
             if (method_name.startswith("train_") 
                 and not method_name.startswith("train_model") 
                 and method_name not in disabled_methods):
