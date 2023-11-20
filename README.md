@@ -1,7 +1,12 @@
-# LogLEAD
-LogLEAD stands for Log Loader, Enhancer, and Anomaly Detector.
+# LogLead
+LogLead stands for Log Loader, Enhancer, and Anomaly Detector.
 
-LogLEAD is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector.
+LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector.
+
+For easy onboarding take look at our 5minute screencast in YouTube  or see demo folder examples HDFS_samples.py and TB_samples.py
+
+For easy onboarding, take a look at our [5-minute screencast on YouTube](https://www.youtube.com/watch?v=8stdbtTfJVo) or see demo folder examples: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py) and [HDFS_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/HDFS_samples.py).
+
 
 Loader: This module reads in the log files deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages.
 

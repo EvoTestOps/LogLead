@@ -1,4 +1,4 @@
-#This is an example using using HDFS from samples folder data. See also similar TB_samples.py 
+#This is an example using HDFS data from samples folder. See also similar TB_samples.py 
 #The files have been loaded from raw and processed to parquet file format for efficient storage.
 #This demonstrates how to work after you have completed the loader.
 

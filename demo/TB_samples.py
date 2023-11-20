@@ -1,4 +1,4 @@
-#This is an example using using TB (Thunderbird) from samples folder data. See also similar HDFS_samples.py  
+#This is an example using TB (Thunderbird) data from samples folder. See also similar HDFS_samples.py  
 #The files have been loaded from raw and processed to parquet file format for efficient storage.
 #This file demonstrates how to work after you have completed the loader.
 
