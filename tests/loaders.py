@@ -78,7 +78,7 @@ def check_and_save(dataset, loader):
         if memory > memory_limit_TB:
             if len(loader.df) != 211212192:
                 print(f"MISMATCH tb expected 211212192 was {len(loader.df)}")
-                loader.reduce_dataframes(frac=0.0005)
+            loader.reduce_dataframes(frac=0.0005)
         else:
             if len(loader.df) != 2000:
                 print(f"MISMATCH tb expected 2000 was {len(loader.df)}")    

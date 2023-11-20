@@ -1,6 +1,6 @@
-#This is an example using using HDFS from samples folder data 
+#This is an example using using TB (Thunderbird) from samples folder data. See also similar HDFS_samples.py  
 #The files have been loaded from raw and processed to parquet file format for efficient storage.
-#This demonstrates how to work after you have completed the loader.
+#This file demonstrates how to work after you have completed the loader.
 
 #______________________________________________________________________________
 #Part 1 load libraries and setup paths. 
@@ -28,7 +28,7 @@ print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(d
 
 
 #_________________________________________________________________________________
-#Part 3 add enhanced represrations 
+#Part 3 add enhanced reprisentations 
 print(f"\nStarting enhancing all log events:")
 enhancer = er.EventLogEnhancer(df)
 
@@ -37,7 +37,7 @@ def format_as_list(series):
     elements = [str(item) for item in series]
     return '[' + ', '.join(elements) + ']'
 #Pick a random line
-row_index = random.randint(0, len(df) - 1)
+row_index = 1 #random.randint(0, len(df) - 1)
 
 
 print(f"Original log message: {df['m_message'][row_index]}")
@@ -50,7 +50,7 @@ df = enhancer.trigrams()
 print(f"as trigrams:          {format_as_list(df['e_trigrams'][row_index])}")
 df = enhancer.parse_drain()
 print(f"as Drain event id:    {df['e_event_id'][row_index]}")
-#Spell parser takes about 
+#Spell parser takes a bit too long for the video  
 #df = enhancer.parse_spell()
 #print(f"as Spell event id:    {df['e_event_spell_id'][row_index]}")
 df = enhancer.length()
@@ -59,7 +59,7 @@ print(f"event length lines:   {df['e_message_len_lines'][row_index]}")
 print(f"event length words:   {df['e_message_len_words_ws'][row_index]}")
 
 #_________________________________________________________________________________________
-#Part 5 we do some anomaly detection. No part 4 as TB is not labeled on sequence level
+#Part 5 we do some anomaly detection. No part 4 here as TB is not labeled on sequence level. See HDFS_samples.py
 print(f"\nStarting anomaly detection of TB Events")
 numeric_cols = ["e_message_len_char",  "e_message_len_lines",]
 sad = ad.AnomalyDetection()
@@ -78,8 +78,8 @@ df_seq = sad.predict()
 
 print(f"Predicting with words")
 sad.item_list_col = "e_words"
-sad.numeric_cols = None #Important otherwise we use both numeric and item list for predicting
-sad.prepare_train_test_data() #Data needs to prepared after chaning predictor columns
+sad.numeric_cols = None #Important otherwise we use both numeric_col and item_list_col for predicting
+sad.prepare_train_test_data() #Data needs to prepared after changing the predictor columns
 #Logistic Regression
 sad.train_LR()
 df_seq = sad.predict()
@@ -98,17 +98,17 @@ sad.train_DT()
 df_seq = sad.predict()
 
 #____________________________________________________________
-#Part 6 run all anomaly detectors and store score to Pandas table for easy storage
+#Part 6 run all anomaly detectors and store scores
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
 sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
-for i in range(2): #We do just two loop in this demo
+for i in range(2): #We do just two loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split (df, test_frac=0.90)
     sad.evaluate_all_ads()
     
-    #We keep existing split but need to prepare everything with trigrams
+    #We keep existing split but need to prepare data for trigram data
     sad.item_list_col = "e_trigrams"
     sad.prepare_train_test_data()
     sad.evaluate_all_ads()

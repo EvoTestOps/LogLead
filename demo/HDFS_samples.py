@@ -1,4 +1,4 @@
-#This is an example using using HDFS from samples folder data 
+#This is an example using using HDFS from samples folder data. See also similar TB_samples.py 
 #The files have been loaded from raw and processed to parquet file format for efficient storage.
 #This demonstrates how to work after you have completed the loader.
 
@@ -29,7 +29,7 @@ print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/le
 
 
 #_________________________________________________________________________________
-#Part 3 add enhanced represrations 
+#Part 3 add enhanced reprisentations 
 print(f"\nStarting enhancing all log events:")
 enhancer = er.EventLogEnhancer(df)
 
@@ -61,7 +61,7 @@ print(f"event length words:   {df['e_message_len_words_ws'][row_index]}")
 
 
 #_________________________________________________________________________________
-#Part 4 Aggregate enchanced representations to sequence lvel
+#Part 4 Aggregate event level data to sequence level
 print(f"\nStarting aggregating log event info to log sequences:")
 
 seqs_row_index = random.randint(0, len(df_seqs) - 1)
@@ -79,7 +79,7 @@ df_seqs = seq_enhancer.duration()
 print(f"sequence duration: {df_seqs.filter(pl.col('seq_id') == seq_id)['duration'][0]}")
 df_seqs = seq_enhancer.tokens(token="e_trigrams")
 df_seqs = seq_enhancer.tokens(token="e_words")
-print(f"Sequence level dataframe without aggregated info: {df_seqs.filter(pl.col('seq_id') == seq_id)}")
+print(f"Sequence level dataframe with aggregated info: {df_seqs.filter(pl.col('seq_id') == seq_id)}")
 
 #_________________________________________________________________________________________
 #Part 5 Do some anomaly detection
@@ -101,8 +101,8 @@ df_seq = sad.predict()
 
 print(f"Predicting with words")
 sad.item_list_col = "e_words"
-sad.numeric_cols = None #Important otherwise we use both numeric and item list for predicting
-sad.prepare_train_test_data() #Data needs to prepared after chaning predictor columns
+sad.numeric_cols = None #Important otherwise we use both numeric_col and item_list_col for predicting
+sad.prepare_train_test_data() #Data needs to prepared after changing the predictor columns
 #Logistic Regression
 sad.train_LR()
 df_seq = sad.predict()
@@ -126,7 +126,7 @@ print(f"Running all anomaly detectors with Words and Trigrams and storing result
 print(f"We run everything two times - Adjust as needed")
 
 sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
-for i in range(2): #We do just two loop in this demo
+for i in range(2): #We do just two loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
     sad.evaluate_all_ads()
