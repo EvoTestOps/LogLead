@@ -1,12 +1,10 @@
 # LogLead
-LogLead can be used for efficient benchmarking of log anomaly detection algorithms. 
-
-For easy onboarding, take a look at our [5-minute screencast on YouTube](https://www.youtube.com/watch?v=8stdbtTfJVo) or see demo folder examples: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py) and [HDFS_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/HDFS_samples.py).
+LogLead can be used for efficient benchmarking of log anomaly detection algorithms. For easy onboarding, take a look at our [5-minute screencast on YouTube](https://www.youtube.com/watch?v=8stdbtTfJVo) or see demo folder examples: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py) and [HDFS_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/HDFS_samples.py).
 
 ## Architecutral overview
-LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars] (https://www.pola.rs/) dataframes as its notably faster compared to alternatives like Pandas.
+LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars](https://www.pola.rs/) dataframes as its notably faster than Pandas.
 
-![Dataflow](images/LogLead_Dataflow_Diagram.png)
+<img src="images/LogLead_Dataflow_Diagram.png" width="40%">
 
 Loader: This module reads in the log files deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages.
 
@@ -19,7 +17,7 @@ Anomaly Detector: This module uses the enhanced log data to perform Anomaly Dete
 Below you can see anomaly detection results (F1-Binary) trained on 0.5% subset of HDFS data. 
 We use 5 different log message enhancement strategies: [Words](https://en.wikipedia.org/wiki/Bag-of-words_model), [Drain](https://github.com/logpai/Drain3), [LenMa](https://github.com/keiichishima/templateminer), [Spell](https://github.com/logpai/logparser/tree/main/logparser/Spell), and [BERT](https://github.com/google-research/bert) 
 
-The enhancement strategies are tested with 5 different machine learning algorithms: DT (Decision Tree), SVM (Support Vector Machine), LR (Logistic Regression), RF (Random Forest), XGB (XGBoost).
+The enhancement strategies are tested with 5 different machine learning algorithms: DT (Decision Tree), SVM (Support Vector Machine), LR (Logistic Regression), RF (Random Forest), and XGB (eXtreme Gradient Boosting).
 
 
 |         | Words  | Drain  | Lenma  | Spell  | Bert   | Average |
@@ -35,9 +33,7 @@ The enhancement strategies are tested with 5 different machine learning algorith
 
 
 ## Paper 
-More detailed description of the work is documented in [arxiv pre-print](https://arxiv.org/abs/2311.11809).
-
-If you use this software in your research, please cite it as below:
+More detailed description of the work is documented in [arxiv pre-print](https://arxiv.org/abs/2311.11809). If you use this software in your research, please cite it as below:
 
 ```bibtex
 @misc{mantyla2023loglead,
