@@ -1,7 +1,7 @@
 # LogLead
 LogLead can be used for efficient benchmarking of log anomaly detection algorithms. For easy onboarding, take a look at our [5-minute screencast on YouTube](https://www.youtube.com/watch?v=8stdbtTfJVo) or see demo folder examples: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py) and [HDFS_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/HDFS_samples.py).
 
-## Architecutral overview
+## Architectural overview
 LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars](https://www.pola.rs/) dataframes as its notably faster than Pandas.
 
 <img src="images/LogLead_Dataflow_Diagram.png" width="40%">
