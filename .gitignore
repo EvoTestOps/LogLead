@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 *.pyo
 private_data/
+wip_* #ignore work-in-progress files
