@@ -25,7 +25,7 @@ for f in all_files:
         datasets.add(dataset_name)
 
 cols_event = ["m_message", "e_words", "e_event_id", "e_trigrams", "e_event_spell_id", "e_event_lenma_id", "e_bert_emb"] 
-numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1"]
+numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_prob_nmax_avg", "nep_prob_nmax_min"]
 for dataset in datasets:
     # Load the event level data
     primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
@@ -51,5 +51,11 @@ for dataset in datasets:
                 #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
                 sad.test_train_split (df_seq, test_frac=0.2) 
                 sad.evaluate_all_ads(disabled_methods=[])
+        print(f"Running seqeuence anomaly detectors with numeric columns {numeric_cols}")
+        if "anomaly" in df_seq.columns and len(df_seq["anomaly"].unique()) > 1:
+            sad =  ad.AnomalyDetection(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
+            #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
+            sad.test_train_split (df_seq, test_frac=0.2) 
+            sad.evaluate_all_ads(disabled_methods=[])        
 
 print ("Anomaly detectors test complete.")

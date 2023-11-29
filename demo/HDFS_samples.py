@@ -70,6 +70,8 @@ print(f"Sequence level dataframe without aggregated info: {df_seqs.filter(pl.col
 seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seqs)
 df_seqs = seq_enhancer.events()
 print(f"list of events in a sequence: {format_as_list(df_seqs.filter(pl.col('seq_id') == seq_id)['e_event_id'][0])}")
+df_seqs = seq_enhancer.next_event_prediction()
+print(f"Predicted events ngram:       {format_as_list(df_seqs.filter(pl.col('seq_id') == seq_id)['nep_predict'][0])}")
 #df_seqs = seq_enhancer.eve_len()
 df_seqs = seq_enhancer.seq_len()
 print(f"sequence length in events: {df_seqs.filter(pl.col('seq_id') == seq_id)['seq_len'][0]}")
@@ -84,13 +86,13 @@ print(f"Sequence level dataframe with aggregated info: {df_seqs.filter(pl.col('s
 #_________________________________________________________________________________________
 #Part 5 Do some anomaly detection
 print(f"\nStarting anomaly detection of HDFS Sequences")
+print(f"Predicting with sequence length and duration ")
 numeric_cols = ["seq_len",  "duration_sec",]
 sad = ad.AnomalyDetection()
 #Using 10% for training 90% for testing
 sad.numeric_cols = numeric_cols
 sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
 print(f"using 10% for training and 90% for testing")
-print(f"Predicting with sequence length and duration ")
 
 #Logistic Regression
 sad.train_LR()

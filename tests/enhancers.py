@@ -56,6 +56,8 @@ for dataset in datasets:
         enhancer_seq = eh.SequenceEnhancer(df = df, df_seq = df_seq)
         print ("\nAggregating drain parsing results",   end=", ")
         df_seq = enhancer_seq.events()
+        print ("\nCreating next-event-predction results from Drain events",   end=", ")
+        df_seq = enhancer_seq.next_event_prediction()
         print ("Aggregating tokens / words",   end=", ")
         df_seq = enhancer_seq.tokens()
         df_seq = enhancer_seq.tokens("e_trigrams")

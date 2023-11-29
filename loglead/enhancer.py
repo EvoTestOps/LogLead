@@ -6,6 +6,7 @@ import hashlib
 #Lazy import inside the method. 
 #from .bertembedding import BertEmbeddings
 import os
+import loglead.next_event_prediction as nep
 
 # Drain.ini default regexes
 # No lookahead or lookbedinde so reimplemented with capture groups. Still problem with overlaps See
@@ -295,3 +296,46 @@ class SequenceEnhancer:
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
+        
+    def next_event_prediction (self, event_col = "e_event_id"):
+        if event_col not in self.df_seq.columns:#Ensure events are present otherwise no nep can be done
+            self.events(event_col)
+        nepn = nep.NextEventPredictionNgram()
+        #Create model and score with same data.
+        #This follows the enchancer logic that there is no splitting. In AD we operate with splits  
+        #Also sequence parsing is not done with splits so this follows the same logic
+        seq_data = self.df_seq["e_event_id"].to_list()
+        nepn.create_ngram_model(seq_data)
+        #predicted events
+        preds, correct,  s_abs, spn_sum, spn_max = nepn.predict_list(seq_data)
+        self.df_seq = self.df_seq.with_columns(nep_predict = pl.Series(preds), 
+                                    nep_corr= pl.Series(correct),
+                                    nep_abs = pl.Series(s_abs),
+                                    nep_prob_nsum = pl.Series(spn_sum),
+                                    nep_prob_nmax = pl.Series(spn_max))
+        # Add average, max, and min columns for nep_corr
+        # This info is already in nep_prob_nmax with 1 being correct and <1 being zeros
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.mean().alias("nep_corr_avg"))
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.max().alias("nep_corr_max"))
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.min().alias("nep_corr_min"))
+        # Add average, max, and min columns for nep_abs
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.mean().alias("nep_abs_avg"))
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.max().alias("nep_abs_max"))
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.min().alias("nep_abs_min"))
+        # Add average, max, and min columns for nep_prob_nsum
+        # For prediction it looks as nep_prob_nmax is superior
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.mean().alias("nep_prob_nsum_avg"))
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.max().alias("nep_prob_nsum_max"))
+        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.min().alias("nep_prob_nsum_min"))
+        # Add average, max, and min columns for nep_prob_nmax
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.mean().alias("nep_prob_nmax_avg"))
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.max().alias("nep_prob_nmax_max"))
+        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.min().alias("nep_prob_nmax_min"))
+
+        self._perplexity(probab_col = "nep_prob_nmax")
+        return self.df_seq
+
+    def _perplexity(self, probab_col = "nep_prob_nmax"): 
+        self.df_seq = self.df_seq.with_columns(pl.col(probab_col).list.eval(pl.element().log()) #Log of probabilties in a list
+                                    .list.mean() #Average of probs
+                                    .mul(-1).exp().alias(probab_col + "_perp")) #flip sign and exponent
