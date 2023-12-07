@@ -54,14 +54,14 @@ print(f"as Drain event id:    {df['e_event_id'][row_index]}")
 #df = enhancer.parse_spell()
 #print(f"as Spell event id:    {df['e_event_spell_id'][row_index]}")
 df = enhancer.length()
-print(f"event length chars:   {df['e_message_len_char'][row_index]}")
-print(f"event length lines:   {df['e_message_len_lines'][row_index]}")
-print(f"event length words:   {df['e_message_len_words_ws'][row_index]}")
+print(f"event length chars:   {df['e_chars_len'][row_index]}")
+print(f"event length lines:   {df['e_lines_len'][row_index]}")
+print(f"event length words:   {df['e_words_len'][row_index]}")
 
 #_________________________________________________________________________________________
 #Part 5 we do some anomaly detection. No part 4 here as TB is not labeled on sequence level. See HDFS_samples.py
 print(f"\nStarting anomaly detection of TB Events")
-numeric_cols = ["e_message_len_char",  "e_message_len_lines",]
+numeric_cols = ["e_chars_len",  "e_lines_len",]
 sad = ad.AnomalyDetection()
 #Using 10% for training 90% for testing
 sad.numeric_cols = numeric_cols

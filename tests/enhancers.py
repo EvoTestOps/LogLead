@@ -11,6 +11,7 @@ import loglead.loader as load
 
 # Set your directory
 test_data_path = "/home/mmantyla/Datasets/test_data"  # Replace with the path to your folder
+test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
 
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))

@@ -44,6 +44,11 @@ class EventLogEnhancer:
         self._handle_prerequisites([column])
         if "e_words" not in self.df.columns:
             self.df = self.df.with_columns(pl.col(column).str.split(by=" ").alias("e_words"))
+            self.df = self.df.with_columns(
+                e_words_len = pl.col("e_words").list.lengths(),
+            )
+        else:
+            print("e_words already found")
         return self.df
 
     # Function-based enricher to extract alphanumeric tokens from messages
@@ -52,6 +57,9 @@ class EventLogEnhancer:
         if "e_alphanumerics" not in self.df.columns:
             self.df = self.df.with_columns(
                 pl.col(column).str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
+            )
+            self.df = self.df.with_columns(
+                e_alphanumerics_len = pl.col("e_alphanumerics").list.lengths(),
             )
         return self.df
 
@@ -66,6 +74,9 @@ class EventLogEnhancer:
             self.df = self.df.with_columns(
                 pl.col(column).map_elements(
                     lambda mes: self._create_cngram(message=mes, ngram=3)).alias("e_trigrams")
+            )
+            self.df = self.df.with_columns(
+                e_trigrams_len = pl.col("e_trigrams").list.lengths()
             )
         return self.df
 
@@ -185,15 +196,14 @@ class EventLogEnhancer:
             self.df = self.df.hstack(bert_emb_col_df)
         return self.df
 
-    def length(self):
+    def length(self, column="m_message"):
         self._handle_prerequisites(["m_message"])
-        if "e_message_len" not in self.df.columns:
+        if "e_chars_len" not in self.df.columns:
             self.df = self.df.with_columns(
-                e_message_len_char=pl.col("m_message").str.n_chars(),
-                e_message_len_lines=pl.col("m_message").str.count_matches(r"(\n|\r|\r\n)"),
-                #Number of words given by sklearn default splitter in CountVectortizer https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.CountVectorizer.html
-                e_message_len_words_sklearn=pl.col("m_message").str.count_matches(r"(?u)\b\w\w+\b"),
-                e_message_len_words_ws=pl.col("m_message").str.count_matches(r"\s+")+1  
+                e_chars_len=pl.col(column).str.n_chars(),
+                e_lines_len=pl.col(column).str.count_matches(r"(\n|\r|\r\n)"),
+                e_event_id_len = 1 #Messages are always one event. Added to simplify code later on. 
+ 
             )
         return self.df
 
@@ -248,6 +258,8 @@ class SequenceEnhancer:
         df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        self.df_seq = self.df_seq.with_columns(self.df_seq['seq_len'].alias('e_event_id_len'))
+
         return self.df_seq
 
     def events(self, event_col = "e_event_id"):
@@ -257,14 +269,20 @@ class SequenceEnhancer:
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
 
+
     def tokens(self, token="e_words"):
         #df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
         #Same as above but the above crashes due to out of memory problems. We might need this fix also in other rows
         df_temp = self.df.select("seq_id", token).explode(token).group_by('seq_id').agg(pl.col(token))
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
 
+        #lengths
+        df_temp = self.df.group_by('seq_id').agg(pl.col(token+"_len").sum().alias(token+"_len"))
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+
+        return self.df_seq
+    
     def duration(self):
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
         df_temp = self.df.group_by('seq_id').agg(
@@ -278,15 +296,15 @@ class SequenceEnhancer:
     def eve_len(self):
         # Count the number of rows for each seq_id
         df_temp = self.df.group_by('seq_id').agg(
-            eve_len_max=pl.col('e_message_len_char').max(),
-            eve_len_min=pl.col('e_message_len_char').min(),
-            eve_len_avg=pl.col('e_message_len_char').mean(),
-            eve_len_med=pl.col('e_message_len_char').median(),
-            eve_len_over1=(pl.col('e_message_len_char') > 1).sum()
+            eve_len_max=pl.col('e_chars_len').max(),
+            eve_len_min=pl.col('e_chars_len').min(),
+            eve_len_avg=pl.col('e_chars_len').mean(),
+            eve_len_med=pl.col('e_chars_len').median(),
+            eve_len_over1=(pl.col('e_chars_len') > 1).sum()
         )
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq    
+        return self.df_seq     
     
     def embeddings(self, embedding_column="e_bert_emb"):
         # Aggregate by averaging the embeddings for each sequence (seq_id)

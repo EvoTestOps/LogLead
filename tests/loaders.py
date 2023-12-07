@@ -14,8 +14,8 @@ sys.path.append('..')
 import loglead.loader as load
 
 # Base directory for datasets
-#full_data = "/home/ubuntu/Datasets"
 full_data = "/home/mmantyla/Datasets"
+full_data = "/home/ubuntu/Datasets"
 
 memory_limit_TB = 40
 

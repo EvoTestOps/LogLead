@@ -20,6 +20,8 @@ from sklearn.metrics import confusion_matrix
 import csv
 from io import StringIO
 import pandas as pd
+from loglead.RarityModel import RarityModel
+from loglead.OOV_detector import OOV_detector
 
 
 from sklearn.metrics import accuracy_score
@@ -46,7 +48,7 @@ class AnomalyDetection:
         self.train_vocabulary = None
 
         
-    def test_train_split(self, df, test_frac=0.9, vec_name="CountVectorizer", oov_analysis=False):
+    def test_train_split(self, df, test_frac=0.9, vec_name="CountVectorizer"):
         # Shuffle the DataFrame
         df = df.sample(fraction = 1.0, shuffle=True)
         # Split ratio
@@ -55,18 +57,18 @@ class AnomalyDetection:
         # Split the DataFrame using head and tail
         self.test_df = df.head(test_size)
         self.train_df = df.tail(-test_size)
-        self.prepare_train_test_data(vec_name=vec_name, oov_analysis=oov_analysis)
+        self.prepare_train_test_data(vec_name=vec_name)
         
-    def prepare_train_test_data(self, vec_name="CountVectorizer", oov_analysis=False):
+    def prepare_train_test_data(self, vec_name="CountVectorizer"):
         #Prepare all data for running
-        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name, oov_analysis)
-        self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name, oov_analysis)
+        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name)
+        self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name)
         #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, oov_analysis)
-        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name, oov_analysis)
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name)
+        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
      
         
-    def _prepare_data(self, train, df_seq, vec_name, oov_analysis=False):
+    def _prepare_data(self, train, df_seq, vec_name):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
@@ -89,17 +91,6 @@ class AnomalyDetection:
             # We are predicting
             else:
                 X = self.vectorizer.transform(events)
-                if oov_analysis:
-                    oov_vectorizer = CountVectorizer(analyzer=lambda x: x, binary=True)
-                    X_binary = oov_vectorizer.fit_transform(events)
-                    feature_names = oov_vectorizer.get_feature_names_out()
-                    oov_terms = set(feature_names) - set(self.train_vocabulary)
-                    oov_indicator = np.array([feature in oov_terms for feature in feature_names], dtype=int)
-                    oov_indicator_sparse = csr_matrix(oov_indicator)
-                    oov_counts = X_binary.dot(oov_indicator_sparse.T)
-                    oov_counts = oov_counts.toarray().ravel()
-                    self.test_df = self.test_df.with_columns(pl.Series(name="oov_count", values=oov_counts))
-                    
 
         # Extract lists of embeddings
         if  self.emb_list_col:
@@ -182,6 +173,15 @@ class AnomalyDetection:
     def train_XGB(self):
         self.train_model(XGBClassifier())
 
+    def train_RarityModel(self, filter_anos=True, threshold=250):
+        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
+        
+    def train_OOVDetector(self, len_col=None, filter_anos=True, threshold=1):
+        if len_col == None: 
+            len_col = self.item_list_col+"_len"
+        self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
+        
+
     def evaluate_all_ads(self, disabled_methods=[]):
         for method_name in sorted(dir(self)): 
             if (method_name.startswith("train_") 
@@ -199,14 +199,20 @@ class AnomalyDetection:
         if self.print_scores:
             print("---------------------------------------------------------------")
 
+    def evaluate_with_params(self, models_dict):
+        for func_name, params in models_dict.items():
+            func_name = "train_"+func_name
+            method = getattr(self, func_name)
+            method(**params)
+            self.predict()
 
-    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False, auc_roc = False):
+
+    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False, auc_roc = True):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
         print(f"Accuracy: {accuracy:.4f}")
         
-
         # Compute the F1 score
         f1 = f1_score(y_test, y_pred)
         # Print the F1 score
@@ -250,10 +256,12 @@ class AnomalyDetection:
             X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
             if isinstance(self.model, IsolationForest):
                 y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
-                auc_roc_analysis(y_test, y_pred, titlestr)
+                print(f"AUCROC: {auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
             if isinstance(self.model, KMeans):
                 y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
-                auc_roc_analysis(y_test, y_pred, titlestr)
+                print(f"AUCROC: {auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+            if isinstance(self.model, (RarityModel, OOV_detector)):
+                print(f"AUCROC: {auc_roc_analysis(y_test,  model.scores, titlestr):.4f}")
 
 
 
@@ -376,7 +384,7 @@ class ModelResultsStorage:
 
 
 
-def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=True):
+def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=False):
     # Compute the ROC curve
     fpr, tpr, thresholds = roc_curve(labels, preds)
     # Compute the AUC from the points of the ROC curve
