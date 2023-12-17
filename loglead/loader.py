@@ -47,7 +47,12 @@ class BaseLoader:
         if self.df_seq is not None and "normal" in self.df_seq:
             # Create the 'anomaly' column by inverting the boolean values of the 'normal' column
             self.df_seq = self.df_seq.with_columns(pl.col("normal").not_().alias("anomaly"))
-        self._mandatory_columns = ["m_message"]
+
+        # Check if the 'anomaly' column exists but no normal column
+        if self.df is not None and  "anomaly" in self.df.columns and not "normal" in self.df.columns:
+            # Create the 'normal' column by inverting the boolean values of the 'anomaly' column
+            self.df = self.df.with_columns(pl.col("anomaly").not_().alias("normal"))
+        #self._mandatory_columns = ["m_message"]
 
     
     def check_for_nulls(self):
@@ -204,7 +209,7 @@ class HadoopLoader(BaseLoader):
             # Iterate over all files in the subdirectory that match the given pattern
             for file in glob.glob(file_pattern):
                 try:
-                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator, row_count_name="row_nr")
+                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator, row_count_name="row_nr_per_file")
                     q = q.with_columns(
                         pl.lit(seq_id).alias('seq_id'), #Folder is seq_id
                         pl.lit(os.path.basename(file)).alias('seq_id_sub') #File is seq_id_sub
@@ -217,8 +222,8 @@ class HadoopLoader(BaseLoader):
     
     #Occasionally multiline entries exists, e.g. log message followed by stack trace here we merge them to one log event. 
     def _merge_multiline_entries(self):
-         # Sort the dataframe by "seq_id_sub" and "row_nr" to ensure correct lines are merged together
-        self.df = self.df.sort(["seq_id_sub", "row_nr"])
+         # Sort the dataframe by "seq_id_sub" and "row_nr_per_file" to ensure correct lines are merged together
+        self.df = self.df.sort(["seq_id_sub", "row_nr_per_file"])
         
         # Create a flag column that determines if the row starts with the pattern.
         #self.df = self.df.with_columns(pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).alias("flag"))
@@ -237,7 +242,7 @@ class HadoopLoader(BaseLoader):
             pl.col("column_1").str.concat("\n").alias("column_1"),
             pl.col("seq_id").first().alias("seq_id"),
             pl.col("seq_id_sub").first().alias("seq_id_sub"),
-            pl.col("row_nr").first().alias("row_nr")
+            pl.col("row_nr_per_file").first().alias("row_nr_per_file")
         )
         self.df = df_grouped
         #Debug
@@ -258,7 +263,7 @@ class HadoopLoader(BaseLoader):
         self._merge_multiline_entries()
         self._extract_process()
         #Store columns 
-        df_store_cols = self.df.select(pl.col("seq_id","seq_id_sub", "process","row_nr", "column_1"))
+        df_store_cols = self.df.select(pl.col("seq_id","seq_id_sub", "process","row_nr_per_file", "column_1"))
         #This method splits the string and overwrite self.df
         self._split_and_unnest(["date", "time","level", "component","m_message"])
         #Merge the stored columns back to self.df

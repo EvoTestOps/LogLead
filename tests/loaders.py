@@ -12,6 +12,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
 import loglead.loader as load
+import loglead.nezha_loader as nezha_loader
 
 # Base directory for datasets
 full_data = "/home/mmantyla/Datasets"
@@ -41,7 +42,10 @@ data_files = {
     "tb": {
         "log_file": f"{full_data}/thunderbird/Thunderbird.log",
         "log_file_2k": f"{full_data}/thunderbird/Thunderbird_2k.log"
-    }
+    },
+    "nezha": {
+        "log_file":f"{full_data}/nezha/"
+        }
 }
 
 def create_correct_loader(dataset):
@@ -62,6 +66,8 @@ def create_correct_loader(dataset):
         loader = load.HadoopLoader(filename=data_files["hadoop"]["log_dir"],
                                    filename_pattern=data_files["hadoop"]["filename_pattern"],
                                    labels_file_name=data_files["hadoop"]["labels_file"]) 
+    elif dataset == "nezha":
+        loader = nezha_loader.NezhaLoader(filename= data_files["nezha"]["log_file"],) 
     return loader
 
 
@@ -94,6 +100,10 @@ def check_and_save(dataset, loader):
         if len(loader.df) != 177592:
             print(f"MISMATCH hadoop expected 177592 was {len(loader.df)}")
         loader.reduce_dataframes(frac=0.56) #Reduce all to roughly 100k rows
+    elif dataset == "nezha":
+        if len(loader.df) != 4230473:
+            print(f"MISMATCH nezha expected 4230473 was {len(loader.df)}")
+        loader.reduce_dataframes(frac=0.02) #Reduce all to roughly 100k rows
     else:
         print(f"Invalid dataset {dataset}")
         return

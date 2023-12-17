@@ -126,6 +126,41 @@ class EventLogEnhancer:
             # tm.drain.print_tree()
         return self.df
     
+    #New parser not yet released to public. Coming early 2024
+    def parse_tip(self, masking=True, reparse=False):
+        self._handle_prerequisites(["m_message"])
+        if reparse or "e_event_tip_id" not in self.df.columns:
+            import tipping as tip #Not yet available for public
+            if "row_nr" in self.df.columns:
+                self.df = self.df.drop("row_nr")
+            self.df = self.df.with_row_count()
+            tipping_clusters = tip.token_independency_clusters(self.df["e_message_normalized"])
+            original_strings = []
+            hashlib_strings = []
+            row_nrs = []
+            for word_list, row_numbers in tipping_clusters:
+                # Convert the list of strings to a single string
+                template_str = ' '.join(word_list)
+                # Hash the string
+                hashlib_str = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]
+                # Add the data to the lists
+                for row_nr in row_numbers:
+                    original_strings.append(template_str)
+                    hashlib_strings.append(hashlib_str)
+                    row_nrs.append(row_nr)
+
+            # Create a Polars DataFrame
+            df_new = pl.DataFrame({
+                'e_template_tip': original_strings,
+                'e_event_tip_id': hashlib_strings,
+                'row_nr': row_nrs
+            })
+            df_new = df_new.with_columns(df_new['row_nr'].cast(pl.UInt32))
+            self.df = self.df.join(df_new, on='row_nr', how='left')
+
+        return self.df
+
+
     #https://github.com/keiichishima/templateminer
     def parse_lenma(self, masking=True, reparse=False):
         self._handle_prerequisites(["e_words"])
