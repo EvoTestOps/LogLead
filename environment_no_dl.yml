@@ -161,4 +161,4 @@ dependencies:
       - cachetools==4.2.1
       - drain3==0.9.11
       - jsonpickle==1.5.1
-      - polars==0.19.13
+      - polars==0.19.19

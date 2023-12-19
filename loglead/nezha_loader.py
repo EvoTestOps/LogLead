@@ -1,6 +1,6 @@
 import glob
 import os
-from loader import BaseLoader
+from loglead.loader import BaseLoader
 import polars as pl
 import re
 import json
