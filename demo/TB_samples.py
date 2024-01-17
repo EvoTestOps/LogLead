@@ -10,7 +10,7 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.loader as load
+import loglead.loaders.base as load
 import loglead.enhancer as er
 import loglead.anomaly_detection as ad
 import polars as pl

@@ -7,7 +7,7 @@ import time
 sys.path.append('..')
 import polars as pl
 
-import loglead.loader as load
+import loglead.loaders.base as load
 import demo.paper.t1_logparser_load as logparser
 
 # Base directory for datasets

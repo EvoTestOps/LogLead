@@ -6,7 +6,7 @@ import time
 sys.path.append('..')
 import polars as pl
 import copy
-import loglead.loader as load
+import loglead.loaders.base as load
 import loglead.enhancer as er
 from parsers.bert.bertembedding import BertEmbeddings
 full_data = "/home/ubuntu/Datasets"

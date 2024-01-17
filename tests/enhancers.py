@@ -7,11 +7,11 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
 import loglead.enhancer as eh
-import loglead.loader as load
+import loglead.loaders.base as load
 
 # Set your directory
 test_data_path = "/home/mmantyla/Datasets/test_data"  # Replace with the path to your folder
-test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
+#test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
 
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
@@ -57,7 +57,7 @@ for dataset in datasets:
         enhancer_seq = eh.SequenceEnhancer(df = df, df_seq = df_seq)
         print ("\nAggregating drain parsing results",   end=", ")
         df_seq = enhancer_seq.events()
-        print ("\nCreating next-event-predction results from Drain events",   end=", ")
+        print ("\nCreating next-event-prediction results from Drain events",   end=", ")
         df_seq = enhancer_seq.next_event_prediction()
         print ("Aggregating tokens / words",   end=", ")
         df_seq = enhancer_seq.tokens()

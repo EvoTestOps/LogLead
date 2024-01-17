@@ -6,7 +6,7 @@ import time
 sys.path.append('..')
 import polars as pl
 
-import loglead.loader as load
+import loglead.loaders.base as load
 import loglead.enhancer as er
 
 #full_data = "/home/ubuntu/Datasets"

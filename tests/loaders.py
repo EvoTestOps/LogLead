@@ -11,8 +11,12 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.loader as load
-import loglead.nezha_loader as nezha_loader
+import loglead.loaders.base as load
+import loglead.loaders.supercomputers as load_sc
+import loglead.loaders.hdfs as load_hdfs
+import loglead.loaders.hadoop as load_hadoop
+import loglead.loaders.pro as load_pro
+import loglead.loaders.nezha as load_nezha
 
 # Base directory for datasets
 full_data = "/home/mmantyla/Datasets"
@@ -50,24 +54,24 @@ data_files = {
 
 def create_correct_loader(dataset):
     if dataset == "hdfs":
-        loader = load.HDFSLoader(filename=data_files["hdfs"]["log_file"], 
+        loader = load_hdfs.HDFSLoader(filename=data_files["hdfs"]["log_file"], 
                                  labels_file_name=data_files["hdfs"]["labels_file"])
     elif dataset == "tb": #Must have gbs for TB
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load.ThunderbirdLoader(filename=data_files["tb"]["log_file"]) 
+            loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file"]) 
         else:
-            loader = load.ThunderbirdLoader(filename=data_files["tb"]["log_file_2k"]) 
+            loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file_2k"]) 
     elif dataset == "bgl":
-        loader = load.BGLLoader(filename=data_files["bgl"]["log_file"])
+        loader = load_sc.BGLLoader(filename=data_files["bgl"]["log_file"])
     elif dataset=="pro":
-       loader = load.ProLoader(filename=data_files["pro"]["log_file"])
+       loader = load_pro.ProLoader(filename=data_files["pro"]["log_file"])
     elif dataset == "hadoop":
-        loader = load.HadoopLoader(filename=data_files["hadoop"]["log_dir"],
+        loader = load_hadoop.HadoopLoader(filename=data_files["hadoop"]["log_dir"],
                                    filename_pattern=data_files["hadoop"]["filename_pattern"],
                                    labels_file_name=data_files["hadoop"]["labels_file"]) 
     elif dataset == "nezha":
-        loader = nezha_loader.NezhaLoader(filename= data_files["nezha"]["log_file"],) 
+        loader = load_nezha.NezhaLoader(filename= data_files["nezha"]["log_file"],) 
     return loader
 
 
@@ -115,7 +119,7 @@ def check_and_save(dataset, loader):
 
 for key, value in data_files.items():
     memory = psutil.virtual_memory().available / (1024 ** 3)
-    print(f"Processing: {key}")
+    print(f"Loading: {key}")
     loader = create_correct_loader(key)
     loader.execute()
     check_and_save(key, loader)

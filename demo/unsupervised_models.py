@@ -7,7 +7,7 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
+import loglead.loaders.base as load, loglead.enhancer as er, loglead.anomaly_detection as ad
 import polars as pl
 import time 
 

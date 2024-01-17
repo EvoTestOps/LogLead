@@ -3,7 +3,7 @@ import sys
 import time
 sys.path.append('..')
 import polars as pl
-import loglead.loader as load, loglead.enhancer as er, loglead.anomaly_detection as ad
+import loglead.loaders.base as load, loglead.enhancer as er, loglead.anomaly_detection as ad
 full_data = "/home/ubuntu/Datasets"
 private_data ="../private_data"
 

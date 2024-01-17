@@ -9,8 +9,8 @@ sys.path.append('..')
 import loglead.anomaly_detection as ad
 
 # Set your directory
-#test_data_path = "/home/mmantyla/Datasets/test_data" 
-test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
+test_data_path = "/home/mmantyla/Datasets/test_data" 
+#test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
  
 
 # Get all .parquet files in the directory
@@ -36,6 +36,8 @@ for dataset in datasets:
 
     for col in cols_event:
         disabled_methods = []
+        disabled_methods.append("train_LOF") #Too slow. Disabled to make tests run faster
+        disabled_methods.append("train_OneClassSVM") #Too slow. Disabled to make tests run faster
         if col == "m_message":
             disabled_methods.append("train_OOVDetector")
           #Only run if the predictor column AND anomaly labels are present AND we have at least two classes in the data
@@ -54,6 +56,8 @@ for dataset in datasets:
         print(f"Running seqeuence anomaly detectors with {seq_file}")
         for col in cols_event:
             disabled_methods = []
+            disabled_methods.append("train_LOF") #Too slow. Disabled to make tests run faster
+            disabled_methods.append("train_OneClassSVM") #Too slow. Disabled to make tests run faster
             if col == "m_message":
                 disabled_methods.append("train_OOVDetector")
                 #Only run if the predictor column AND anomaly labels are present AND we have at least two classes in the data
