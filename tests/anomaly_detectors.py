@@ -9,8 +9,8 @@ sys.path.append('..')
 import loglead.anomaly_detection as ad
 
 # Set your directory
-test_data_path = "/home/mmantyla/Datasets/test_data" 
-#test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
+#test_data_path = "/home/mmantyla/Datasets/test_data" 
+test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
  
 
 # Get all .parquet files in the directory
