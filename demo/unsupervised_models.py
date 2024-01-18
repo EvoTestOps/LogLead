@@ -7,7 +7,11 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-import loglead.loaders.base as load, loglead.enhancer as er, loglead.anomaly_detection as ad
+import loglead.loaders.supercomputers as load_sc
+import loglead.loaders.hadoop as load_hadoop
+import loglead.loaders.hdfs as load_hdfs
+
+import loglead.enhancer as er, loglead.anomaly_detection as ad
 import polars as pl
 import time 
 
@@ -36,7 +40,7 @@ print("---------- Hadoop ----------")
 frac_data = 1
 test_frac = 0.5
 stime = time.time()
-loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
+loader = load_hadoop.HadoopLoader(filename=f"{full_data}/hadoop/",
                                             filename_pattern  ="*.log",
                                             labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
 df = loader.execute()
@@ -67,6 +71,7 @@ seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seq)
 print("ano", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==False)))
 print("normal", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==True)))
 seq_enhancer.seq_len() #OOVD uses data from the df for faster calculations
+seq_enhancer.start_time()
 
 sad = ad.AnomalyDetection()
 for item in items:
@@ -78,6 +83,7 @@ for item in items:
     sad.item_list_col = item
 
     stime = time.time()
+    seq_enhancer.sort_start_time()
     sad.test_train_split (seq_enhancer.df_seq, test_frac=test_frac)
     print("time split and prepare:", time.time()-stime)
 
@@ -88,7 +94,7 @@ print("---------- BGL ----------")
 frac_data = 0.05
 test_frac = 0.95
 stime = time.time()
-loader = load.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
+loader = load_sc.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
 df = loader.execute()
 print("ano", len(df.filter(df["normal"]==False)))
 print("normal", len(df.filter(df["normal"]==True)))
@@ -128,7 +134,7 @@ print("---------- HDFS ----------")
 frac_data = 0.05
 test_frac = 0.95
 stime = time.time()
-loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
+loader = load_hdfs.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
                                     labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 df = loader.execute()
 df = loader.reduce_dataframes(frac=frac_data)
@@ -175,10 +181,10 @@ for item in items:
 
 
 print("---------- Thunderbird ----------")
-frac_data = 0.005
+frac_data = 0.001
 test_frac = 0.95
 stime = time.time()
-loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log")
+loader = load_sc.ThuSpiLibLoader(filename=f"{full_data}/thunderbird/Thunderbird.log", split_component=False)
 df = loader.execute()
 print("ano", len(df.filter(df["normal"]==False)))
 print("normal", len(df.filter(df["normal"]==True)))

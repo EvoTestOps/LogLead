@@ -1,15 +1,25 @@
 from loglead.loaders.base import BaseLoader
 import polars as pl
-# Processor for the Thunderbird log file
-class ThunderbirdLoader(BaseLoader):
+# Processor for the Thunderbird, Spirit and Liberty log files
+class ThuSpiLibLoader(BaseLoader):
+    def __init__(self, filename, df=None, df_seq=None, split_component=False):
+        self.split_component = split_component
+        super().__init__(filename, df, df_seq)
+
+        
     def load(self):
         self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
                               separator=self._csv_separator, ignore_errors=True) #There is one UTF error in the file
     
+    
     def preprocess(self):
-        self._split_and_unnest(["label", "timestamp", "date", "userid", "month", 
-                                "day", "time", "location", "component_pid", "m_message"])
-        self._split_component_and_pid()
+        if self.split_component:
+            self._split_and_unnest(["label", "timestamp", "date", "userid", "month", 
+                                    "day", "time", "location", "component_pid", "m_message"])
+            self._split_component_and_pid()
+        else:
+            self._split_and_unnest(["label", "timestamp", "date", "userid", "month", 
+                                    "day", "time", "location", "m_message"])
         #parse datatime
         self.df = self.df.with_columns(m_timestamp = pl.from_epoch(pl.col("timestamp")))
         #Label contains multiple anomaly cases. Convert to binary

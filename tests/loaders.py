@@ -47,6 +47,12 @@ data_files = {
         "log_file": f"{full_data}/thunderbird/Thunderbird.log",
         "log_file_2k": f"{full_data}/thunderbird/Thunderbird_2k.log"
     },
+    "spirit": {
+        "log_file": f"{full_data}/spirit/spirit2.log",
+    },
+    "liberty": {
+        "log_file": f"{full_data}/liberty/liberty2.log",
+    },
     "nezha": {
         "log_file":f"{full_data}/nezha/"
         }
@@ -62,6 +68,18 @@ def create_correct_loader(dataset):
             loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file"]) 
         else:
             loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file_2k"]) 
+    elif dataset == "spirit": 
+        if memory > memory_limit_TB:
+            # Might take 4-6 minutes in HPC VM. In desktop out of memory
+            loader = load_sc.ThunderbirdLoader(filename=data_files["spirit"]["log_file"]) 
+        else:
+            print("Skipping spirit due to memory limit") 
+    elif dataset == "liberty": 
+        if memory > memory_limit_TB:
+            # Might take 4-6 minutes in HPC VM. In desktop out of memory
+            loader = load_sc.ThunderbirdLoader(filename=data_files["liberty"]["log_file"]) 
+        else:
+            print("Skipping liberty due to memory limit") 
     elif dataset == "bgl":
         loader = load_sc.BGLLoader(filename=data_files["bgl"]["log_file"])
     elif dataset=="pro":
@@ -91,7 +109,9 @@ def check_and_save(dataset, loader):
             loader.reduce_dataframes(frac=0.0005)
         else:
             if len(loader.df) != 2000:
-                print(f"MISMATCH tb expected 2000 was {len(loader.df)}")    
+                print(f"MISMATCH tb expected 2000 was {len(loader.df)}")
+    elif dataset == "spirit" or dataset == "liberty": #Must have gbs for TB
+        loader.reduce_dataframes(frac=0.0005)
     elif dataset == "bgl":
         if len(loader.df) != 4747963:
             print(f"MISMATCH bgl expected 4747963 was {len(loader.df)}")

@@ -283,6 +283,10 @@ class SequenceEnhancer:
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
 
+    def sort_start_time(self):
+        self.df_seq = self.df_seq.sort('start_time')
+        return self.df_seq
+    
     def end_time(self):
         df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').max().alias('end_time'))
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')

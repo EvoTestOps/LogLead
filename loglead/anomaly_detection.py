@@ -48,15 +48,16 @@ class AnomalyDetection:
         self.train_vocabulary = None
 
         
-    def test_train_split(self, df, test_frac=0.9, vec_name="CountVectorizer"):
+    def test_train_split(self, df, test_frac=0.9, shuffle=True,vec_name="CountVectorizer"):
         # Shuffle the DataFrame
-        df = df.sample(fraction = 1.0, shuffle=True)
+        if shuffle:
+            df = df.sample(fraction = 1.0, shuffle=True)
         # Split ratio
         test_size = int(test_frac * df.shape[0])
 
         # Split the DataFrame using head and tail
-        self.test_df = df.head(test_size)
-        self.train_df = df.tail(-test_size)
+        self.train_df = df.head(test_size)
+        self.test_df = df.tail(-test_size)
         self.prepare_train_test_data(vec_name=vec_name)
         
     def prepare_train_test_data(self, vec_name="CountVectorizer"):
