@@ -65,19 +65,19 @@ def create_correct_loader(dataset):
     elif dataset == "tb": #Must have gbs for TB
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file"]) 
+            loader = load_sc.ThuSpiLibLoader(filename=data_files["tb"]["log_file"]) 
         else:
-            loader = load_sc.ThunderbirdLoader(filename=data_files["tb"]["log_file_2k"]) 
+            loader = load_sc.ThuSpiLibLoader(filename=data_files["tb"]["log_file_2k"]) 
     elif dataset == "spirit": 
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThunderbirdLoader(filename=data_files["spirit"]["log_file"]) 
+            loader = load_sc.ThuSpiLibLoader(filename=data_files["spirit"]["log_file"]) 
         else:
             print("Skipping spirit due to memory limit") 
     elif dataset == "liberty": 
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThunderbirdLoader(filename=data_files["liberty"]["log_file"]) 
+            loader = load_sc.ThuSpiLibLoader(filename=data_files["liberty"]["log_file"], split_component=False) 
         else:
             print("Skipping liberty due to memory limit") 
     elif dataset == "bgl":

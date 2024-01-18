@@ -2,7 +2,7 @@ from loglead.loaders.base import BaseLoader
 import polars as pl
 # Processor for the Thunderbird, Spirit and Liberty log files
 class ThuSpiLibLoader(BaseLoader):
-    def __init__(self, filename, df=None, df_seq=None, split_component=False):
+    def __init__(self, filename, df=None, df_seq=None, split_component=True):
         self.split_component = split_component
         super().__init__(filename, df, df_seq)
 
