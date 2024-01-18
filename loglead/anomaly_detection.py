@@ -52,6 +52,8 @@ class AnomalyDetection:
         # Shuffle the DataFrame
         if shuffle:
             df = df.sample(fraction = 1.0, shuffle=True)
+        elif 'start_time' in df.columns:
+            df = df.sort('start_time')
         # Split ratio
         test_size = int(test_frac * df.shape[0])
 
