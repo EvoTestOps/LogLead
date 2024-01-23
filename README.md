@@ -57,14 +57,16 @@ LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detec
 
 
 ## Paper 
-More detailed description of the work is documented in [arxiv pre-print](https://arxiv.org/abs/2311.11809). If you use this software in your research, please cite it as below:
+More detailed description of the work is documented in our [conference paper](https://arxiv.org/abs/2311.11809). If you use this software in your research, please cite it as below:
 
 ```bibtex
-@misc{mantyla2023loglead,
+@inproceedings{mantyla2023loglead,
   author = {M\"{a}ntyl\"{a}, Mika and Wang, Yuqing and Nyyss\"{o}l\"{a}, Jesse},
-  title = {LogLead -- Fast and Integrated Log Loader, Enhancer, and Anomaly Detector},
-  year = {2023},
-  publisher = {arXiv},
-  journal = {arXiv preprint},
-  howpublished = {\url{https://arxiv.org/abs/2311.11809}}
+  title = {LogLead - Fast and Integrated Log Loader, Enhancer, and Anomaly Detector},
+  booktitle = {Proceedings of the IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER)},
+  year = {2024},
+  publisher = {IEEE},
+  address = {Rovaniemi, Finland},
+  pages = {1-5},
+  url  = {https://arxiv.org/abs/2311.11809}
 }
