@@ -1,7 +1,7 @@
 # LogLead
 LogLead is designed for efficient benchmarking of log anomaly detection algorithms. 
 
-Currently, it features over 300 unique anomaly detection combinations, encompassing 5 public datasets, more than 7 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+Currently, it features over 600 unique anomaly detection combinations, encompassing 8 public datasets, more than 7 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same analysis code can be applied universally once the logs are loaded. 
 
