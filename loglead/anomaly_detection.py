@@ -58,8 +58,8 @@ class AnomalyDetection:
         test_size = int(test_frac * df.shape[0])
 
         # Split the DataFrame using head and tail
-        self.train_df = df.head(test_size)
-        self.test_df = df.tail(-test_size)
+        self.train_df = df.head(-test_size) #Returns all rows expect last abs(-test_size)
+        self.test_df = df.tail(test_size) #Returns the last test_size rows
         self.prepare_train_test_data(vec_name=vec_name)
         
     def prepare_train_test_data(self, vec_name="CountVectorizer"):

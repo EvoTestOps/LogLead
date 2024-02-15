@@ -130,34 +130,38 @@ class EventLogEnhancer:
     def parse_tip(self, masking=True, reparse=False):
         self._handle_prerequisites(["m_message"])
         if reparse or "e_event_tip_id" not in self.df.columns:
-            import tipping as tip #Not yet available for public
+            import tipping as tip #See https://pypi.org/project/tipping/
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            tipping_clusters = tip.token_independency_clusters(self.df["e_message_normalized"])
-            original_strings = []
-            hashlib_strings = []
-            row_nrs = []
-            for word_list, row_numbers in tipping_clusters:
-                # Convert the list of strings to a single string
-                template_str = ' '.join(word_list)
-                # Hash the string
-                hashlib_str = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]
-                # Add the data to the lists
-                for row_nr in row_numbers:
-                    original_strings.append(template_str)
-                    hashlib_strings.append(hashlib_str)
-                    row_nrs.append(row_nr)
+            tipping_clusters = tip.parse(self.df["e_message_normalized"])
+            df_new = pl.DataFrame(
+                {
+                    "e_event_tip_id": tipping_clusters[0],
+                }
+            )
+            df_new = df_new.with_columns(
+                            e_event_tip_id=pl.lit("e") + pl.col("e_event_tip_id").cast(pl.Utf8)
+            )
+            self.df = pl.concat([self.df, df_new], how="horizontal")
+        return self.df
 
-            # Create a Polars DataFrame
-            df_new = pl.DataFrame({
-                'e_template_tip': original_strings,
-                'e_event_tip_id': hashlib_strings,
-                'row_nr': row_nrs
-            })
-            df_new = df_new.with_columns(df_new['row_nr'].cast(pl.UInt32))
-            self.df = self.df.join(df_new, on='row_nr', how='left')
-
+    #Faster version of IPLoM coming in 2024
+    def parse_fiplom(self, masking=True, reparse=False, CT=0.35, FST=0, PST=0, single_outlier_event=True):
+        self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
+        if reparse or "e_event_fiplom_id" not in self.df.columns:
+            if "row_nr" in self.df.columns:
+                self.df = self.df.drop("row_nr")
+            self.df = self.df.with_row_count()
+            import parsers.fast_iplom_wip as fast_iplom
+            self.iplom_parser = fast_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST, single_outlier_event=single_outlier_event)
+            self.iplom_parser.parse()
+            df_new = self.iplom_parser.merge_partitions_to_dataframe()
+            df_new = df_new.select([
+                pl.col("row_nr"),
+                pl.col("event_id").alias("e_event_fiplom_id")
+            ])
+            self.df = self.df.join(df_new, on="row_nr", how="left")
         return self.df
 
 
@@ -165,7 +169,6 @@ class EventLogEnhancer:
     def parse_lenma(self, masking=True, reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
-
             self.lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
@@ -293,6 +296,8 @@ class SequenceEnhancer:
         df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        #Add an alias  that is compatible with the token len naming. 
+        #TODO Should be in events() function
         self.df_seq = self.df_seq.with_columns(self.df_seq['seq_len'].alias('e_event_id_len'))
 
         return self.df_seq
