@@ -47,7 +47,7 @@ class AnomalyDetection:
         self.print_scores=print_scores
         self.train_vocabulary = None
 
-        
+        #change vec name TFidVectorizer
     def test_train_split(self, df, test_frac=0.9, shuffle=True,vec_name="CountVectorizer"):
         # Shuffle the DataFrame
         if shuffle:
@@ -69,6 +69,22 @@ class AnomalyDetection:
         #No anomalies dataset is used for some unsupervised algos. 
         self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
+
+    @property
+    def train_data(self):
+        return self.X_train, self.labels_train
+
+    @property
+    def test_data(self):
+        return self.X_test, self.labels_test
+
+    @property
+    def vec(self):
+        return self.vectorizer
+
+    @property
+    def voc(self):
+        return self.train_vocabulary
      
         
     def _prepare_data(self, train, df_seq, vec_name):
@@ -110,7 +126,9 @@ class AnomalyDetection:
             additional_features = df_seq.select(self.numeric_cols).to_pandas().values
             X = hstack([X, additional_features]) if X is not None else additional_features
 
-        return X, labels    
+        return X, labels
+    
+
         
 
          
@@ -184,6 +202,10 @@ class AnomalyDetection:
             len_col = self.item_list_col+"_len"
         self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
         
+    @property
+    def get_model(self):
+        return self.model
+
 
     def evaluate_all_ads(self, disabled_methods=[]):
         for method_name in sorted(dir(self)): 
