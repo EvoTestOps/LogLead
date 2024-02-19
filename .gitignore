@@ -3,4 +3,4 @@ __pycache__/
 *.pyo
 private_data/
 *_wip.py
-
+*wip/
