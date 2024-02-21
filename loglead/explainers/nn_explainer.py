@@ -26,6 +26,13 @@ def print_log_content_from_nn_mapping_seq(mapping: pl.DataFrame, df_test: pl.Dat
         print(f"Closest normal sequence: {' '.join(normal_words)}\n")
 
 
+def print_features_from_nn_mapping_seq(mapping: pl.DataFrame, df_test: pl.DataFrame, feature_cols: list[str]) -> None:
+    for anomaly, normal in mapping.rows():
+        print(df_test.filter(pl.col("seq_id") == anomaly).select(pl.col(feature_cols)).to_pandas())
+        print(df_test.filter(pl.col("seq_id") == normal).select(pl.col(feature_cols)).to_pandas())
+        print("-"*30)
+
+
 def plot_features_in_two_dimensions(df_test: pl.DataFrame, X_test: pl.DataFrame) -> None:
     embeddings = umap.UMAP().fit_transform(X_test)
     normal_embeddings = embeddings[~df_test.select(pl.col("pred_normal")).to_series()]
