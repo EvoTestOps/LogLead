@@ -131,7 +131,7 @@ class EventLogEnhancer:
         self._handle_prerequisites(["m_message"])
         if reparse or "e_event_brain_id" not in self.df.columns:
             if "e_event_brain_id" in self.df.columns:
-                self.df = self.df.drop("e_event_tip_id")
+                self.df = self.df.drop("e_event_brain_id")
             import parsers.Brain.Brain as brain
             brain_parser = brain.LogParser(messages=self.df["e_message_normalized"])
             brain_parser.parse() 
@@ -139,6 +139,17 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
+    def parse_ael(self, masking=True, reparse=False):
+        self._handle_prerequisites(["m_message"])
+        if reparse or "e_event_ael_id" not in self.df.columns:
+            if "e_event_ael_id" in self.df.columns:
+                self.df = self.df.drop("e_event_ael_id")
+            import parsers.AEL.AEL as ael
+            ael_parser = ael.LogParser(messages=self.df["e_message_normalized"])
+            ael_parser.parse() 
+            df_new = ael_parser.df_log.select(pl.col("EventId").alias("e_event_ael_id"))
+            self.df = pl.concat([self.df, df_new], how="horizontal")
+        return self.df
 
     #New parser not yet released to public. Coming early 2024
     def parse_tip(self, masking=True, reparse=False):
