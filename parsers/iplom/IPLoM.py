@@ -40,7 +40,10 @@ class Partition:
 class Event:
     def __init__(self, eventStr):
         self.eventStr = eventStr
-        self.eventId = hashlib.md5(" ".join(eventStr).encode("utf-8")).hexdigest()[0:8]
+        if len(eventStr) == 1 and eventStr[0] == "Outlier": #Keeping the outlier event readable. 
+             self.eventId = "Outlier"
+        else: 
+            self.eventId = hashlib.md5(" ".join(eventStr).encode("utf-8")).hexdigest()[0:8]
         self.eventCount = 0
 
 
@@ -441,7 +444,9 @@ class LogParser:
 
     def Step4(self):
         self.partitionsL[0].valid = False
-        if self.para.PST == 0 and self.partitionsL[0].numOfLogs != 0:
+        #Bug fix
+        #if self.para.PST == 0 and self.partitionsL[0].numOfLogs != 0:
+        if self.para.PST != 0 and self.partitionsL[0].numOfLogs != 0:
             event = Event(["Outlier"])
             event.eventCount = self.partitionsL[0].numOfLogs
             self.eventsL.append(event)
@@ -481,7 +486,9 @@ class LogParser:
                 logL.append(str(event.eventId))
 
     def getOutput(self):
-        if self.para.PST == 0 and self.partitionsL[0].numOfLogs != 0:
+        #Bug fix 
+        #if self.para.PST == 0 and self.partitionsL[0].numOfLogs != 0:
+        if self.para.PST != 0 and self.partitionsL[0].numOfLogs != 0:
             for logL in self.partitionsL[0].logLL:
                 self.output.append(logL[-2:] + logL[:-2])
         for partition in self.partitionsL:
