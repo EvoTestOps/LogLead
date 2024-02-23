@@ -58,17 +58,20 @@ class AnomalyDetection:
         test_size = int(test_frac * df.shape[0])
 
         # Split the DataFrame using head and tail
-        self.train_df = df.head(test_size)
-        self.test_df = df.tail(-test_size)
+        self.train_df = df.head(-test_size)
+        self.test_df = df.tail(test_size)
         self.prepare_train_test_data(vec_name=vec_name)
         
     def prepare_train_test_data(self, vec_name="CountVectorizer"):
         #Prepare all data for running
         self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name)
         self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name)
+        print("split")
         #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name)
+        # anos causes the vectorizer to be done again, fast fix skip anos
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, anos=True)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
+ 
 
     @property
     def train_data(self):
@@ -87,9 +90,14 @@ class AnomalyDetection:
         return self.train_vocabulary
      
         
-    def _prepare_data(self, train, df_seq, vec_name):
+    def _prepare_data(self, train, df_seq, vec_name, anos=False):
         X = None
+        #added anos to be a parameter
+        if anos:
+            df_seq = self.train_df.filter(pl.col(self.label_col).not_())
+
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
+
 
         # Extract events
         if self.item_list_col:
@@ -100,16 +108,29 @@ class AnomalyDetection:
             # We are training
             if train:
                 # Check the datatype  
+                # removed self.vectorizer, it is saved later
                 if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
-                    self.vectorizer = vectorizer_class() 
+                    vectorizer = vectorizer_class() 
                 elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
-                    self.vectorizer = vectorizer_class(analyzer=lambda x: x)
-                X = self.vectorizer.fit_transform(events)
-                self.train_vocabulary = self.vectorizer.vocabulary_
+                    vectorizer = vectorizer_class(analyzer=lambda x: x)
+                X = vectorizer.fit_transform(events)
+                
+                # saves the vectorizer for anos and non anos cases.
+                if anos:
+                    self.anos_vectorizer = vectorizer
+                    self.anos_train_vocabulary = vectorizer.vocabulary_
+                else:
+                    self.vectorizer = vectorizer
+                    self.train_vocabulary = vectorizer.vocabulary_
+
+                print("HEP")
 
             # We are predicting
             else:
-                X = self.vectorizer.transform(events)
+                if anos:
+                    X = self.anos_vectorizer.transform(events)
+                else:
+                    X = self.vectorizer.transform(events)
 
         # Extract lists of embeddings
         if  self.emb_list_col:
@@ -147,6 +168,7 @@ class AnomalyDetection:
     def predict(self, custom_plot=False):
         #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
+        print(self.X_test.shape, len(self.train_vocabulary))
         predictions = self.model.predict(X_test_to_use)
         #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
         if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
@@ -163,6 +185,7 @@ class AnomalyDetection:
        
     def train_LR(self, max_iter=1000):
         self.train_model (LogisticRegression(max_iter=max_iter))
+        return self.train_model, self.vectorizer,  self.X_train, self.train_vocabulary
     
     def train_DT(self):
         self.train_model (DecisionTreeClassifier())

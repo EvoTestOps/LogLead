@@ -162,3 +162,4 @@ dependencies:
       - drain3==0.9.11
       - jsonpickle==1.5.1
       - polars==0.19.19
+      - tipping==0.1.2
