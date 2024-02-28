@@ -24,7 +24,16 @@ from datetime import datetime
 import os
 import regex as re
 import hashlib
+import logging
+logger = logging.getLogger(__name__)
 
+
+#Bugs in logparser Iplom implementation. To be reported. "Fixed" in this file
+#No check that partitionL has IDs that are long enough. Default is 200. So if event is 201 long this will fail
+#https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L163
+#This code is never executed. Should be self.para.PST != 0 not ==. If == then outlier block will always be empty
+#https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L437C12-L437C31 
+# https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L477  
 
 class Partition:
     """Wrap around the logs and the step number"""
@@ -169,8 +178,13 @@ class LogParser:
             lineCount += 1
 
             # Add current log to the corresponding partition
-            self.partitionsL[len(wordSeq) - 1].logLL.append(wordSeq)
-            self.partitionsL[len(wordSeq) - 1].numOfLogs += 1
+            #Quick fix to ignore too long events. 
+            if len(wordSeq) > self.para.maxEventLen:
+                logger.warn (f"Event length {len(wordSeq)} longer than max {self.para.maxEventLen} DISGARDING EVENT!")
+                continue
+            else:    
+                self.partitionsL[len(wordSeq) - 1].logLL.append(wordSeq)
+                self.partitionsL[len(wordSeq) - 1].numOfLogs += 1
 
         for partition in self.partitionsL:
             if partition.numOfLogs == 0:
@@ -272,7 +286,8 @@ class LogParser:
                     p2Set.add(logL[p2])
 
                     if logL[p1] == logL[p2]:
-                        print("Warning: p1 may be equal to p2")
+                        #print("Warning: p1 may be equal to p2")
+                        logger.warn("Warning: p1 may be equal to p2")
 
                     if logL[p1] not in mapRelation1DS:
                         mapRelation1DS[logL[p1]] = set()

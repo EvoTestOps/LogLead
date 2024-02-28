@@ -103,11 +103,11 @@ class BaseLoader:
             
         return non_matching_lines_df, non_matching_lines_count, matching_lines_df, matching_lines_count 
 
-    def reduce_dataframes(self, frac=0.5):
+    def reduce_dataframes(self, frac=0.5, random_state=42):
         # If df_sequences is present, reduce its size
         if hasattr(self, 'df_seq') and self.df_seq is not None:
              # Sample df_seq
-            df_seq_temp = self.df_seq.sample(fraction=frac)
+            df_seq_temp = self.df_seq.sample(fraction=frac, seed=random_state)
 
             # Check if df_seq still has at least one row
             if len(df_seq_temp) == 0:
@@ -123,7 +123,7 @@ class BaseLoader:
             #self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"]))
         else:
             # If df_sequences is not present, just reduce df
-            self.df = self.df.sample(fraction=frac)
+            self.df = self.df.sample(fraction=frac, seed=random_state)
 
         return self.df
     

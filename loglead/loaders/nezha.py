@@ -176,10 +176,16 @@ class NezhaLoader(BaseLoader):
             try:
                 q = pl.scan_csv(file, has_header=True, infer_schema_length=0, separator=",", 
                                 row_count_name="row_nr_per_file", truncate_ragged_lines=True)
+                system_name = "Error"
+                if date_str == "2023-01-29" or date_str =="2023-01-30":
+                    system_name = "TrainTicket"
+                elif  date_str == "2022-08-23" or date_str =="2022-08-22":
+                    system_name = "GShop"
                 q = q.with_columns(
                     pl.lit(date_str).alias('date_folder'),  # Folder is date info
                     pl.lit(os.path.basename(file)).alias('log_file_name'),  # File name storage
-                    pl.lit(ano_folder).alias('anomaly_folder')
+                    pl.lit(ano_folder).alias('anomaly_folder'),
+                    pl.lit(system_name).alias('system_name')
                 )
                 queries.append(q)
             except pl.exceptions.NoDataError:  # some CSV files can be empty.

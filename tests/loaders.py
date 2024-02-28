@@ -1,9 +1,7 @@
-#This file performs same actions in both LogLEAD and in LogParsers code. 
-# LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
+
  
 #Separate demo files
 import sys
-import time
 
 import polars as pl
 import psutil
