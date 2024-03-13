@@ -66,10 +66,9 @@ class AnomalyDetection:
         #Prepare all data for running
         self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name)
         self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name)
-        print("split")
         #No anomalies dataset is used for some unsupervised algos. 
         # anos causes the vectorizer to be done again, fast fix skip anos
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name, anos=True)
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df, vec_name, anos=True)
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
  
 
@@ -123,7 +122,6 @@ class AnomalyDetection:
                     self.vectorizer = vectorizer
                     self.train_vocabulary = vectorizer.vocabulary_
 
-                print("HEP")
 
             # We are predicting
             else:
@@ -168,7 +166,6 @@ class AnomalyDetection:
     def predict(self, custom_plot=False):
         #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
-        print(self.X_test.shape, len(self.train_vocabulary))
         predictions = self.model.predict(X_test_to_use)
         #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
         if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
@@ -185,7 +182,7 @@ class AnomalyDetection:
        
     def train_LR(self, max_iter=1000):
         self.train_model (LogisticRegression(max_iter=max_iter))
-        return self.train_model, self.vectorizer,  self.X_train, self.train_vocabulary
+        
     
     def train_DT(self):
         self.train_model (DecisionTreeClassifier())
@@ -216,6 +213,8 @@ class AnomalyDetection:
 
     def train_XGB(self):
         self.train_model(XGBClassifier())
+
+    # stop
 
     def train_RarityModel(self, filter_anos=True, threshold=250):
         self.train_model(RarityModel(threshold), filter_anos=filter_anos)
