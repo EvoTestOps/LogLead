@@ -161,7 +161,7 @@ class EventLogEnhancer:
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            tipping_clusters = tip.parse(self.df["e_message_normalized"])
+            tipping_clusters = tip.parse(self.df["e_message_normalized"], return_templates=False, return_masks=False)
             df_new = pl.DataFrame(
                 {
                     "e_event_tip_id": tipping_clusters[0],
@@ -205,8 +205,8 @@ class EventLogEnhancer:
             self.df = self.df.with_row_count()
             import parsers.fast_iplom.fast_iplom as fast_iplom
             fiplom_parser = fast_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST,lower_bound=lower_bound, single_outlier_event=single_outlier_event)
-            fiplom_parser.parse()
-            df_new = fiplom_parser.merge_partitions_to_dataframe()
+            df_new = fiplom_parser.parse()
+            #df_new = fiplom_parser.merge_partitions_to_dataframe()
             df_new = df_new.select([
                 pl.col("row_nr"),
                 pl.col("event_id").alias("e_event_fiplom_id")

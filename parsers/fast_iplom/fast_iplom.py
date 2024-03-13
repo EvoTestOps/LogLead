@@ -1,13 +1,9 @@
 
 import polars as pl 
+import time
 import logging
 logger = logging.getLogger(__name__)
-#Bugs in logparser IPLOM
-#No check that partitionL has IDs that are long enough. Default is 200. So if event is 201 long this will fail
-#https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L163
-#This code is never executed. Should be self.para.PST != 0 not ==. If == then outlier block will always be empty
-#https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L437C12-L437C31 
-# https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L477  
+
 
 class Partition:
     def __init__(self, df, len, split_trace):
@@ -18,20 +14,29 @@ class Partition:
         self.len = len
         self.split_trace = split_trace 
 
+    #Fastest implementation of template creation
     def create_template(self):
-        template_parts = []
-        for col in self.df.columns:
-            unique_values = self.df.select(col).unique()
-            if len(unique_values) == 1:
-                # If there's only one unique value, add it to the template
-                value = unique_values[col][0]
-                template_parts.append(str(value))
-            else:
-                # If there are multiple unique values, add a '*' to the template
-                template_parts.append('<*>')
+        # Use expressions to evaluate each column for uniqueness and directly produce the desired output
+        expressions = [
+            pl.when(pl.col(col).n_unique() == 1)
+            .then(pl.col(col).first())
+            .otherwise(pl.lit("<*>"))
+            .alias(col)
+            for col in self.df.columns
+        ]
         
-        # Join the template parts with spaces or any other delimiter as needed
-        self.template = " ".join(template_parts)    
+        # Apply the expressions to the dataframe and convert the result to a single row dataframe
+        result_df = self.df.select(expressions).limit(1)
+        
+        # Convert the result to a list of strings, handling conversion of non-string types
+        template_parts = [str(result_df[col][0]) for col in result_df.columns]
+        
+        # Join the template parts with a space or any other delimiter as needed
+        self.template = " ".join(template_parts)
+        #logger.info (f"Template created: {self.template}")
+
+
+
 
 #TODO 
 # 1) Log Template creation, DONE
@@ -39,9 +44,8 @@ class Partition:
 # 2) Log Id Creation, 
 # 3) Rolling log IDs and templates back to Enhancer
 # how it is done on tipping
-        
 class IPLoM:
-    def __init__(self, df, CT = 0.35, PST=0, FST=0,lower_bound = 0.1, single_outlier_event = True):
+    def __init__(self, df, CT = 0.35, PST=0.001, FST=0.00001,lower_bound = 0.25, single_outlier_event = True):
         self.df = df
         self.CT = CT #Cluster goodness threshold
         self.PST = PST #Partition Support Threshold
@@ -81,12 +85,19 @@ class IPLoM:
 
     def merge_partitions_to_dataframe(self):
         df_list = []  # List to accumulate DataFrames
+        self.time_template_creation = 0
+        self.time_selection_renaming = 0
+        self.time_appending = 0
 
         def traverse_and_concat(partitions, parent_id):
             for i, partition in enumerate(partitions, start=1):
                 current_id = f"{parent_id}e{i}"  # Construct a unique event_id for each partition
                 if partition.df is not None:
+                    time_start = time.time() 
                     partition.create_template()
+                    self.time_template_creation += time.time() - time_start  # Accumula
+                    #logger.info (f"Merge Regular Template creation done in {time_elapsed:.2f}")
+                    time_start = time.time() 
                     # Create a dataframe with template and event_id columns for the current partition
                     df_parsed = partition.df.select("row_nr")
                     df_parsed = df_parsed.with_columns([
@@ -94,7 +105,12 @@ class IPLoM:
                         pl.lit(current_id).alias('event_id'),
                         pl.lit(partition.len).alias('event_len')
                     ])
+                    self.time_selection_renaming += time.time() - time_start  # Accumulate 
+                    #logger.info (f"Merge Regular Selection and Renaming done in {time_elapsed:.2f}")
+                    time_start = time.time() 
                     df_list.append(df_parsed)  # Append to list instead of concatenating immediately
+                    self.time_appending += time.time() - time_start
+                    #logger.info (f"Merge Regular Appeding done in {time_elapsed:.2f}")
                 # Recursively process subpartitions
                 if partition.subpartitions:
                     traverse_and_concat(partition.subpartitions, current_id)
@@ -115,24 +131,73 @@ class IPLoM:
         # Reset self.acc_df to ensure it's empty before starting
         self.acc_df = pl.DataFrame()
         # Process regular and outlier partitions
+        time_start = time.time() 
         traverse_and_concat(self.partitions, "")
+        time_elapsed = time.time() - time_start
+        logger.info (f"Merge Regular done in {time_elapsed:.2f}")
+        logger.info (f"  Time Taken Template Creation {self.time_template_creation:.2f}")
+        logger.info (f"  Time Taken Selection and Rename {self.time_selection_renaming:.2f}")
+        logger.info (f"  Time Taken Appending Creation {self.time_appending:.2f}")
+        time_start = time.time() 
         process_outlier_partitions()  # Process outliers after handling regular partitions
-
+        time_elapsed = time.time() - time_start
+        logger.info (f"Merge Outlier done in {time_elapsed:.2f}")
+        time_start = time.time() 
         # Concatenate all DataFrames in the list if it's not empty
         if df_list:
             self.acc_df = pl.concat(df_list)
+        time_elapsed = time.time() - time_start
+        logger.info (f"Merge Concat done in {time_elapsed:.2f}")
         return self.acc_df
 
     def parse(self):
         #Step 1
+
+        time_start = time.time() 
         self.s1_clust_by_message_length()
-        #Step 2
+        time_elapsed = time.time() - time_start
+        logger.info (f"S1 done in {time_elapsed:.2f} looping over {len(self.partitions)} elements")
+        self.s3_loop1_split_pos = 0
+        self.s3_loop1_split = 0 
+        total_time_s2 = 0
+        total_time_s3 = 0
         for i in range(len(self.partitions)):
-            #Step 2
-            logger.debug ("\n")
+            # Step 2
+            time_start = time.time()
             self.s2_clust_by_token_pos(self.partitions[i])
-            #Step 3
+            time_elapsed = time.time() - time_start
+            total_time_s2 += time_elapsed  # Accumulate time for Step 2    
+            # Step 3
+            time_start = time.time()
             self.s3_clust_by_bijection(self.partitions[i])
+            time_elapsed = time.time() - time_start
+            total_time_s3 += time_elapsed  # Accumulate time for Step 3
+
+        # Report total times outside the loop
+        logger.info(f"Total time for S2: {total_time_s2:.2f} seconds")
+        logger.info(f"Total time for S3: {total_time_s3:.2f} seconds")
+
+        logger.info(f"  Total time for S3 loop 1 splitpos: {self.s3_loop1_split_pos:.2f} seconds")
+        logger.info(f"  Total time for S3 loop 1 split: {self.s3_loop1_split:.2f} seconds")
+
+
+        # for i in range(len(self.partitions)):
+        #     #Step 2
+        #     time_start = time.time() 
+        #     self.s2_clust_by_token_pos(self.partitions[i])
+        #     time_elapsed = time.time() - time_start
+        #     logger.info (f"S2 done in {time_elapsed:.2f} for  {i} element")
+            
+        #     #Step 3
+        #     time_start = time.time() 
+        #     self.s3_clust_by_bijection(self.partitions[i])
+        #     time_elapsed = time.time() - time_start
+        #     logger.info (f"S3 done in {time_elapsed:.2f} for  {i} element")
+        time_start = time.time() 
+        self.merge_partitions_to_dataframe()
+        time_elapsed = time.time() - time_start
+        logger.info (f"Merge done in {time_elapsed:.2f}")
+        return self.acc_df
 
 
     def s1_clust_by_message_length(self):
@@ -178,8 +243,8 @@ class IPLoM:
         #FST check
         
     def s2_clust_by_token_pos(self, partition):
-
         unique_counts = [len(partition.df[col].unique()) for col in partition.df.columns] # Also faster approx_n_unique() could be used if we need more speed
+        #unique_counts = [len(partition.df.select(pl.approx_n_unique(col))) for col in partition.df.columns]
         #Min col counts
         min_count = min(unique_counts)
         min_unique_count, min_column_index = min((count, idx) for idx, count in enumerate(unique_counts))
@@ -224,11 +289,11 @@ class IPLoM:
                     p1 = positions1[0] if positions1 else None
                     p2 = positions2[0] if positions2 else None
                 # Display the results for the two smallest numbers
-                logger.debug("Two smallest most frequent numbers:", most_freq_num1, most_freq_num2)
+                logger.debug(f"Two smallest most frequent numbers:{most_freq_num1}, {most_freq_num2}")
                 most_freq_count = common_items[0][1]
-                logger.debug("Count:", most_freq_count)
-                logger.debug("Positions of first number:", positions1)
-                logger.debug("Positions of second number:", positions2)
+                logger.debug(f"Count: {most_freq_count}")
+                logger.debug(f"Positions of first number: {positions1}")
+                logger.debug(f"Positions of second number: {positions2}")
             elif common_items:
                 # No tie, or not enough elements for a tie. Select the most frequent number
                 most_freq_num, most_freq_count = common_items[0]
@@ -236,9 +301,9 @@ class IPLoM:
                 p1 = positions[0]
                 p2 = positions[1]
                 # Display the results
-                logger.debug("Most Frequent Number:", most_freq_num)
-                logger.debug("Count:", most_freq_count)
-                logger.debug("Positions:", positions)
+                logger.debug(f"Most Frequent Number:{most_freq_num}")
+                logger.debug(f"Count: {most_freq_count}")
+                logger.debug(f"Positions: {positions}")
             else:
                 logger.debug("All elements are 1, no other frequent numbers.")
         elif (len(unique_counts) == 2):
@@ -258,9 +323,14 @@ class IPLoM:
             return 
         else:
             logger.debug (f"S3 processing df with rows: {partition.df.shape[0]} with length {partition.len} with trace {partition.split_trace}")
-        #S3.1 figure which columns to select for P1 and P2
+        #S3.1 figure which columns to select for P1 and P2    
         part_df = partition.df
-        unique_counts = [len(part_df[col].unique()) for col in part_df.columns]
+        #unique_counts = [len(part_df[col].unique()) for col in part_df.columns]
+        #unique_counts = [len(part_df[col].unique()) for col in part_df.columns if col != 'row_nr']  # Exclude 'row_nr' from the columns being considered
+        # Exclude the last column directly, assuming 'row_nr' is always the last column
+        #unique_counts = [len(part_df[col].unique()) for col in part_df.columns[:-1]]  # Slice to exclude the last column
+        #Faster than above
+        unique_counts = part_df.select(pl.col(part_df.columns[:-1]).n_unique()).transpose().to_series().to_list()
         number_of_ones = unique_counts.count(1)
         cluster_goodness = number_of_ones / len(unique_counts)
         logger.debug (f"Cluster goodness {cluster_goodness} threshold {self.CT}")
@@ -269,8 +339,13 @@ class IPLoM:
         p1, p2 = self._get_p1_p2 (unique_counts)
         if (p1 == -1): #Check is this from existing implementations
             return
-        col_p1 = part_df.columns[p1]
-        col_p2 = part_df.columns[p2]
+        #col_p1 = part_df.columns[p1]
+        #col_p2 = part_df.columns[p2]
+        #col_p1 = [col for col in part_df.columns if col != 'row_nr'][p1]  # Adjusted to exclude 'row_nr'
+        #col_p2 = [col for col in part_df.columns if col != 'row_nr'][p2]  # Adjusted to exclude 'row_nr'
+        # Since 'row_nr' is excluded, the indices for p1 and p2 should align correctly with the remaining columns
+        col_p1 = part_df.columns[:-1][p1]  # Directly use sliced columns list
+        col_p2 = part_df.columns[:-1][p2]  # Directly use sliced columns list
         #S3.2 Check relationship and split
         # Create a DataFrame with all unique pairs from col_p1 and col_p2
 
@@ -280,12 +355,15 @@ class IPLoM:
 
         unique_pairs = part_df.select([col_p1, col_p2]).unique()
         unique_pairs = unique_pairs.select(pl.concat_list(pl.col([col_p1, col_p2])).alias("unique_pairs"))
+
         
         logger.debug (f"Found unique pairs {unique_pairs}")
         for row in unique_pairs.to_dicts():
+            time_start = time.time() 
             pair = row["unique_pairs"]
             value_p1, value_p2 = pair
             logger.debug(f"P1 value is {value_p1} P2 value is {value_p2}")
+            logger.debug(f"Col P1 is {pl.col(col_p1)} and Col P2 is {pl.col(col_p2)}")
             count_p1 = part_df.filter(pl.col(col_p1) == value_p1).select(pl.col(col_p2)).unique().shape[0]
             count_p2 = part_df.filter(pl.col(col_p2) == value_p2).select(pl.col(col_p1)).unique().shape[0]
             logger.debug(f"P1 count is {count_p1} P2 is count {count_p2}")
@@ -327,6 +405,9 @@ class IPLoM:
             else:
                 logger.warning(f"ERROR undefined relantionship !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 #return -1
+            time_elapsed = time.time() - time_start
+            self.s3_loop1_split_pos += time_elapsed
+            time_start = time.time()
             #Split   
             if split_pos==1:
                 logger.debug(f"Split is 1. Size of part_df: {part_df.shape[0]}")
@@ -344,7 +425,6 @@ class IPLoM:
                 else:
                     # If the key does not exist, simply add new_df to the dictionary
                     p1_part_dict[value_p1] = new_df
-
             elif split_pos==2:
                 logger.debug(f"Split is 2. Size of part_df: {part_df.shape[0]}")
                 #new_df = part_df.filter(pl.col(col_p2) == value_p2)
@@ -360,16 +440,21 @@ class IPLoM:
                 else:
                     # If the key does not exist, simply add new_df to the dictionary
                     p2_part_dict[value_p2] = new_df
-
+            time_elapsed = time.time() - time_start
+            self.s3_loop1_split += time_elapsed
+            
         for key, dataframe in p1_part_dict.items():
             logger.debug(f"S3P1 dict with key Appending: {key}")
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
             self.add_partition(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+"S3 "), parent_partition=partition)
+       
         for key, dataframe in p2_part_dict.items():
             logger.debug(f"S3P2 dict with key Appending: {key}")
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
             self.add_partition(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+"S3 "), parent_partition=partition)
         #part_df is reduced in the process. If we do assign here we the same log rows in multiple levels
+        
+     
         if (part_df.shape[0] == 0):
             partition.df = None 
         else:

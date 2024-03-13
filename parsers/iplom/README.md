@@ -6,7 +6,7 @@ One might find IPLoM Parameter settings that are optimized for different data se
 
 Original README.md text is retained in below, but it might be inaccurate in LogLead context. 
 
-# IPLoM
+## IPLoM
 
 IPLoM (Iterative Partitioning Log Mining) is one of the state-of-the-art algorithms for log parsing. It leverages the unique characteristics of log messages for iterative log partitioning, which thus enables efficient message type extraction. Since the original open-source implementation is not available anymore, we re-implement the algorithm using Python.
 

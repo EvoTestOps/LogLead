@@ -8,7 +8,7 @@ One might find Brain Parameter settings that are optimized for different data se
 Original README.md text is retained in below, but it might be inaccurate in LogLead context. 
 
 
-# Brain
+## Brain
 
 ### Abstract
 

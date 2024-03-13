@@ -71,7 +71,7 @@ class LogParser:
         self.categorize()
         self.reconcile()
         self.dump()
-        print("Parsing done. [Time taken: {!s}]".format(datetime.now() - start_time))
+        #print("Parsing done. [Time taken: {!s}]".format(datetime.now() - start_time))
 
     def tokenize(self):
         """
