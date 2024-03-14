@@ -209,6 +209,7 @@ voc = sad.voc
 # pitäs tää file cleanata vähän paremmin kyllä
 
 # for shap I needed the model and both train and test data
+# sure
 r1 = resource.getrusage(resource.RUSAGE_SELF)
 #print(r1)
 t1 = time.time()
