@@ -29,8 +29,8 @@ sample_data="../samples"
 #_________________________________________________________________________________
 #Part 2 load data from sample file
 #Load HDFS from sample data
-#df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
-#df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
+df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
+df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
 #print(f"Read HDFS 2% sample. Numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
 #ano_count = df_seqs["anomaly"].sum()
 #print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/len(df_seqs)*100:.2f}%")
@@ -39,12 +39,13 @@ sample_data="../samples"
 # amount is a command line argument
 # meaning python3 Shap_HDFS.py amount
 # should be between above 0 and max 100
-amount = int(sys.argv[1])
-loader = load.HDFSLoader(filename="../.data/HDFS.log"
-    ,labels_file_name="../.data/preprocessed/anomaly_label.csv")
-df = loader.execute()
-df = loader.reduce_dataframes(frac=amount/100)
-df_seqs = loader.df_seq
+if False:
+    amount = int(sys.argv[1])
+    loader = load.HDFSLoader(filename="../.data/HDFS.log"
+        ,labels_file_name="../.data/preprocessed/anomaly_label.csv")
+    df = loader.execute()
+    df = loader.reduce_dataframes(frac=amount/100)
+    df_seqs = loader.df_seq
 #_________________________________________________________________________________
 #Part 3 add enhanced reprisentations 
 #print(f"\nStarting enhancing all log events:")
@@ -56,7 +57,6 @@ def format_as_list(series):
     return '[' + ', '.join(elements) + ']'
 #Pick a random line
 row_index = random.randint(0, len(df) - 1)
-
 
 
 #might do a loop here to do the code with different enhancers
@@ -118,30 +118,11 @@ del df
 
 sad = ad.AnomalyDetection()
 sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
-
+sad.numeric_cols = None
 
 # ============================================
 # Choose the data what you use to train the model
 # ==============================================
-if False:
-    print(f"Predicting with sequence length and duration ")
-    numeric_cols = ["seq_len",  "duration_sec",]
-    #Using 10% for training 90% for testing
-    sad.numeric_cols = numeric_cols
-    
-
-
-    # ============================
-    # Use only one model at a time
-    # ============================
-
-    #Logistic Regression
-    sad.train_LR()
-    #df_seq = sad.predict() # we don't need the predictions now so they are removed
-    
-    #Use Decision Tree
-    # sad.train_DT()
-    #df_seq = sad.predict()
 
 if False:
     print(f"Predicting with words")
@@ -176,9 +157,13 @@ if True:
     #df_seq = sad.predict()
     
     #Use Decision Tree
-    sad.train_DT()
+    #sad.train_DT()
     #df_seq = sad.predict()
 
+
+    # laita tähän se modeli jota olet testaamassa
+    # muoto sad.modeli()
+    sad.train_DT()
 
 # Above choose one model to be trained with wanted data
 
@@ -194,27 +179,28 @@ vect = sad.vec
 
 voc = sad.voc
 
-#print(X_test.shape)
-#print(voc)
-#print(vect.get_feature_names_out())
-#print(vect.get_feature_names_out().shape)
-#print(vect.vocabulary_)
-
-
+##
 # use e_message_normalized WORKS
 #e_template
 
 #unsuper algo
-
-# pitäs tää file cleanata vähän paremmin kyllä
+##
 
 # for shap I needed the model and both train and test data
-# sure
 r1 = resource.getrusage(resource.RUSAGE_SELF)
 #print(r1)
 t1 = time.time()
-explainer_ebm = shap.LinearExplainer(modelout, X_train, labels=vect.get_feature_names_out())
-shap_values = explainer_ebm(X_test)
+
+
+
+#explainer_ebm = shap.LinearExplainer(modelout, X_train)
+explainer = shap.TreeExplainer(modelout)
+
+shap_values = explainer(X_test)
+
+
+
+
 t2 = time.time()
 r2  = resource.getrusage(resource.RUSAGE_SELF)
 #print(f"shap took {t2-t1} s")
