@@ -206,6 +206,8 @@ voc = sad.voc
 
 #unsuper algo
 
+# pitäs tää file cleanata vähän paremmin kyllä
+
 # for shap I needed the model and both train and test data
 r1 = resource.getrusage(resource.RUSAGE_SELF)
 #print(r1)
