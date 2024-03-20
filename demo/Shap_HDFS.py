@@ -21,7 +21,7 @@ import pickle
 import numpy as np
 import shap
 import time
-import resource
+#import resource
 
 #Location of our sample data
 sample_data="../samples"
@@ -30,7 +30,9 @@ sample_data="../samples"
 #Part 2 load data from sample file
 #Load HDFS from sample data
 df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
-df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
+df_seqs_all = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
+
+df_seqs = df_seqs_all.head(1000)
 #print(f"Read HDFS 2% sample. Numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
 #ano_count = df_seqs["anomaly"].sum()
 #print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/len(df_seqs)*100:.2f}%")
@@ -163,7 +165,9 @@ if True:
 
     # laita tähän se modeli jota olet testaamassa
     # muoto sad.modeli()
-    sad.train_DT()
+   
+    #sad.train_RF()
+    sad.train_XGB()
 
 # Above choose one model to be trained with wanted data
 
@@ -187,25 +191,26 @@ voc = sad.voc
 ##
 
 # for shap I needed the model and both train and test data
-r1 = resource.getrusage(resource.RUSAGE_SELF)
+#r1 = resource.getrusage(resource.RUSAGE_SELF)
 #print(r1)
 t1 = time.time()
 
 
 
 #explainer_ebm = shap.LinearExplainer(modelout, X_train)
-explainer = shap.TreeExplainer(modelout)
+#explainer = shap.TreeExplainer(modelout, X_train.toarray()) ### RF
+explainer = shap.Explainer(modelout) ### XGB
 
-shap_values = explainer(X_test)
+shap_values = explainer(X_test.toarray())
 
 
 
 
 t2 = time.time()
-r2  = resource.getrusage(resource.RUSAGE_SELF)
+#r2  = resource.getrusage(resource.RUSAGE_SELF)
 #print(f"shap took {t2-t1} s")
 print(t2-t1)
-print(r2.ru_maxrss-r1.ru_maxrss)
-#shap.summary_plot(shap_values, X_test,feature_names=vect.get_feature_names_out(), max_display=16)
+#print(r2.ru_maxrss-r1.ru_maxrss)
+shap.summary_plot(shap_values, X_test,feature_names=vect.get_feature_names_out(), max_display=16)
 #shap.plots.bar(shap_values)
 #shap.force_plot(explainer_ebm.expected_value[1], shap_values[1], X_test[1])
