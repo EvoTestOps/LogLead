@@ -72,14 +72,12 @@ class AnomalyDetection:
         self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
  
 
-    @property
-    def train_data(self):
-        return self.X_train, self.labels_train
-
+    # added a way to get the test data
     @property
     def test_data(self):
         return self.X_test, self.labels_test
 
+    # added a way to get the vectorizer
     @property
     def vec(self):
         return self.vectorizer
@@ -88,7 +86,7 @@ class AnomalyDetection:
     def voc(self):
         return self.train_vocabulary
      
-        
+    # did some changes so the vectorizer does not get overwritten by anos 
     def _prepare_data(self, train, df_seq, vec_name, anos=False):
         X = None
         #added anos to be a parameter
@@ -147,10 +145,6 @@ class AnomalyDetection:
 
         return X, labels
     
-
-        
-
-         
     def train_model(self, model, filter_anos=False):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
@@ -183,7 +177,6 @@ class AnomalyDetection:
     def train_LR(self, max_iter=1000):
         self.train_model (LogisticRegression(max_iter=max_iter))
         
-    
     def train_DT(self):
         self.train_model (DecisionTreeClassifier())
 
@@ -194,7 +187,7 @@ class AnomalyDetection:
     def train_IsolationForest(self, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
         self.train_model (IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples, contamination=contamination), filter_anos=filter_anos)
-                          
+
     def train_LOF(self, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
         #LOF novelty=True model needs to be trained without anomalies
         #If we set novelty=False then Predict is no longer available for calling.
