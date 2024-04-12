@@ -1,6 +1,5 @@
-#This is an example using HDFS data from samples folder. See also similar TB_samples.py 
-#The files have been loaded from raw and processed to parquet file format for efficient storage.
-#This demonstrates how to work after you have completed the loader.
+#This is an example using HDFS data from samples folder. Demonstrates the functionalities
+# of the explainer module.
 
 #______________________________________________________________________________
 #Part 1 load libraries and setup paths. 
@@ -168,7 +167,6 @@ nn_explainer.print_features_from_nn_mapping(feature_cols=["e_message_normalized"
 # The logs can be long
 nn_explainer.print_log_content_from_nn_mapping()
 
-
 # NNexplainer can be used to create a mapping from anomalous instances to the closest normal instances
 mapping = nn_explainer.mapping
 ids = mapping.select(pl.col("anomalous_id")).to_numpy().flatten()
@@ -180,9 +178,4 @@ mask = df.select(pl.col("include")).to_numpy().flatten()
 
 # now the used data can be masked and plotted using shap
 maskeddata = X_test[mask]
-
 ex1.plot(maskeddata, plottype="summary")
-
-
-
-

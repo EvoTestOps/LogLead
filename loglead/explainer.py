@@ -135,7 +135,6 @@ class ShapExplainer:
             ignore_warning (bool, optional): Are warning about large dataset ignored. Defaults to False.
             plot_featurename_len (int, optional): Sets the lenght of truncated featurename in plots. Defaults to 16.
         """
-        # Takend from sad
         self.model = sad.model
         self.X_train = sad.X_train
         self.X_test = sad.X_test
@@ -150,32 +149,29 @@ class ShapExplainer:
         self.threshold = 1500 # How many features before warning, can be changed if needed
         self.index = None # Sorted Indexes
 
-    # Different shap explainers
-    def linear(self) :
-        """Creates Linear ShapExplainer object with given train data.
-
+    def linear(self):
+        """Creates a Linear ShapExplainer object with given train data.
         """
         self.expl = shap.LinearExplainer(self.model, self.X_train, feature_names=self._truncatefn(self.truncatelen))
         return self.expl
 
-    # shjould xgb be a tree?
+    # should XGBoost be also a tree?
     def tree(self):
-        """Creates Linear ShapExplainer object with given train data.
-
+        """Creates a Tree ShapExplainer object with given train data.
         """
         self.expl  = shap.TreeExplainer(self.model, data=self.X_train.toarray(), feature_names=self._truncatefn(self.truncatelen))
         return self.expl
 
+
     def kernel(self):
-        """Creates Linear ShapExplainer object with given train data.
+        """Creates a Kernel ShapExplainer object with given train data.
         """
         self.expl = shap.KernelExplainer(self.model.predict, self.X_train, feature_names=self._truncatefn(self.truncatelen))
         return self.expl
 
 
     def plain(self):
-        """Creates Linear ShapExplainer object with given train data.
-
+        """Creates a Standard ShapExplainer object with given anomaly detector.
         """
         self.expl = shap.Explainer(self.model, feature_names=self._truncatefn(self.truncatelen))
         return self.expl
@@ -183,20 +179,16 @@ class ShapExplainer:
 
     # a function for mapping, could be changed to cases in python 3.10
     def _scuffmapping(self):
-        """Used to determine what model is used by anomaly detection. Then
-        create a corresponding Shap explainer object.
+        """Maps the anomaly detection model to the correct ShapExplainer function.
 
         Returns:
-            _type_: _description_
+            shap.Explainer: The ShapExplainer object for the anomaly detection model.
         """
-        # linear
         if isinstance(self.model, (LogisticRegression,LinearSVC)):
             return self.linear
-        #tree
         elif isinstance(self.model, (IsolationForest,DecisionTreeClassifier,RandomForestClassifier)):
             self.istree = True
             return self.tree
-
         elif isinstance(self.model, (XGBClassifier)):
             return self.plain
         else:
@@ -204,25 +196,21 @@ class ShapExplainer:
             raise NotImplementedError
 
 
-    # sample default test data??
-    # should this return?
-    def calc_shapvalues(self, test_data=None, custom_slice:slice=None):
-        """This function creates shap values for given vectorized dataset. The data should be vectorized
-        by trained anomaly detection models vectorizer.
+    # should this sample the default test data?
+    # should this return the shap values?
+    def calc_shapvalues(self, test_data:np.ndarray=None, custom_slice:slice=None):
+        """This function creates the SHAP values for a given vectorized dataset. The data 
+        should be vectorized by a vectorizer of the trained anomaly detection model.
 
         Args:
-            test_data (_type_, optional): Shap values are calculated for given data.
-            Defaults to test data of anomaly detection object.
-
-            custom_slice (slice, optional): The used dataset can be sliced by python slice object.
-            Defaults to None
+            test_data (np.ndarray, optional): The data used to calculate the SHAP values. If not given, the function uses the test data of the anomaly detection object.
+            custom_slice (slice, optional): The used dataset can be sliced by a Python slice object to select only a sample of the data to be used. Defaults to None.
 
         Raises:
-            ResourceWarning: If ignore_warning not set true in ShapExplainer init stops running if calculation
-            too resource intensive.
+            ResourceWarning: If ignore_warning not set true when creating the ShapExplainer, stops running if the computation is too resource intensive.
 
         Returns:
-            _type_: Calculated Shap values
+            np.ndarray: The calculated SHAP-values.
         """
         if test_data == None:
             test_data = self.X_test 
@@ -230,13 +218,12 @@ class ShapExplainer:
         if custom_slice:
             test_data = test_data[custom_slice]
         
-
         featureamount = self.vec.get_feature_names_out().shape[0]
         dataamount = test_data.size
         
-        # the actual threshold could be tweaked but I found that both data and feature
+        # the actual threshold could be tweaked but it was found that both data and feature
         # amount matters, so now the warning looks for both of them.
-        # Could be changed to be something better if needed now just a warning.
+        # Could be changed to be something better if needed, now just a warning.
         if (dataamount >= 1000*self.threshold or featureamount >= self.threshold) and self.warn:
             print("Using large data set / many features, calculating shapvalues can be resource intensive!")
             raise ResourceWarning
@@ -252,7 +239,6 @@ class ShapExplainer:
             # some tree models gives two sets of values which are "mirrored"
             # when 1 the anomaly should have positive shap value
                 self.Svals = self.Svals[:,:,1]
-        
         else:
             self.Svals = expl(test_data)
         return self.Svals
@@ -262,7 +248,7 @@ class ShapExplainer:
     def shap_values(self):
         """
         Returns:
-            _type_: Stored Shap values.
+            np.ndarray: The stored SHAP-values.
         """
         return self.Svals
 
@@ -271,7 +257,7 @@ class ShapExplainer:
     def feature_names(self):
         """
         Returns:
-            _type_: Stored feature names.
+            ndarray of str objects: Stored feature names.
         """
         return self.vec.get_feature_names_out()
         
@@ -295,7 +281,7 @@ class ShapExplainer:
     def sorted_featurenames(self):
         """
         Returns:
-            list: Sorted feature names by shap importance.
+            list: Sorted feature names by SHAP importance.
         """
         val =  np.argsort(np.sum(np.abs(self.Svals.values), axis=0))
         self.index = val 
@@ -303,20 +289,31 @@ class ShapExplainer:
         return [fn[i] for i in val][::-1]
 
 
-    def _truncatefn(self,length):
+    def _truncatefn(self,length:int):
+        """Truncates the feature names to the given length.
+
+        Args:
+            length (int): The maximum length of the feature names.
+
+        Returns:
+            ndarray of str objects: The truncated feature names.
+        """
         return self.vec.get_feature_names_out().astype(f'<U{length}')
 
     def plot(self, data:np.ndarray=None,plottype="summary", custom_slice:slice=None, displayed=16):
-        """_summary_
+        """Plots the SHAP values in different plots to understand the importance of the features
+        in the anomaly detection model. The plottype currently implemented are "summary", "bar", 
+        and "beeswarm". The data to be plotted can be given directly to the function or the function
+        uses the test data of the anomaly detection object. The custom_slice can be used to select
+        only a sample of the data to be plotted.
 
         Args:
-            data (np.ndarray, optional): Data used to calculate the shap values and creating the plot. Defaults to None. If no data given
+            data (np.ndarray, optional): Data used to calculate the SHAP values and creating the plot. Defaults to None. If no data given
             function uses test data included in anomaly detection object.
-            plottype (str, optional): _description_. Defaults to "summary".
-            slice (_type_, optional): _description_. Defaults to None.
-            displayed (int, optional): _description_. Defaults to 16.
+            plottype (str, optional): The plottype used for the plot, "summary", "bar", or "beeswarm". Defaults to "summary".
+            slice (slice, optional): The slice used to select only a sample of the data to be plotted. Defaults to None.
+            displayed (int, optional): The number of displayed features in the plot. Defaults to 16.
         """
-
         if data != None or self.Svals == None or custom_slice:
             self.calc_shapvalues(data, custom_slice)
             plotdata = self.shapdata
@@ -325,20 +322,18 @@ class ShapExplainer:
         else:
             plotdata = self.shapdata
 
-    
         fullnames = self.sorted_featurenames()
         print("====================================")
         for i in range(displayed):
             print(fullnames[i])
         print("====================================")
-
      
         if plottype == "summary":
             shap.summary_plot(self.Svals, plotdata, max_display=displayed)
         elif plottype == "bar":
             shap.plots.bar(self.Svals, max_display=displayed)
 
-        # create new elif for new plot
+        # create new elif for a new plot
         elif plottype == "beeswarm":
             # add shap plot with needed args, 
             # usually shap values from shap explainer

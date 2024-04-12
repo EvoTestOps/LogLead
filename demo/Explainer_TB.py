@@ -1,6 +1,5 @@
-#This is an example using TB (Thunderbird) data from samples folder. See also similar HDFS_samples.py  
-#The files have been loaded from raw and processed to parquet file format for efficient storage.
-#This file demonstrates how to work after you have completed the loader.
+# This is an example using TB (Thunderbird) data from samples folder. Demonstrates the functionalities
+# of the explainer module.
 
 #______________________________________________________________________________
 #Part 1 load libraries and setup paths. 
@@ -35,6 +34,8 @@ print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(d
 # Can be removed
 df = df.head(100000)
 #exit()
+
+
 #_________________________________________________________________________________
 #Part 3 add enhanced reprisentations 
 print(f"\nStarting enhancing all log events:")
@@ -44,7 +45,6 @@ enhancer = er.EventLogEnhancer(df)
 def format_as_list(series):
     elements = [str(item) for item in series]
     return '[' + ', '.join(elements) + ']'
-
 
 #Create some enhanced representations
 df = enhancer.normalize()
@@ -68,7 +68,6 @@ sad.prepare_train_test_data() #Data needs to prepared after changing the predict
 
 sad.train_LR()
 df_seq = sad.predict()
-
 
 # Create a ShapExplainer object with trained anomaly detection object
 # By default doesn't run if too large dataset or too many feature names
@@ -154,6 +153,4 @@ mask = df.select(pl.col("include")).to_numpy().flatten()
 
 # now the used data can be masked and plotted using shap
 maskeddata = X_test[mask]
-
 ex1.plot(maskeddata, plottype="summary")
-
