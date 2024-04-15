@@ -72,7 +72,7 @@ class EventLogEnhancer:
         if "e_trigrams" not in self.df.columns:
             self.df = self.df.with_columns(
                 pl.col(column).map_elements(
-                    lambda mes: self._create_cngram(message=mes, ngram=3)).alias("e_trigrams")
+                    lambda mes: self._create_cngram(message=mes, ngram=3), return_dtype=pl.List(pl.Utf8)).alias("e_trigrams")
             )
             self.df = self.df.with_columns(
                 e_trigrams_len = pl.col("e_trigrams").list.lengths()
@@ -87,7 +87,7 @@ class EventLogEnhancer:
     # Enrich with drain parsing results
     def parse_drain(self, drain_masking=False, reparse=False):
         self._handle_prerequisites(["m_message"])
-        if reparse or "e_event_id" not in self.df.columns:
+        if reparse or "e_event_drain_id" not in self.df.columns:
             import drain3 as dr
             # Drain returns dict
             # {'change_type': 'none',
@@ -102,6 +102,13 @@ class EventLogEnhancer:
             current_script_path = os.path.abspath(__file__)
             current_script_directory = os.path.dirname(current_script_path)
             drain3_ini_location =  os.path.join(current_script_directory, '../parsers/drain3/')
+            return_dtype = pl.Struct([
+                pl.Field("change_type", pl.Utf8),
+                pl.Field("cluster_id", pl.Int64),
+                pl.Field("cluster_size", pl.Int64),
+                pl.Field("template_mined", pl.Utf8),
+                pl.Field("cluster_count", pl.Int64)
+            ])
             if drain_masking:
                 dr.template_miner.config_filename = os.path.join(drain3_ini_location,'drain3.ini') #TODO fix the path relative
                 tm = dr.TemplateMiner()
@@ -109,18 +116,18 @@ class EventLogEnhancer:
                     message_trimmed=pl.col("m_message").str.split("\n").list.first()
                 )
                 self.df = self.df.with_columns(
-                    drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x)))
+                    drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
             else:
                 if "e_message_normalized" not in self.df.columns:
                     self.normalize()
                 dr.template_miner.config_filename =os.path.join(drain3_ini_location, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
                 tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
-                    drain=pl.col("e_message_normalized").map_elements(lambda x: tm.add_log_message(x)))
+                    drain=pl.col("e_message_normalized").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
 
             self.df = self.df.with_columns(
-                e_event_id=pl.lit("e") + pl.col("drain").struct.field("cluster_id").cast(pl.Utf8),
-                # extra thing ensure we e1 e2 instead of 1 2
+                # extra letter to ensure we e1 e2 instead of 1 2
+                e_event_drain_id=pl.lit("e") + pl.col("drain").struct.field("cluster_id").cast(pl.Utf8),
                 e_template=pl.col("drain").struct.field("template_mined"))
             self.df = self.df.drop("drain")  # Drop the dictionary produced by drain. Event_id and template are the most important.
             # tm.drain.print_tree()
@@ -195,21 +202,21 @@ class EventLogEnhancer:
 
 
     #Faster version of IPLoM coming in 2024
-    def parse_fiplom(self, masking=True, reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
+    def parse_pliplom(self, masking=True, reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
-        if reparse or "e_event_fiplom_id" not in self.df.columns:
-            if "e_event_fiplom_id" in self.df.columns:
-                self.df = self.df.drop("e_event_fiplom_id")
+        if reparse or "e_event_plimplom_id" not in self.df.columns:
+            if "e_event_plimplom_id" in self.df.columns:
+                self.df = self.df.drop("e_event_pliplom_id")
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            import parsers.fast_iplom.fast_iplom as fast_iplom
-            fiplom_parser = fast_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST,lower_bound=lower_bound, single_outlier_event=single_outlier_event)
-            df_new = fiplom_parser.parse()
-            #df_new = fiplom_parser.merge_partitions_to_dataframe()
+            import parsers.pl_iplom.pl_iplom as pl_iplom
+            pliplom_parser = pl_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST,lower_bound=lower_bound, single_outlier_event=single_outlier_event)
+            df_new = pliplom_parser.parse()
+            #df_new = plimplom_parser.merge_partitions_to_dataframe()
             df_new = df_new.select([
                 pl.col("row_nr"),
-                pl.col("event_id").alias("e_event_fiplom_id")
+                pl.col("event_id").alias("e_event_pliplom_id")
             ])
             self.df = self.df.join(df_new, on="row_nr", how="left")
         return self.df
@@ -225,14 +232,17 @@ class EventLogEnhancer:
             self.df = self.df.with_row_count()
             self.df = self.df.with_columns(
                 lenma_obj=pl.struct(["e_words", "row_nr"])
-                .map_elements(lambda x:lenma_tm.infer_template(x["e_words"], x["row_nr"])))
+                .map_elements(lambda x:lenma_tm.infer_template(x["e_words"], x["row_nr"]), return_dtype=pl.Object))
             def extract_id(obj):
                 template_str = " ".join(obj.words)
                 eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
                 return {'eid':eid, 'template_str':template_str}
-
+            return_dtype = pl.Struct([
+                pl.Field("eid", pl.Utf8),
+                pl.Field("template_str", pl.Utf8)
+            ])
             self.df = self.df.with_columns(
-                lenma_info= pl.col("lenma_obj").map_elements(lambda x:extract_id(x))
+                lenma_info= pl.col("lenma_obj").map_elements(lambda x:extract_id(x), return_dtype=return_dtype)
             )
             self.df = self.df.with_columns(
                 e_event_lenma_id = pl.col("lenma_info").struct.field("eid"),
@@ -250,15 +260,19 @@ class EventLogEnhancer:
             spell = lcsmap(r'\s+')
             self.df = self.df.with_columns(
                 spell_obj=pl.col("e_message_normalized")
-                    .map_elements(lambda x: spell.insert(x)))
+                    .map_elements(lambda x: spell.insert(x), return_dtype=pl.Object))
 
             def extract_id(obj):
                 template_str = " ".join(obj._lcsseq)
                 eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
                 return {'eid':eid, 'template_str':template_str}
 
+            return_dtype = pl.Struct([
+                pl.Field("eid", pl.Utf8),
+                pl.Field("template_str", pl.Utf8)
+            ])
             self.df = self.df.with_columns(
-                 spell_info= pl.col("spell_obj").map_elements(lambda x:extract_id(x))
+                 spell_info= pl.col("spell_obj").map_elements(lambda x:extract_id(x),return_dtype=return_dtype)
             )
             self.df = self.df.with_columns(
                 e_event_spell_id = pl.col("spell_info").struct.field("eid"),
@@ -342,6 +356,13 @@ class SequenceEnhancer:
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
 
+    def time_stamp(self):
+        #We used median as time stamp for sequence
+        df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').median().alias('time_stamp'))
+        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
+        return self.df_seq
+
+
     def seq_len(self):
         # Count the number of rows for each seq_id
         df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
@@ -353,7 +374,7 @@ class SequenceEnhancer:
 
         return self.df_seq
 
-    def events(self, event_col = "e_event_id"):
+    def events(self, event_col = "e_event_drain_id"):
         # Aggregate event ids into a list for each seq_id
         df_temp = self.df.group_by('seq_id').agg(pl.col(event_col).alias(event_col))
         # Join this result with df_sequences on seq_id
@@ -406,7 +427,7 @@ class SequenceEnhancer:
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
         
-    def next_event_prediction (self, event_col = "e_event_id"):
+    def next_event_prediction (self, event_col = "e_event_drain_id"):
         if event_col not in self.df_seq.columns:#Ensure events are present otherwise no nep can be done
             self.events(event_col)
         nepn = nep.NextEventPredictionNgram()

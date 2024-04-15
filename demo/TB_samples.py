@@ -49,7 +49,9 @@ print(f"as words:             {format_as_list(df['e_words'][row_index])}")
 df = enhancer.trigrams()
 print(f"as trigrams:          {format_as_list(df['e_trigrams'][row_index])}")
 df = enhancer.parse_drain()
-print(f"as Drain event id:    {df['e_event_id'][row_index]}")
+print(f"as Drain event id:    {df['e_event_drain_id'][row_index]}")
+df = enhancer.parse_tip()
+print(f"as Tipping event id:    {df['e_event_tip_id'][row_index]}")
 #Spell parser takes a bit too long for the video  
 #df = enhancer.parse_spell()
 #print(f"as Spell event id:    {df['e_event_spell_id'][row_index]}")
@@ -88,7 +90,7 @@ sad.train_DT()
 df_seq = sad.predict()
 
 print(f"Predicting with Drain parsing results")
-sad.item_list_col = "e_event_id"
+sad.item_list_col = "e_event_drain_id"
 sad.prepare_train_test_data()
 #Logistic Regression
 sad.train_LR()

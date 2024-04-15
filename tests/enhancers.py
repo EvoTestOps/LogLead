@@ -9,13 +9,13 @@ sys.path.append('..')
 import loglead.enhancer as eh
 import loglead.loaders.base as load
 
-# Set your directory
-test_data_path = "/home/mmantyla/Datasets/test_data"  # Replace with the path to your folder
-test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
+home_directory = os.path.expanduser('~')
+test_data_path = os.path.join(home_directory, "Datasets", "test_data") 
 
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
 print ("Enhancers test starting.")
+print (f"Found files {all_files}")
 # Extract unique dataset names, excluding '_seq' files
 datasets = set()
 for f in all_files:
@@ -48,6 +48,10 @@ for dataset in datasets:
     df = enhancer.trigrams()
     print ("Drain parsing",   end=", ")
     df = enhancer.parse_drain()
+    if (dataset != "bgl_lo"):#Bug in tipping causes it to parse bad results 
+        print ("Tipping parsing",   end=", ")
+        df = enhancer.parse_tip()
+
     # Enhance / Aggregate sequence level
     loader = load.BaseLoader(filename=None, df=None, df_seq = None)
     seq_file = primary_file.replace(f"{dataset}.parquet", f"{dataset}_seq.parquet")
@@ -80,9 +84,17 @@ for dataset in datasets:
     #Test the remaining slow parsers.   
     df = loader.reduce_dataframes(frac=0.01)#Reducing the ~100k -> 1k
     df_seq = loader.df_seq
-    print(len(df))
-    print ("Spell parsing",   end=", ")
     enhancer.df = df
+    print(f"Remaining parsers with lines {len(df)}", end=": ")
+    print ("IpLom",   end=", ")
+    df = enhancer.parse_iplom()
+    print ("Pl-Iplom parsing",   end=", ")
+    df = enhancer.parse_pliplom()
+    print ("AEL parsing",   end=", ")
+    df = enhancer.parse_ael()
+    print ("Brain parsing",   end=", ")
+    df = enhancer.parse_brain()
+    print ("Spell parsing",   end=", ")
     df = enhancer.parse_spell()
     print ("LenMa parsing",  end=", ")
     df = enhancer.parse_lenma()

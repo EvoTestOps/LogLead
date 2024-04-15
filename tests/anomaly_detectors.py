@@ -9,15 +9,14 @@ sys.path.append('..')
 import loglead.anomaly_detection as ad
 
 # Set your directory
-#test_data_path = "/home/mmantyla/Datasets/test_data" 
-test_data_path = "/home/ubuntu/Datasets/test_data"  # Replace with the path to your folder
+home_directory = os.path.expanduser('~')
+test_data_path = os.path.join(home_directory, "Datasets", "test_data") 
  
-
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
 
 print ("Anomaly detectors test starting.")
-
+print (f"Found files {all_files}")
 # Extract unique dataset names with '_eh_' , excluding '_seq' files
 datasets = set()
 for f in all_files:
@@ -26,7 +25,7 @@ for f in all_files:
         dataset_name = basename.replace(".parquet", "")
         datasets.add(dataset_name)
 
-cols_event = ["m_message", "e_words", "e_event_id", "e_trigrams", "e_event_spell_id", "e_event_lenma_id", "e_bert_emb"] 
+cols_event = ["m_message", "e_words", "e_event_drain_id", "e_trigrams", "e_event_tip_id", "e_event_lenma_id", "e_bert_emb"] 
 numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_prob_nmax_avg", "nep_prob_nmax_min"]
 for dataset in datasets:
     # Load the event level data

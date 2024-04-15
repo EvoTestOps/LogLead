@@ -6,10 +6,28 @@ import re
 import json
 
 import traceback
+import logging
+logger = logging.getLogger(__name__)
 
 class NezhaLoader(BaseLoader):
-    def __init__(self, filename, df=None, df_seq=None):
-        super().__init__(filename, df, df_seq)
+    def __init__(self, filename, system, df=None, df_seq=None):
+        """
+        Parameters:
+        system_name (str): Either TrainTicket or WebShop
+
+        Raises:
+        ValueError: If the system_name is not a valid option.
+        """
+         # Define the valid options
+        valid_options = ['TrainTicket', 'WebShop']
+        # Check if the system_name is in the list of valid options
+        if system in valid_options:
+            self.system = system
+            super().__init__(filename, df, df_seq)
+        else:
+            # If it's not, raise an error
+            raise ValueError(f"Invalid system name: {system}. Valid options are: {', '.join(valid_options)}")
+
 
     def load(self):
         log_queries = []
@@ -36,6 +54,13 @@ class NezhaLoader(BaseLoader):
             match = date_pattern.match(os.path.basename(subdir))
             if match:
                 date_str = match.group()  # Extract the matched date string
+                #We want WebShop data but are in the train ticket folder -> skip this data
+                if ((date_str == "2023-01-29" or date_str =="2023-01-30") and (self.system == "WebShop")):
+                    continue
+                #We want TrainTicket data but are not in the train ticket folder skip
+                elif ((date_str == "2022-08-23" or date_str =="2022-08-22") and (self.system == "TrainTicket")):
+                    continue
+               
                 #Log
                 log_path = os.path.join(subdir, "log")
                 if os.path.exists(log_path):
@@ -163,7 +188,7 @@ class NezhaLoader(BaseLoader):
                 q = pl.scan_csv(file, has_header=True, separator=",", row_count_name="row_nr_per_file")
                 q = q.with_columns(
                     pl.lit(date_str).alias('date_folder'),  # Folder is date info
-                    pl.lit(os.path.basename(file)).alias('trace_file_name'),  # File name storage
+                    pl.lit(os.path.basename(file)).alias('file_name'),  # File name storage
                     pl.lit(ano_folder).alias('anomaly_folder')
                 )
                 queries.append(q)
@@ -176,16 +201,12 @@ class NezhaLoader(BaseLoader):
             try:
                 q = pl.scan_csv(file, has_header=True, infer_schema_length=0, separator=",", 
                                 row_count_name="row_nr_per_file", truncate_ragged_lines=True)
-                system_name = "Error"
-                if date_str == "2023-01-29" or date_str =="2023-01-30":
-                    system_name = "TrainTicket"
-                elif  date_str == "2022-08-23" or date_str =="2022-08-22":
-                    system_name = "GShop"
+                
                 q = q.with_columns(
                     pl.lit(date_str).alias('date_folder'),  # Folder is date info
-                    pl.lit(os.path.basename(file)).alias('log_file_name'),  # File name storage
+                    pl.lit(os.path.basename(file)).alias('file_name'),  # File name storage
                     pl.lit(ano_folder).alias('anomaly_folder'),
-                    pl.lit(system_name).alias('system_name')
+                    #pl.lit(system_name).alias('system_name')
                 )
                 queries.append(q)
             except pl.exceptions.NoDataError:  # some CSV files can be empty.
@@ -208,6 +229,17 @@ class NezhaLoader(BaseLoader):
         self.df_trace = self.df_trace.with_row_count()
         self.df = self.add_labels_to_df(self.df)
         self.df_trace = self.add_labels_to_df(self.df_trace)
+        
+        self.df = self.df.with_columns(
+            pl.concat_str([pl.col("date_folder"),pl.lit(" "), pl.col("file_name"), pl.lit(" "), pl.col("PodName")]).alias("seq_id")
+        )
+        self.df_trace = self.df_trace.with_columns(
+            pl.concat_str([pl.col("date_folder"),pl.lit(" "), pl.col("file_name"), pl.lit(" "), pl.col("PodName")]).alias("seq_id")
+        )
+
+        self.df_seq = self.add_labels_to_df_seq(self.df)
+        self.df_trace_seq = self.add_labels_to_df_seq(self.df_trace)
+
 
     def process_metrics(self):            
         self.df_label = self.df_label.with_columns(
@@ -232,28 +264,109 @@ class NezhaLoader(BaseLoader):
     def _extract_log_message(self):
         self.df = self.df.with_row_count("row_key")#Used for matching later
         #Splitting criteria. We have valid json and invalid flag
-        self.df = self.df.with_columns(normal_json = (pl.col("raw_m_message").str.contains("message")) &
-                        (pl.col("raw_m_message").str.contains("severity")) &
-                        (pl.col("raw_m_message").str.contains("timestamp")))
+        if self.system == "WebShop":
+        
+            self.df = self.df.with_columns(normal_json = (pl.col("raw_m_message").str.contains("message")) &
+                            (pl.col("raw_m_message").str.contains("severity")))# &
+                            #(pl.col("raw_m_message").str.contains("timestamp")))
+                            
 
-        df_normal_json = self.df.filter(pl.col("normal_json")).select("raw_m_message", "row_key",  "SpanID" )
-        df_abnormal_json = self.df.filter(~pl.col("normal_json")).select("raw_m_message", "row_key", "SpanID" )
+            df_normal_json = self.df.filter(pl.col("normal_json")).select("raw_m_message", "row_key",  "SpanID" )
+            df_abnormal_json = self.df.filter(~pl.col("normal_json")).select("raw_m_message", "row_key", "SpanID" )
+                    
+            logger.info (f"WS df_normal_json: {df_normal_json[0]['raw_m_message'] [0]}")
+            logger.info (f"WS df_abnormal_json: {df_abnormal_json[0]['raw_m_message'][0]}")
+        
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").str.json_decode())
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").struct.field("log"))
+            #Debug bad JSON
+            # for index, row in enumerate(df_normal_json.to_dicts()):
+            #     try:
+            #         if index % 100 == 0:
+            #             print(".", end="")
+            #         row["log"] = df_normal_json[index].with_columns(pl.col("log").str.json_decode())
+            #     except Exception as e:
+            #         logger.error(f"Row {index}:{df_normal_json[index]['log'][0]} {str(e)}")
 
-        #Double decode json
-        df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").str.json_decode())
-        df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").struct.field("log"))
-        df_normal_json = df_normal_json.with_columns(pl.col("log").str.json_decode())
-        #extract message and severity
-        df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("message"))
-        df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("severity"))
-        df_normal_json = df_normal_json.drop(["raw_m_message", "log"])
+
+            df_normal_json = df_normal_json.with_columns(pl.col("log").str.json_decode())
+            #extract message and severity
+            df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("message"))
+            df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("severity"))
+            df_normal_json = df_normal_json.drop(["raw_m_message", "log"])
+
+            df_abnormal_json = df_abnormal_json.with_columns(severity = None)
+            df_abnormal_json = df_abnormal_json.rename({"raw_m_message":"message"})
+            #if self.system == "WebShop":
+            df_abnormal_json = df_abnormal_json.select(df_normal_json.columns)
+            #The dataframes have now equal fields and no overlap -> vertical stack
+            df_t3 = df_normal_json.vstack(df_abnormal_json)
 
         #Prepare abnormal for merge
-        df_abnormal_json = df_abnormal_json.with_columns(severity = pl.lit(""))
-        df_abnormal_json = df_abnormal_json.rename({"raw_m_message":"message"})
-        df_abnormal_json = df_abnormal_json.select(df_normal_json.columns)
-        #The dataframes have now equal fields and no overlap -> vertical stack
-        df_t3 = df_normal_json.vstack(df_abnormal_json)
+        else:
+            #self.df = self.df.with_columns(normal_json = (pl.col("raw_m_message").
+            #                                              str.contains("log")) &
+            #                (pl.col("raw_m_message").str.contains("time")) &
+            #                (pl.col("raw_m_message").str.contains("TraceID")))
+
+            df_normal_json = self.df#.filter(pl.col("normal_json")).select("raw_m_message", "row_key",  "SpanID" )
+            #df_abnormal_json = self.df.filter(~pl.col("normal_json")).select("raw_m_message", "row_key", "SpanID" )
+           
+            #df_abnormal_json =  self.df.select("raw_m_message", "row_key",  "SpanID" )
+            logger.info (f"TT df_normal_json: {df_normal_json[0]['raw_m_message'][0]}")
+
+            #logger.info (f"TT df_abnormal_json: {df_abnormal_json[0]['raw_m_message']}")
+
+            #We split on the closing { as there should not be anything after that
+            df_normal_json = df_normal_json.with_columns(
+                [
+                    pl.col("raw_m_message")
+                    .str.splitn("}ulate distance]", 2)
+                    .struct.rename_fields(["raw_m_message_fix", "json_error_part"])
+                    .alias("fields"),
+                ]
+            ).unnest("fields")
+            df_normal_json = df_normal_json.with_columns(
+                pl.when(pl.col("json_error_part").is_not_null()) # replace "other_field" with your actual field
+                .then(pl.col("raw_m_message_fix") + pl.lit('}'))
+                .otherwise(pl.col("raw_m_message_fix"))
+            )
+            #Debug bad JSON
+            # for index, row in enumerate(df_normal_json.to_dicts()):
+            #     try:
+            #         if index % 100 == 0:
+            #             print(".", end="")
+            #         row["raw_m_message_fix"] = df_normal_json[index].with_columns(pl.col("raw_m_message_fix").str.json_decode())
+            #     except Exception as e:
+            #         logger.error(f"Row {index}:{df_normal_json[index]['raw_m_message_fix'][0]} {str(e)}")
+            # #Fix broken JSON
+            df_normal_json = df_normal_json.drop("df_normal_json") 
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").str.json_decode())
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").struct.field("log"))
+            #df_abnormal_json = df_abnormal_json.with_columns(pl.col("log")
+            #TODO toimisi uudemmalla 0.20
+            #df_normal_json = df_normal_json.with_columns(
+            #    pl.col("log").str.split(by=" ").arr.get(1).alias("severity")
+            #)
+
+
+            df_normal_json = df_normal_json.with_columns(
+                [
+                    pl.col("log")
+                    .str.splitn("", 3)
+                    .struct.rename_fields(["_time", "severity", "_rest"])
+                    .alias("fields"),
+                ]
+            ).unnest("fields")
+
+            df_normal_json = df_normal_json.rename({"raw_m_message":"message"})
+            df_normal_json = df_normal_json.drop(["_time", "_rest", "raw_m_message_fix"])
+                                
+
+            #df_abnormal_json = df_abnormal_json.with_columns(severity = pl.lit(""))
+            #df_abnormal_json = df_abnormal_json.rename({"raw_m_message":"message"})
+            df_t3 = df_normal_json#.vstack(df_abnormal_json)
+            #df_t3 = df_abnormal_json
 
         #Each log message contains span and trace ids remove them here as they are already separate columns
         #"message\":\"TraceID: 04c707faa29852d058b7ad236b6ef47a SpanID: 7f8791f4ed419539 Get currency data successful\",
@@ -416,6 +529,17 @@ class NezhaLoader(BaseLoader):
             ).alias("metric_anomaly")
         )
         return df_to_modify
+
+    def add_labels_to_df_seq(self, df_for_agg):   
+        #Also system type 
+        df_seq = df_for_agg.select(pl.col("seq_id")).unique()  
+        df_temp = df_for_agg.group_by('seq_id').agg(
+        (pl.col("anomaly").sum()/ pl.count()).alias("ano_count")) 
+        # Join this result with df_sequences on seq_id
+        df_seq = df_seq.join(df_temp, on='seq_id')
+        return df_seq
+
+
 
 # full_data = "/home/mmantyla/Datasets"
 # loader = NezhaLoader(filename= f"{full_data}/nezha/",) 
