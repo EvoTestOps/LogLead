@@ -48,9 +48,8 @@ for dataset in datasets:
     df = enhancer.trigrams()
     print ("Drain parsing",   end=", ")
     df = enhancer.parse_drain()
-    if (dataset != "bgl_lo"):#Bug in tipping causes it to parse bad results 
-        print ("Tipping parsing",   end=", ")
-        df = enhancer.parse_tip()
+    print ("Tipping parsing",   end=", ")
+    df = enhancer.parse_tip()
 
     # Enhance / Aggregate sequence level
     loader = load.BaseLoader(filename=None, df=None, df_seq = None)
