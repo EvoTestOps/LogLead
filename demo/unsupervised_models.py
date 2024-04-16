@@ -19,7 +19,7 @@ import time
 full_data = "/home/ubuntu/Datasets"
 
 #List the representations (column names) for anomaly detection
-items = ["e_words", "e_trigrams","e_event_id"] #"e_alphanumerics"
+items = ["e_words", "e_trigrams","e_event_drain_id"] #"e_alphanumerics"
 
 #List the models as well as possible parameters
 models_dict = {
@@ -76,7 +76,7 @@ seq_enhancer.start_time()
 sad = ad.AnomalyDetection()
 for item in items:
     print("-----", item, "-----")
-    if item != "e_event_id":
+    if item != "e_event_drain_id":
         seq_enhancer.tokens(item)
     else:
         seq_enhancer.events(item)
@@ -91,7 +91,7 @@ for item in items:
 
 
 print("---------- BGL ----------")
-frac_data = 0.05
+frac_data = 0.01
 test_frac = 0.95
 stime = time.time()
 loader = load_sc.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
@@ -131,7 +131,7 @@ for item in items:
 
 
 print("---------- HDFS ----------")
-frac_data = 0.05
+frac_data = 0.01
 test_frac = 0.95
 stime = time.time()
 loader = load_hdfs.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
@@ -168,7 +168,7 @@ seq_enhancer.seq_len()
 sad = ad.AnomalyDetection()
 for item in items:
     print("-----", item, "-----")
-    if item != "e_event_id":
+    if item != "e_event_drain_id":
         seq_enhancer.tokens(item)
     else:
         seq_enhancer.events(item)

@@ -181,7 +181,10 @@ class AnomalyDetection:
         
     def train_OOVDetector(self, len_col=None, filter_anos=True, threshold=1):
         if len_col == None: 
-            len_col = self.item_list_col+"_len"
+            if "event" in self.item_list_col:
+                len_col = "e_event_id_len" #item list col has the parser name when using events, but length doesn't
+            else:
+                len_col = self.item_list_col+"_len"
         self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
         
 
