@@ -340,7 +340,7 @@ class NezhaLoader(BaseLoader):
             #     except Exception as e:
             #         logger.error(f"Row {index}:{df_normal_json[index]['raw_m_message_fix'][0]} {str(e)}")
             # #Fix broken JSON
-            df_normal_json = df_normal_json.drop("df_normal_json") 
+            df_normal_json = df_normal_json.drop("json_error_part") 
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").str.json_decode())
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").struct.field("log"))
             #df_abnormal_json = df_abnormal_json.with_columns(pl.col("log")
@@ -386,7 +386,8 @@ class NezhaLoader(BaseLoader):
             .str.strip_chars_start()
             .str.strip_chars_end('\n\\\\\\n'))
         #Drop unnecessary columns and merge to main df
-        df_t3 = df_t3.drop(["message", "redu1", "redu2", "message_part", "SpanID", "normal_json"])
+        #df_t3 = df_t3.drop(["message", "redu1", "redu2", "message_part", "SpanID", "normal_json"])
+        df_t3 = df_t3.select(["row_key", "severity", "m_message"])
         self.df =self.df.join(df_t3, "row_key", "left")
         self.df = self.df.drop(["normal_json"])
 
@@ -539,7 +540,11 @@ class NezhaLoader(BaseLoader):
         df_seq = df_seq.join(df_temp, on='seq_id')
         return df_seq
 
-
+    def merge_logs_and_traces(self):
+        self.df_trace = self.df_trace.with_columns(pl.col("seq_id").str.replace_all("_trace.csv", ""))
+        self.df = self.df.with_columns(pl.col("seq_id").str.replace_all("_log.csv", ""))
+        self.df_merge = self.df .join(self.df_trace, on="seq_id", how="inner")
+        return self.df_merge
 
 # full_data = "/home/mmantyla/Datasets"
 # loader = NezhaLoader(filename= f"{full_data}/nezha/",) 
