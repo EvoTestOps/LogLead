@@ -175,7 +175,9 @@ class EventLogEnhancer:
                 }
             )
             df_new = df_new.with_columns(
-                            e_event_tip_id=pl.lit("e") + pl.col("e_event_tip_id").cast(pl.Utf8)
+                e_event_tip_id=pl.when(pl.col("e_event_tip_id").is_null())
+                .then(pl.lit("e_null"))
+                .otherwise(pl.lit("e") + pl.col("e_event_tip_id").cast(pl.Utf8))
             )
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
