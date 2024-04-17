@@ -9,8 +9,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import IsolationForest
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
@@ -81,6 +79,34 @@ class NNExplainer:
             print(f"Features of anomaly {anomaly}: {self.df.filter(pl.col(self.id_column) == anomaly).select(pl.col(feature_cols)).to_pandas().values}")
             print(f"Features of closest normal {normal}: {self.df.filter(pl.col(self.id_column) == normal).select(pl.col(feature_cols)).to_pandas().values}")
             print("\n"*2)
+
+
+    def print_false_positive_content(self, ground_truth_col: str):
+        """Prints the content of the false positive instances in the log data. The false positive
+        instances are the instances that are predicted to be anomalous but are not according to
+        the ground truth labels.
+
+        Args:
+            ground_truth_col (str): The column name for the ground truth labels.
+        """
+        false_positives = self.df.filter((pl.col(self.prediction_column) == True) & (pl.col(ground_truth_col) == False)).select(pl.col(self.id_column), pl.col("e_words"))
+        print("False positive sequences:")
+        for row in false_positives.rows():
+            print(f"{row[0]}: {' '.join(row[1])}")
+
+    
+    def print_false_negative_content(self, ground_truth_col: str):
+        """Prints the content of the false negative instances in the log data. The false negative
+        instances are the instances that are predicted to be normal but are anomalous according to
+        the ground truth labels.
+
+        Args:
+            ground_truth_col (str): The column name for the ground truth labels.
+        """
+        false_negatives = self.df.filter((pl.col(self.prediction_column) == False) & (pl.col(ground_truth_col) == True)).select(pl.col(self.id_column), pl.col("e_words"))
+        print("False negative sequences:")
+        for row in false_negatives.rows():
+            print(f"{row[0]}: {' '.join(row[1])}")
 
 
     def plot_features_in_two_dimensions(self, ground_truth_col: str = None) -> None:
@@ -263,19 +289,19 @@ class ShapExplainer:
         
 
     def sorted_shapvalues(self):
-    """ Can be used to get a sorted array of shap values. Sorted by feature importance.
-        Does not contain base value
+        """Can be used to get a sorted array of shap values. Sorted by feature importance.
+        Does not contain base value.
 
-    Returns:
-        ndarray: ndarray of sorted shap values from most important to leas.
-    """
-    if self.Svals == None:
-        return None
-    if self.index is not None:
-        val = self.index
-    else:
-        val = np.argsort(np.sum(np.abs(self.Svals.values), axis=0))
-    return np.array([self.Svals.values[:,i] for i in val][::-1])
+        Returns:
+            ndarray: ndarray of sorted shap values from most important to least.
+        """
+        if self.Svals == None:
+            return None
+        if self.index is not None:
+            val = self.index
+        else:
+            val = np.argsort(np.sum(np.abs(self.Svals.values), axis=0))
+        return np.array([self.Svals.values[:,i] for i in val][::-1])
 
 
     def sorted_featurenames(self):
