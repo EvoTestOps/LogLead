@@ -34,10 +34,11 @@ from scipy.sparse import csr_matrix
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import roc_auc_score
 
 class AnomalyDetection:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
-                 store_scores=False, print_scores=True):
+                 store_scores=False, print_scores=True, auc_roc=False):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
         self.label_col = label_col
@@ -46,6 +47,7 @@ class AnomalyDetection:
         self.storage = ModelResultsStorage()
         self.print_scores=print_scores
         self.train_vocabulary = None
+        self.auc_roc = auc_roc
 
         
     def test_train_split(self, df, test_frac=0.9, shuffle=True,vec_name="CountVectorizer"):
@@ -127,19 +129,47 @@ class AnomalyDetection:
     #    self.model.fit(X_train, labels)
     
     def predict(self, custom_plot=False):
-        #X_test, labels = self._prepare_data(train=False, df_seq=df_seq)
+        #Binary scores
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
         predictions = self.model.predict(X_test_to_use)
         #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
         if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
             predictions = np.where(predictions < 0, 1, 0)
-        df_seq = self.test_df.with_columns(pl.Series(name="pred_normal", values=predictions.tolist()))
+        df_seq = self.test_df.with_columns(pl.Series(name="pred_ano", values=predictions.tolist()))
+        
+        #Continuous scores
+        predictions_proba = None
+        if self.auc_roc:
+            if isinstance(self.model, (IsolationForest, LocalOutlierFactor, OneClassSVM)):
+                # Unsupervised models give anomaly scores or decision function values
+                predictions_proba = 1- self.model.decision_function(X_test_to_use)
+            elif isinstance(self.model, (KMeans)):
+                from sklearn.metrics.pairwise import pairwise_distances
+                predictions_proba = np.min(pairwise_distances(X_test_to_use, self.model.cluster_centers_), axis=1)
+            elif isinstance(self.model, LinearSVC):
+                # LinearSVC does not have predict_proba method by default
+                # Use decision_function method to obtain confidence scores
+                # and convert them to probabilities using Platt scaling
+                from sklearn.calibration import CalibratedClassifierCV
+                X_train_to_use = self.X_train_no_anos if  self.filter_anos else self.X_train
+                calibrated_model = CalibratedClassifierCV(self.model, cv='prefit')
+                calibrated_model.fit(X_train_to_use, self.labels_train)
+                predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
+            elif isinstance(self.model, (OOV_detector, RarityModel)):
+                predictions_proba = self.model.scores    
+            else:
+                # Supervised models give probabilities using predict_proba method
+                predictions_proba = self.model.predict_proba(X_test_to_use)[:, 1]
+            df_seq = self.test_df.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))      
+
+
+
         if self.print_scores:
-            self._print_evaluation_scores(self.labels_test, predictions, self.model)
+            self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
         if custom_plot:
             self.model.custom_plot(self.labels_test)
         if self.store_scores:
-            self.storage.store_test_results(self.labels_test, predictions, self.model, 
+            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, self.model, 
                                             self.item_list_col, self.numeric_cols, self.emb_list_col)
         return df_seq 
        
@@ -213,7 +243,7 @@ class AnomalyDetection:
             self.predict()
 
 
-    def _print_evaluation_scores(self, y_test, y_pred, model, f_importance = False, auc_roc = True):
+    def _print_evaluation_scores(self, y_test, y_pred,y_pred_proba, model, f_importance = False, auc_roc = True):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -223,11 +253,10 @@ class AnomalyDetection:
         f1 = f1_score(y_test, y_pred)
         # Print the F1 score
         print(f"F1 Score: {f1:.4f}")
-
-
-
-        #import matplotlib.pyplot as plt
-        #import seaborn as sns
+        if self.auc_roc:
+            # Compute the AUC-ROC score
+            auc = roc_auc_score(y_test, y_pred_proba)
+            print(f"AUC-ROC Score: {auc:.4f}")
         cm = confusion_matrix(y_test, y_pred)
         # Print the confusion matrix
         print("Confusion Matrix:")
@@ -285,21 +314,23 @@ class ModelResultsStorage:
         input_signature = ''.join(str(item) for sublist in input_parts for item in sublist)
         return input_signature
 
-    def store_test_results(self, y_test, y_pred, model, item_list_col=None, numeric_cols=None, emb_list_col=None):
+    def store_test_results(self, y_test, y_pred, y_pred_proba, model, item_list_col=None, numeric_cols=None, emb_list_col=None):
         input_signature = self._create_input_signature(item_list_col, numeric_cols, emb_list_col)
 
         result = {
             'model': model,
             'y_test': y_test,
             'y_pred': y_pred,
+            'y_pred_proba': y_pred_proba,
             'input_signature': input_signature,
         }
         self.test_results.append(result)
 
-    def calculate_average_scores(self, score_type='accuracy'):
-        if score_type not in ['accuracy', 'f1']:
-            raise ValueError("score_type must be 'accuracy' or 'f1'.")
-
+    def calculate_average_scores(self, score_type='accuracy', metric='mean'):
+        if score_type not in ['accuracy', 'f1', 'auc_roc']:
+            raise ValueError("score_type must be 'accuracy', 'f1', 'auc_roc'.")
+        #if metric not in ['mean', 'median']:
+        #    raise ValueError("metric must be 'mean' or 'median'.")
         # Create a list to store each row of the DataFrame
         data_for_df = []
 
@@ -311,35 +342,48 @@ class ModelResultsStorage:
             # Calculate scores
             acc = accuracy_score(result['y_test'], result['y_pred'])
             f1 = f1_score(result['y_test'], result['y_pred'])
-            
+#            auc_roc = roc_auc_score(result['y_test'], result['y_pred_proba'])
+            if 'y_pred_proba' in result and result['y_test'] is not None and result['y_pred_proba'] is not None:
+                auc_roc = roc_auc_score(result['y_test'], result['y_pred_proba'])
+            else:
+                auc_roc = 0  # 
             # Append row to the list
             data_for_df.append({
                 'Model': model_name,
                 'Input Signature': input_signature,
                 'Accuracy': acc,
-                'F1 Score': f1
+                'F1 Score': f1,
+                'AUC-ROC': auc_roc
             })
 
         # Convert the list to a DataFrame
         df = pd.DataFrame(data_for_df)
 
+        #  # Calculate average scores
+        # if score_type == 'accuracy':
+        #     df_average = df.groupby(['Model', 'Input Signature']).agg({'Accuracy': 'mean'}).reset_index()
+        # elif  score_type == 'f1':
+        #     df_average = df.groupby(['Model', 'Input Signature']).agg({'F1 Score': 'mean'}).reset_index()
+        # else:
+        #     df_average = df.groupby(['Model', 'Input Signature']).agg({'AUC-ROC': 'mean'}).reset_index()
         # Calculate average scores
         if score_type == 'accuracy':
-            df_average = df.groupby(['Model', 'Input Signature']).agg({'Accuracy': 'mean'}).reset_index()
+            score_column = 'Accuracy'
+        elif score_type == 'f1':
+            score_column = 'F1 Score'
         else:
-            df_average = df.groupby(['Model', 'Input Signature']).agg({'F1 Score': 'mean'}).reset_index()
+            score_column = 'AUC-ROC'
+        
+        df_average = df.groupby(['Model', 'Input Signature']).agg({score_column: metric}).reset_index()
 
-        # Pivot the DataFrame to get Input Signatures as columns
-        score_column = 'Accuracy' if score_type == 'accuracy' else 'F1 Score'
-        df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_column).reset_index()
-
-
-        # Pivot the DataFrame to get Input Signatures as columns
-        #df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_type.capitalize()).reset_index()
-
+        # # Pivot the DataFrame to get Input Signatures as columns
+        score_column = 'Accuracy' if score_type == 'accuracy' else 'F1 Score' if score_type == 'f1' else 'AUC-ROC'
+#        df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_column).reset_index()
+        df_pivot = df_average.pivot(index='Model', columns='Input Signature', values=score_column)
+        df_pivot.columns = df_pivot.columns.map(lambda x: x.replace('_', '-'))
         # Fill NaN values with 0 or an appropriate value
-        df_pivot.fillna(0, inplace=True)
-
+        df_pivot.fillna(0, inplace=True)  # fill NaN values with 0
+        df_pivot = df_pivot.map(lambda x: f"{x:.3f}")
         return df_pivot
 
     def print_confusion_matrices(self, model_filter=None, signature_filter=None):

@@ -99,7 +99,8 @@ print(f"Sequence level dataframe with aggregated info: {df_seqs.filter(pl.col('s
 print(f"\nStarting anomaly detection of HDFS Sequences")
 print(f"Predicting with sequence length and duration ")
 numeric_cols = ["seq_len",  "duration_sec",]
-sad = ad.AnomalyDetection()
+#Auc-roc computation is not enabled by default as it can reduce speed
+sad = ad.AnomalyDetection(auc_roc = True) 
 #Using 10% for training 90% for testing
 sad.numeric_cols = numeric_cols
 sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
@@ -123,7 +124,7 @@ df_seq = sad.predict()
 sad.train_DT()
 df_seq = sad.predict()
 
-print(f"Predicting with Fast Iplom parsing results")
+print(f"Predicting with PL-Iplom parsing results")
 sad.item_list_col = "e_event_pliplom_id"
 sad.prepare_train_test_data()
 #Logistic Regression
@@ -138,8 +139,8 @@ df_seq = sad.predict()
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
-sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
-for i in range(2): #We do just two loops in this demo
+sad = ad.AnomalyDetection(store_scores=True, print_scores=False, auc_roc = True)
+for i in range(3): #We do just three loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
     sad.evaluate_all_ads()
@@ -149,9 +150,19 @@ for i in range(2): #We do just two loops in this demo
     sad.prepare_train_test_data()
     sad.evaluate_all_ads()
 
+print(f"Inspecting results...") 
+print ("Average of accuracy:")
+print(sad.storage.calculate_average_scores(score_type="accuracy", metric='mean'))
+print(f"Median of F1:")
+print(sad.storage.calculate_average_scores(score_type="f1", metric='median'))
+print(f"Min of AUC-ROC:")
+print(sad.storage.calculate_average_scores(score_type="auc_roc", metric='min'))
+print(f"Max of AUC-ROC:")
+print(sad.storage.calculate_average_scores(score_type="auc_roc", metric='max'))
 
-print(f"Inspecting results. Averages of runs:")
-print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
+#print(sad.storage.calculate_average_scores(score_type="f1", metric='median').to_csv())
+#print(sad.storage.calculate_average_scores(score_type="f1", metric='median').to_latex())
+
 print(f"Confusion matrixes can also be inspected")
 sad.storage.print_confusion_matrices("LogisticRegression","e_trigrams")
 

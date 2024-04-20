@@ -198,6 +198,13 @@ class EventLogEnhancer:
                 "row_nr": [row[0] for row in iplom_parser.output],
                 "e_event_iplom_id": [row[1] for row in iplom_parser.output]
             })
+            #Trying to prevent nulls in iplom. There should not be any TODO check if this is needed
+            df_output = df_output.with_columns(
+                e_event_iplom_id=pl.when(pl.col("e_event_iplom_id").is_null())
+                .then(pl.lit("e_null"))
+                .otherwise(pl.col("e_event_iplom_id"))
+            )
+            #print(f'Iplom NULL count {df_output["e_event_iplom_id"].null_count()}')
             df_output = df_output.with_columns(df_output.get_column("row_nr").cast(pl.UInt32).alias("row_nr"))
             self.df = self.df.join(df_output, on="row_nr", how="left")
         return self.df

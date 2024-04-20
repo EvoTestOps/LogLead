@@ -1,0 +1,92 @@
+exclusions:
+# # This crashes Python on laptop. Most likely out of memory
+  - parser: Brain
+    dataset: Hdfs
+    proportion: 1/1
+#   #In VM  
+  - parser: Fiplom
+    dataset: Liberty
+    proportion: 1/8
+#   - parser: Fiplom
+#     dataset: Spirit
+#     proportion: 1/8
+#   - parser: Drain
+#     dataset: Spirit
+#     proportion: 1/4  
+    
+datasets:
+  Hadoop:
+    filename: "/hadoop/"
+    filename_pattern: "*.log"
+    labels_file_name: "/hadoop/abnormal_label_accurate.txt"
+    loader: "HadoopLoader"
+  Nezha-TrainTicket:
+    filename: "/nezha/"
+    loader: "NezhaLoader"
+    system: "TrainTicket"
+  Nezha-Shop:
+    filename: "/nezha/"
+    loader: "NezhaLoader"
+    system: "WebShop"    
+  Bgl:
+    filename: "/bgl/BGL.log"
+    loader: "BGLLoader"
+  Pro:
+    filename: "/profilence/*.txt"
+    loader: "ProLoader"
+  Hdfs:
+    filename: "/hdfs/HDFS.log"
+    labels_file_name: "/hdfs/anomaly_label.csv"
+    loader: "HDFSLoader"
+# Laptop does not have sufficient memory for supercomputers    
+#  Tb:
+#    filename: "/thunderbird/Thunderbird.log"
+#    loader: "ThuSpiLibLoader"
+  #Liberty:
+  #  filename: "/liberty/liberty2.log"
+  #  loader: "ThuSpiLibLoader"
+  #Spirit:
+  #  filename: "/spirit/spirit2.log"
+  #  loader: "ThuSpiLibLoader"
+
+
+
+proportions:
+ - 1/1024
+ - 1/512
+ - 1/256
+ - 1/128
+ - 1/64
+ - 1/32
+ - 1/16
+ - 1/8
+ - 1/4
+ - 1/2
+ - 1/1
+
+parsers:
+  # - name: Tip
+  #   call: parse_tip
+  #   field: e_event_tip_id
+  # - name: Pliplom
+  #   call: parse_pliplom
+  #   field: e_event_pliplom_id
+  # - name: AEL
+  #   call: parse_ael
+  #   field: e_event_ael_id
+  # - name: Iplom
+  #   call: parse_iplom
+  #   field: e_event_iplom_id
+  # - name: Drain
+  #   call: parse_drain
+  #   field: e_event_drain_id
+  # - name: Brain
+  #   call: parse_brain
+  #   field: e_event_brain_id  
+  - name: Spell
+    call: parse_spell
+    field: e_event_spell_id
+  - name: Lenma
+    call: parse_lenma
+    field: e_event_lenma_id
+

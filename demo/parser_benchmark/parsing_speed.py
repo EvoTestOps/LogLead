@@ -14,11 +14,14 @@ import loglead.enhancer as er
 import loglead.anomaly_detection as ad
 import argparse
 
+# Base path for datasets
+full_data = "/home/mmantyla/Datasets"
+
 # Load the configuration
-default_config = '/home/mmantyla/LogLead/demo/p1-fiplom_wip/config.yml'
-#default_config = '/home/mmantyla/LogLead/demo/p1-fiplom_wip/config_missing.yml'
+default_config = '/home/mmantyla/LogLead/demo/parser_benchmark/speed_config.yml'
+#default_config = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_missing.yml'
 default_threshold = 600 #How many seconds is the threshold after which remaining runs for the parser are skipped
-#config_path = '/home/mmantyla/LogLead/demo/p1-fiplom_wip/config_fiplom.yml'
+#config_path = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_fiplom.yml'
 
 # Adding argparse for command-line argument parsing
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -35,9 +38,6 @@ def load_config(config_path):
         return yaml.safe_load(file)
 
 config = load_config(args.config_path)
-
-# Base path for datasets
-full_data = "/home/mmantyla/Datasets"
 
 def proportion_to_float(proportion_str):
     numerator, denominator = map(int, proportion_str.split('/'))
@@ -83,16 +83,16 @@ for dataset_name, dataset_info in config['datasets'].items():
     print(f'Data {dataset_name} loaded in {time_elapsed:.2f} seconds')
     df = loader.df
 
-    if dataset_name =="Bgl":
-        #Kill nulls if they still exist
-        df = df.filter(pl.col("m_message").is_not_null())
-    elif dataset_name == "Nezha-Shop":
-        #Select correct Nezha system
-        df = df.filter(pl.col("system_name") == "GShop")
-    elif dataset_name == "Nezha-TrainTicket":
-        df = df.filter(pl.col("system_name") == "TrainTicket")
-
-    df_seq =  loader.df_seq
+    #if dataset_name =="Bgl":
+    #Kill nulls if they still exist
+    df = df.filter(pl.col("m_message").is_not_null())
+    #if dataset_name == "Nezha-Shop":
+    #    #Select correct Nezha system
+    #    df = df.filter(pl.col("system_name") == "GShop")
+    #elif dataset_name == "Nezha-TrainTicket":
+    #    df = df.filter(pl.col("system_name") == "TrainTicket")
+    df = df.select(pl.col("m_message"))
+    
     enhancer = er.EventLogEnhancer(df)
     time_start = time.time()
     df = enhancer.normalize()
