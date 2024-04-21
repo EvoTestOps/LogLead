@@ -14,6 +14,7 @@ datasets:
     test_fraction: 0.5
     repeats: 3
     predict: seq
+    shuffle : True
   Bgl:
     filename: "/bgl/BGL.log"
     loader: "BGLLoader"
@@ -21,6 +22,7 @@ datasets:
     test_fraction: 0.95
     repeats: 3
     predict: event
+    shuffle : False
   Hdfs:
     filename: "/hdfs/HDFS.log"
     labels_file_name: "/hdfs/anomaly_label.csv"
@@ -29,6 +31,7 @@ datasets:
     test_fraction: 0.95
     repeats: 3
     predict: seq
+    shuffle : False
 #  Pro:
 #    filename: "/profilence/*.txt"
 #    loader: "ProLoader"
@@ -51,20 +54,22 @@ datasets:
 
 
 algos:
-  - name: s_LR
+  - name: LR
     call: train_LR
-  - name: s_DT
+  - name: DT
     call: train_DT
-  - name: s_RF
+  - name: RF
     call: train_RF
-  - name: s_SVM
+  - name: SVM
     call: train_LSVM
-  - name: s_XGB
+  - name: XGB
     call: train_XGB
-  - name: u_Kmeans
+  - name: Kmeans
     call: train_KMeans
-  - name: u_IsolationForrest
+  - name: IsolationForrest
     call: train_IsolationForest
+  - name: RarityModel
+    call: train_RarityModel
 
 parsers:
   - name: Tip

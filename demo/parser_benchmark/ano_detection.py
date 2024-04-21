@@ -46,6 +46,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     data_repeats = dataset_info['repeats']
     data_predict = dataset_info['predict']
     data_test_fraction = dataset_info['test_fraction']
+    data_shuffle = dataset_info['shuffle']
     
     # Dynamic dataset loading based on configuration
     loader_class = getattr(loaders, dataset_info['loader'])
@@ -102,27 +103,56 @@ for dataset_name, dataset_info in config['datasets'].items():
     
     sad = ad.AnomalyDetection(store_scores=True, print_scores=False, auc_roc=True)
         #print (f"Columns in df_to_predict: {df_to_predict.columns}")
-    for algo in config['algos']:
-        algo_call = algo['call']
-        algo_name = algo['name']
-        #sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+    for i in range (data_repeats):
+        print(f"Run:{i}", end=" ")
         time_start = time.time()
-        for i in range (data_repeats):
-            first = True
-            for parser in config['parsers']:
-                    parser_field = parser['field']      
-                    sad.item_list_col = parser_field
-                    if first:
-                        sad.test_train_split (df_to_predict, test_frac=data_test_fraction)
-                    else: # We keep the existing split but prepare a new parserfield
-                        sad.prepare_train_test_data()
-
-                    method_to_call = getattr(sad, algo_call)
-                    result = method_to_call()
-                    sad.predict()
+        first = True
+        for parser in config['parsers']:
+            parser_name = parser['name']
+            parser_field = parser['field']
+            print(f"Parser:{parser_name}", end=" ")
+            sad.item_list_col = parser_field
+            if first:
+                sad.test_train_split (df_to_predict, test_frac=data_test_fraction, shuffle=data_shuffle)
+                first = False
+            else: # We keep the existing split but prepare a new parserfield
+                sad.prepare_train_test_data()
+            for algo in config['algos']:
+                algo_call = algo['call']
+                algo_name = algo['name']
+                print(f".",end="")
+                sys.stdout.flush()
+                #sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+                method_to_call = getattr(sad, algo_call)
+                result = method_to_call()
+                sad.predict()
         time_elapsed = time.time() - time_start
-        print(f'Predicted with algo:{algo_name} repeats:{data_repeats} fraction for testing:{data_test_fraction}, time:{time_elapsed}')
+        print(f'  time:{time_elapsed}')
+ 
+    # for algo in config['algos']:
+    #     algo_call = algo['call']
+    #     algo_name = algo['name']
+    #     #sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+    #     time_start = time.time()
+    #     for i in range (data_repeats):
+    #         first = True
+    #         for parser in config['parsers']:
+    #             parser_field = parser['field']      
+    #             sad.item_list_col = parser_field
+    #             if first:
+    #                 sad.test_train_split (df_to_predict, test_frac=data_test_fraction, shuffle=data_shuffle)
+    #                 first = False
+    #             else: # We keep the existing split but prepare a new parserfield
+    #                 sad.prepare_train_test_data()
 
-    print(f"Inspecting results. Averages of runs:")
+    #             method_to_call = getattr(sad, algo_call)
+    #             result = method_to_call()
+    #             sad.predict()
+    #     time_elapsed = time.time() - time_start
+    #     print(f'Predicted with algo:{algo_name} repeats:{data_repeats} fraction for testing:{data_test_fraction}, time:{time_elapsed}')
+
+    print(f"Inspecting results. AUC-ROC:")
     print(sad.storage.calculate_average_scores(score_type="auc_roc", metric="median").to_latex())
+    print(f"Inspecting results. F1:")
+    print(sad.storage.calculate_average_scores(score_type="f1", metric="median").to_latex())
            

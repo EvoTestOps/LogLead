@@ -56,6 +56,9 @@ class AnomalyDetection:
             df = df.sample(fraction = 1.0, shuffle=True)
         elif 'start_time' in df.columns:
             df = df.sort('start_time')
+        #Do we need this or sequence based quaranteed to be in correct order
+        #elif "m_timestamp" in df.columns:
+        #    df = df.sort('m_timestamp')   
         # Split ratio
         test_size = int(test_frac * df.shape[0])
 
@@ -169,7 +172,7 @@ class AnomalyDetection:
         if custom_plot:
             self.model.custom_plot(self.labels_test)
         if self.store_scores:
-            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, self.model, 
+            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, type(self.model).__name__, 
                                             self.item_list_col, self.numeric_cols, self.emb_list_col)
         return df_seq 
        
@@ -314,11 +317,12 @@ class ModelResultsStorage:
         input_signature = ''.join(str(item) for sublist in input_parts for item in sublist)
         return input_signature
 
-    def store_test_results(self, y_test, y_pred, y_pred_proba, model, item_list_col=None, numeric_cols=None, emb_list_col=None):
+    def store_test_results(self, y_test, y_pred, y_pred_proba, model_name, item_list_col=None, numeric_cols=None, emb_list_col=None):
         input_signature = self._create_input_signature(item_list_col, numeric_cols, emb_list_col)
 
         result = {
-            'model': model,
+            #'model': model,
+            'model':model_name,
             'y_test': y_test,
             'y_pred': y_pred,
             'y_pred_proba': y_pred_proba,
@@ -326,7 +330,7 @@ class ModelResultsStorage:
         }
         self.test_results.append(result)
 
-    def calculate_average_scores(self, score_type='accuracy', metric='mean'):
+    def calculate_average_scores(self, score_type='accuracy', metric='mean', mark_model_supervision = True):
         if score_type not in ['accuracy', 'f1', 'auc_roc']:
             raise ValueError("score_type must be 'accuracy', 'f1', 'auc_roc'.")
         #if metric not in ['mean', 'median']:
@@ -336,7 +340,14 @@ class ModelResultsStorage:
 
         # Iterate over stored results and calculate scores
         for result in self.test_results:
-            model_name = type(result['model']).__name__
+            #model_name = type(result['model']).__name__
+            model_name = result['model']
+            if mark_model_supervision:
+                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "RarityModel"]
+                if model_name in unsupervised:
+                    model_name = "us-"+model_name
+                else:
+                    model_name = "su-"+model_name
             input_signature = result['input_signature']
             
             # Calculate scores
@@ -388,7 +399,8 @@ class ModelResultsStorage:
 
     def print_confusion_matrices(self, model_filter=None, signature_filter=None):
         for result in self.test_results:
-            model_name = type(result['model']).__name__
+            #model_name = type(result['model']).__name__
+            model_name = result['model']
             input_signature = result['input_signature']
             cm = confusion_matrix(result['y_test'], result['y_pred'])
 
@@ -413,7 +425,8 @@ class ModelResultsStorage:
             raise ValueError(f"score_type must be one of {valid_score_types}")
 
         for result in self.test_results:
-            model_name = type(result['model']).__name__
+            #model_name = type(result['model']).__name__
+            model_name = result['model']
             input_signature = result['input_signature']
             acc = accuracy_score(result['y_test'], result['y_pred'])
             f1 = f1_score(result['y_test'], result['y_pred'])
