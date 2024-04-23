@@ -57,8 +57,8 @@ class AnomalyDetection:
         elif 'start_time' in df.columns:
             df = df.sort('start_time')
         #Do we need this or sequence based quaranteed to be in correct order
-        #elif "m_timestamp" in df.columns:
-        #    df = df.sort('m_timestamp')   
+        elif "m_timestamp" in df.columns:
+            df = df.sort('m_timestamp')   
         # Split ratio
         test_size = int(test_frac * df.shape[0])
 
@@ -176,13 +176,13 @@ class AnomalyDetection:
                                             self.item_list_col, self.numeric_cols, self.emb_list_col)
         return df_seq 
        
-    def train_LR(self, max_iter=1000):
+    def train_LR(self, max_iter=4000, tol=0.0003):
         self.train_model (LogisticRegression(max_iter=max_iter))
     
     def train_DT(self):
         self.train_model (DecisionTreeClassifier())
 
-    def train_LSVM(self, penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=1000):
+    def train_LSVM(self, penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=4000):
         self.train_model (LinearSVC(
             penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
 
@@ -331,8 +331,8 @@ class ModelResultsStorage:
         self.test_results.append(result)
 
     def calculate_average_scores(self, score_type='accuracy', metric='mean', mark_model_supervision = True):
-        if score_type not in ['accuracy', 'f1', 'auc_roc']:
-            raise ValueError("score_type must be 'accuracy', 'f1', 'auc_roc'.")
+        if score_type not in ['accuracy', 'f1', 'auc-roc']:
+            raise ValueError("score_type must be 'accuracy', 'f1', 'auc-roc'.")
         #if metric not in ['mean', 'median']:
         #    raise ValueError("metric must be 'mean' or 'median'.")
         # Create a list to store each row of the DataFrame
@@ -353,18 +353,18 @@ class ModelResultsStorage:
             # Calculate scores
             acc = accuracy_score(result['y_test'], result['y_pred'])
             f1 = f1_score(result['y_test'], result['y_pred'])
-#            auc_roc = roc_auc_score(result['y_test'], result['y_pred_proba'])
+#            auc-roc = roc_auc_score(result['y_test'], result['y_pred_proba'])
             if 'y_pred_proba' in result and result['y_test'] is not None and result['y_pred_proba'] is not None:
-                auc_roc = roc_auc_score(result['y_test'], result['y_pred_proba'])
+                aucroc = roc_auc_score(result['y_test'], result['y_pred_proba'])
             else:
-                auc_roc = 0  # 
+                aucroc = 0  # 
             # Append row to the list
             data_for_df.append({
                 'Model': model_name,
                 'Input Signature': input_signature,
                 'Accuracy': acc,
                 'F1 Score': f1,
-                'AUC-ROC': auc_roc
+                'AUC-ROC': aucroc
             })
 
         # Convert the list to a DataFrame
@@ -394,7 +394,18 @@ class ModelResultsStorage:
         df_pivot.columns = df_pivot.columns.map(lambda x: x.replace('_', '-'))
         # Fill NaN values with 0 or an appropriate value
         df_pivot.fillna(0, inplace=True)  # fill NaN values with 0
+
+        df_pivot = df_pivot.apply(pd.to_numeric, errors='coerce')
+        # Calculate and add column averages at the bottom of the DataFrame
+        df_pivot.loc['Column Average'] = df_pivot.mean(numeric_only=True)
+
+        # Calculate and add row averages as a new column
+        df_pivot['Row Average'] = df_pivot.mean(axis=1, numeric_only=True)
+        
         df_pivot = df_pivot.map(lambda x: f"{x:.3f}")
+        return df_pivot
+        
+        
         return df_pivot
 
     def print_confusion_matrices(self, model_filter=None, signature_filter=None):

@@ -3,4 +3,6 @@ __pycache__/
 *.pyo
 private_data/
 *_wip.py
+*_wip.yml
 *wip/
+.env

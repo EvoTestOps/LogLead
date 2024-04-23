@@ -85,8 +85,8 @@ class EventLogEnhancer:
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
 
     # Enrich with drain parsing results
-    def parse_drain(self, drain_masking=False, reparse=False):
-        self._handle_prerequisites(["m_message"])
+    def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False):
+        self._handle_prerequisites([field])
         if reparse or "e_event_drain_id" not in self.df.columns:
             import drain3 as dr
             # Drain returns dict
@@ -118,12 +118,12 @@ class EventLogEnhancer:
                 self.df = self.df.with_columns(
                     drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
             else:
-                if "e_message_normalized" not in self.df.columns:
-                    self.normalize()
+                #if "e_message_normalized" not in self.df.columns:
+                #    self.normalize()
                 dr.template_miner.config_filename =os.path.join(drain3_ini_location, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
                 tm = dr.TemplateMiner()
                 self.df = self.df.with_columns(
-                    drain=pl.col("e_message_normalized").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
+                    drain=pl.col(field).map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
 
             self.df = self.df.with_columns(
                 # extra letter to ensure we e1 e2 instead of 1 2
@@ -134,33 +134,33 @@ class EventLogEnhancer:
         return self.df 
     
         
-    def parse_brain(self, masking=True, reparse=False):
-        self._handle_prerequisites(["m_message"])
+    def parse_brain(self, field = "e_message_normalized",  masking=True, reparse=False):
+        self._handle_prerequisites([field])
         if reparse or "e_event_brain_id" not in self.df.columns:
             if "e_event_brain_id" in self.df.columns:
                 self.df = self.df.drop("e_event_brain_id")
             import parsers.Brain.Brain as brain
-            brain_parser = brain.LogParser(messages=self.df["e_message_normalized"])
+            brain_parser = brain.LogParser(messages=self.df[field])
             brain_parser.parse() 
             df_new = brain_parser.df_log.select(pl.col("EventId").alias("e_event_brain_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
-    def parse_ael(self, masking=True, reparse=False):
-        self._handle_prerequisites(["m_message"])
+    def parse_ael(self,field = "e_message_normalized",  masking=True, reparse=False):
+        self._handle_prerequisites([field])
         if reparse or "e_event_ael_id" not in self.df.columns:
             if "e_event_ael_id" in self.df.columns:
                 self.df = self.df.drop("e_event_ael_id")
             import parsers.AEL.AEL as ael
-            ael_parser = ael.LogParser(messages=self.df["e_message_normalized"])
+            ael_parser = ael.LogParser(messages=self.df[field])
             ael_parser.parse() 
             df_new = ael_parser.df_log.select(pl.col("EventId").alias("e_event_ael_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
     #New parser not yet released to public. Coming early 2024
-    def parse_tip(self, masking=True, reparse=False):
-        self._handle_prerequisites(["m_message"])
+    def parse_tip(self, field = "e_message_normalized",  masking=True, reparse=False):
+        self._handle_prerequisites([field])
         if reparse or "e_event_tip_id" not in self.df.columns:
             if "e_event_tip_id" in self.df.columns:
                 self.df = self.df.drop("e_event_tip_id")
@@ -168,7 +168,7 @@ class EventLogEnhancer:
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            tipping_clusters = tip.parse(self.df["e_message_normalized"], return_templates=False, return_masks=False)
+            tipping_clusters = tip.parse(self.df[field], return_templates=False, return_masks=False)
             df_new = pl.DataFrame(
                 {
                     "e_event_tip_id": tipping_clusters[0],
@@ -182,8 +182,8 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
     
-    def parse_iplom(self, masking=True, reparse=False, CT=0.35, PST=0, lower_bound=0.1):
-        self._handle_prerequisites(["m_message"])
+    def parse_iplom(self, field = "e_message_normalized",  masking=True, reparse=False, CT=0.35, PST=0, lower_bound=0.1):
+        self._handle_prerequisites([field])
         if reparse or "e_event_iplom_id" not in self.df.columns:
             if "e_event_iplom_id" in self.df.columns:
                 self.df = self.df.drop("e_event_iplom_id")
@@ -192,7 +192,7 @@ class EventLogEnhancer:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
             #TODO Storing each parser in self might eat a lot of memeory 
-            iplom_parser = iplom.LogParser(messages=self.df["e_message_normalized"], CT=CT,PST=PST,lowerBound=lower_bound)#FST not implemented
+            iplom_parser = iplom.LogParser(messages=self.df[field], CT=CT,PST=PST,lowerBound=lower_bound)#FST not implemented
             iplom_parser.parse()
             df_output = pl.DataFrame({
                 "row_nr": [row[0] for row in iplom_parser.output],
@@ -211,7 +211,7 @@ class EventLogEnhancer:
 
 
     #Faster version of IPLoM coming in 2024
-    def parse_pliplom(self, masking=True, reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
+    def parse_pliplom(self, field = "e_message_normalized",  masking=True, reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
         if reparse or "e_event_plimplom_id" not in self.df.columns:
             if "e_event_plimplom_id" in self.df.columns:
@@ -231,7 +231,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/keiichishima/templateminer
-    def parse_lenma(self, masking=True, reparse=False):
+    def parse_lenma(self, field = "e_message_normalized",  masking=True, reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
             import parsers.lenma.lenma_template as lmt
@@ -260,15 +260,15 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/bave/pyspell/
-    def parse_spell(self, masking=True, reparse=False):
-        self._handle_prerequisites(["m_message"])
+    def parse_spell(self, field = "e_message_normalized",  masking=True, reparse=False):
+        self._handle_prerequisites([field])
         if reparse or "e_event_spell_id" not in self.df.columns:
             from parsers.pyspell.spell import lcsmap
-            if "e_message_normalized" not in self.df.columns:
-                self.normalize()
+            #if "e_message_normalized" not in self.df.columns:
+            #    self.normalize()
             spell = lcsmap(r'\s+')
             self.df = self.df.with_columns(
-                spell_obj=pl.col("e_message_normalized")
+                spell_obj=pl.col(field)
                     .map_elements(lambda x: spell.insert(x), return_dtype=pl.Object))
 
             def extract_id(obj):
@@ -289,15 +289,15 @@ class EventLogEnhancer:
             self.df = self.df.drop(["spell_obj", "spell_info"])
         return self.df
 
-    def create_neural_emb(self):
-        self._handle_prerequisites(["m_message"])
+    def create_neural_emb(self, field="e_message_normalized"):
+        self._handle_prerequisites([field])
         if "e_bert_emb" not in self.df.columns:
             #Lazy import only if needed
             from parsers.bert.bertembedding import BertEmbeddings
-            if "e_message_normalized" not in self.df.columns:
-                self.normalize()
+            #if "e_message_normalized" not in self.df.columns:
+            #    self.normalize()
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")
-            message_trimmed_list = self.df['e_message_normalized'].to_list()
+            message_trimmed_list = self.df[field].to_list()
             message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
             # Convert the eager tensor to a NumPy array
             message_trimmed_emb_list = message_trimmed_emb_tensor.numpy()
