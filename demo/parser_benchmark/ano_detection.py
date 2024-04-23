@@ -7,15 +7,10 @@ import os
 print(os.getcwd())
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
-#sys.path.append('../..')
 import sys
-#sys.path.append('/home/mmantyla/LogLead')
-#sys.path.append('/home/ubuntu/Development/mika/LogLead')
-#print (os.environ.get("LOGLEAD_PATH"))
 LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
 sys.path.append(os.environ.get("LOGLEAD_PATH"))
-import loglead.loaders as loaders  # Assuming loaders are correctly organized
-#from loglead.loaders.hadoop import HadoopLoader
+import loglead.loaders as loaders 
 import loglead.enhancer as er
 import loglead.anomaly_detection as ad
 import argparse
@@ -27,15 +22,10 @@ import random
 #warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 # Base path for datasets
-#full_data = "/home/mmantyla/Datasets"
-#full_data = "/home/ubuntu/Datasets"
 full_data = os.environ.get("LOG_DATA_PATH")
 # Load the configuration
 default_config = LOGLEAD_PATH + '/demo/parser_benchmark/ano_detection_config.yml'
-default_config = LOGLEAD_PATH +'/demo/parser_benchmark/ano_detection_config_VM_wip.yml'
-#default_config = '/home/mmantyla/LogLead/demo/p1-fiplom_wip/config_missing.yml'
-default_threshold = 600 #How many seconds is the threshold after which remaining runs for the parser are skipped
-#config_path = '/home/mmantyla/LogLead/demo/p1-fiplom_wip/config_fiplom.yml'
+
 
 # Adding argparse for command-line argument parsing
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -59,7 +49,7 @@ def print_latex_table(storage, data_name,data_proportion,redraws, metric, score_
         # Get the current timestamp and format it as a string
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     # Create the filename using the timestamp
-    filename = f"latex_table_{data_name}_{timestamp}.txt"
+    filename = f"Table_{data_name}_{timestamp}_latex.txt"
     # Open the file in write mode
     with open(filename, "w") as f:
         chrono_order_str = "chronological order" if chrono_order else "not chronological order"
@@ -99,7 +89,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     loader.execute()
     time_elapsed = time.time() - time_start
     print(f'Data {dataset_name} loaded in {time_elapsed:.2f} seconds')
-    #In Hadoop in anomaly is majority class. Flip it to keep F1-binary equally difficult.
+    #In Hadoop anomaly is majority class. Flip it to keep F1-binary equally difficult.
     if dataset_name == "Hadoop":
        loader.df_seq = loader.df_seq.with_columns(~pl.col("anomaly"))
     sad = ad.AnomalyDetection(store_scores=True, print_scores=False, auc_roc=True)
@@ -188,18 +178,3 @@ for dataset_name, dataset_info in config['datasets'].items():
                       redraws = data_redraws, repeats= data_repeats, chrono_order= data_chrono_order, normalize=data_normalize,
                       rows = df.height, test_frac= data_test_fraction)
            
-# def print_latex_table(storage, data_name, metric, score_type, repeats, shuffle, normalize):
-#         # Print the modified LaTeX table
-#         shuffled_str = "shuffled" if shuffle else "not shuffled"
-#         normalized_str = "normalized" if normalize else "not normalized"
-#         for score in score_type:
-#             for meter in metric:
-#                 latex = storage.calculate_average_scores(score_type=score, metric=meter).to_latex()
-#                 print(f"\\begin{{table*}}[]")
-#                 print(f"\\caption{{{data_name} anomaly detection {score} {meter} of {repeats} runs {shuffled_str} and {normalized_str}}}")
-#                 print("\\centering")
-#                 #print("\\begin{tabular}{l" + "c" * (len(table.columns)) + "}")
-#                 print(latex)
-#                 #print("\\end{tabular}")
-#                 print("\\end{table*}")
-#                 print()
