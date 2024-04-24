@@ -348,7 +348,30 @@ class EventLogEnhancer:
         return self.df
         # print (base_code)
         # return base_code
+        
+    def item_cumsum(self, column="e_message_normalized", sort_time=True, ano_only=True):
+        self._handle_prerequisites([column, 'm_timestamp', 'anomaly'])
 
+        if sort_time:
+            self.df = self.df.sort('m_timestamp')
+
+        if ano_only:
+            #temp column to check both ano and new
+            self.df = self.df.with_columns(
+                (pl.col(column).is_first_distinct() & pl.col('anomaly')).cast(pl.Int32).alias('new_anomalous_item')
+            )
+            self.df = self.df.with_columns(
+                pl.col('new_anomalous_item').cumsum().alias('cumulative_new_items')
+            )
+            self.df = self.df.drop('new_anomalous_item') #drop temp
+        else:
+            # Calculate cumulative count of new items for all data
+            self.df = self.df.with_columns(
+                pl.col(column).is_first_distinct().cast(pl.Int32).cumsum().alias('cumulative_new_items')
+            )
+
+        return self.df
+    
 
 class SequenceEnhancer:
     def __init__(self, df, df_seq):
