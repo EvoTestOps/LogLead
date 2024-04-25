@@ -349,29 +349,35 @@ class EventLogEnhancer:
         # print (base_code)
         # return base_code
         
-    def item_cumsum(self, column="e_message_normalized", sort_time=True, ano_only=True):
-        self._handle_prerequisites([column, 'm_timestamp', 'anomaly'])
+    
+    def item_cumsum(self, column="e_message_normalized", chronological_order=True, ano_only=True, unique_only=True):
+        self._handle_prerequisites([column, 'm_timestamp'])
+        if ano_only:
+            self._handle_prerequisites(['anomaly'])
 
-        if sort_time:
+        if chronological_order:
             self.df = self.df.sort('m_timestamp')
 
+        # Initial condition by unique_only
+        condition = pl.col(column).is_first_distinct() if unique_only else pl.lit(True)
+
+        # Take in ano_only if required
         if ano_only:
-            #temp column to check both ano and new
-            self.df = self.df.with_columns(
-                (pl.col(column).is_first_distinct() & pl.col('anomaly')).cast(pl.Int32).alias('new_anomalous_item')
-            )
-            self.df = self.df.with_columns(
-                pl.col('new_anomalous_item').cumsum().alias('cumulative_new_items')
-            )
-            self.df = self.df.drop('new_anomalous_item') #drop temp
-        else:
-            # Calculate cumulative count of new items for all data
-            self.df = self.df.with_columns(
-                pl.col(column).is_first_distinct().cast(pl.Int32).cumsum().alias('cumulative_new_items')
-            )
+            condition = condition & pl.col('anomaly')
+
+        # Generate the dynamic column name based on the parameters
+        column_name = 'cumu_items_'
+        column_name += 'un' if unique_only else ''
+        column_name += 'an' if ano_only else ''
+
+        # In my tests cumsum needs a column in the table
+        self.df = self.df.with_columns(condition.cast(pl.Int32).alias('count_support'))
+        self.df = self.df.with_columns(
+            pl.col('count_support').cumsum().alias(column_name)
+        )
+        self.df = self.df.drop('count_support')
 
         return self.df
-    
 
 class SequenceEnhancer:
     def __init__(self, df, df_seq):
