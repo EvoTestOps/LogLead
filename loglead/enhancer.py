@@ -134,7 +134,7 @@ class EventLogEnhancer:
         return self.df 
     
         
-    def parse_brain(self, field = "e_message_normalized",  masking=True, reparse=False):
+    def parse_brain(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_brain_id" not in self.df.columns:
             if "e_event_brain_id" in self.df.columns:
@@ -146,7 +146,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
-    def parse_ael(self,field = "e_message_normalized",  masking=True, reparse=False):
+    def parse_ael(self,field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_ael_id" not in self.df.columns:
             if "e_event_ael_id" in self.df.columns:
@@ -159,7 +159,7 @@ class EventLogEnhancer:
         return self.df
 
     #New parser not yet released to public. Coming early 2024
-    def parse_tip(self, field = "e_message_normalized",  masking=True, reparse=False):
+    def parse_tip(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_tip_id" not in self.df.columns:
             if "e_event_tip_id" in self.df.columns:
@@ -182,7 +182,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
     
-    def parse_iplom(self, field = "e_message_normalized",  masking=True, reparse=False, CT=0.35, PST=0, lower_bound=0.1):
+    def parse_iplom(self, field = "e_message_normalized", reparse=False, CT=0.35, PST=0, lower_bound=0.1):
         self._handle_prerequisites([field])
         if reparse or "e_event_iplom_id" not in self.df.columns:
             if "e_event_iplom_id" in self.df.columns:
@@ -211,7 +211,7 @@ class EventLogEnhancer:
 
 
     #Faster version of IPLoM coming in 2024
-    def parse_pliplom(self, field = "e_message_normalized",  masking=True, reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
+    def parse_pliplom(self, field = "e_message_normalized",  reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
         if reparse or "e_event_plimplom_id" not in self.df.columns:
             if "e_event_plimplom_id" in self.df.columns:
@@ -231,7 +231,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/keiichishima/templateminer
-    def parse_lenma(self, field = "e_message_normalized",  masking=True, reparse=False):
+    def parse_lenma(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
             import parsers.lenma.lenma_template as lmt
@@ -260,7 +260,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/bave/pyspell/
-    def parse_spell(self, field = "e_message_normalized",  masking=True, reparse=False):
+    def parse_spell(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_spell_id" not in self.df.columns:
             from parsers.pyspell.spell import lcsmap
@@ -348,7 +348,34 @@ class EventLogEnhancer:
         return self.df
         # print (base_code)
         # return base_code
-        
+
+    def item_cumsum2(self, column="e_message_normalized", chronological_order=1, ano_only=True, unique_only=True, out_column=""):
+        column_name = out_column
+        self._handle_prerequisites([column, 'm_timestamp'])
+        if ano_only:
+            self._handle_prerequisites(['anomaly'])
+
+        if chronological_order == 1:
+            self.df = self.df.sort('m_timestamp')
+        elif chronological_order ==-1: 
+            self.df = self.df.sort('m_timestamp', descending = True)    
+
+        # Initial condition by unique_only
+        condition = pl.col(column).is_first_distinct() if unique_only else pl.lit(True)
+
+        # Take in ano_only if required
+        if ano_only:
+            condition = condition & pl.col('anomaly')
+
+        # In my tests cumsum needs a column in the table
+        self.df = self.df.with_columns(condition.cast(pl.Int32).alias('count_support'))
+        self.df = self.df.with_columns(
+            pl.col('count_support').cumsum().alias(column_name)
+        )
+        self.df = self.df.drop('count_support')
+
+        return self.df
+
     
     def item_cumsum(self, column="e_message_normalized", chronological_order=True, ano_only=True, unique_only=True):
         self._handle_prerequisites([column, 'm_timestamp'])
