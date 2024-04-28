@@ -44,7 +44,7 @@ def proportion_to_float(proportion_str):
     return numerator / denominator
 
 
-def print_latex_table(storage, data_name,data_proportion,redraws, metric, score_type, repeats, chrono_order, normalize, rows, test_frac):
+def print_latex_table(storage, data_name,data_proportion,redraws, metric, score_type, repeats, chrono_order, normalize, rows, anos, test_frac):
     # Print the modified LaTeX table
         # Get the current timestamp and format it as a string
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -59,7 +59,7 @@ def print_latex_table(storage, data_name,data_proportion,redraws, metric, score_
                 latex = storage.calculate_average_scores(score_type=score, metric=meter).to_latex()
                 # Write the LaTeX table to the file
                 f.write(f"\\begin{{table*}}[]\n")
-                f.write(f"\\caption{{Anomaly detection data:{data_name}, score:{score}, metric:{meter}, data-proportion:{data_proportion}, data-rows:{rows}, redraws:{redraws}, train-test-repeats:{repeats}, test-fraction: {test_frac}, chono-order:{chrono_order_str}, normalized:{normalized_str}}}\n")
+                f.write(f"\\caption{{Anomaly detection data:{data_name}, score:{score}, metric:{meter}, data-proportion:{data_proportion}, data-rows:{rows}, anos:{anos} redraws:{redraws}, train-test-repeats:{repeats}, test-fraction: {test_frac}, chono-order:{chrono_order}, normalize:{normalize}}}\n")
                 f.write("\\centering\n")
                 f.write(latex)
                 f.write("\\end{table*}\n")
@@ -176,5 +176,5 @@ for dataset_name, dataset_info in config['datasets'].items():
 
     print_latex_table(sad.storage, dataset_name,data_proportion, score_type=["auc-roc", "f1"], metric=["median", "mean"], 
                       redraws = data_redraws, repeats= data_repeats, chrono_order= data_chrono_order, normalize=data_normalize,
-                      rows = df.height, test_frac= data_test_fraction)
+                      rows = df.height,anos = df_to_predict["anomaly"].sum(), test_frac= data_test_fraction)
            
