@@ -4,6 +4,8 @@ __pycache__/
 private_data/
 *_wip.py
 *_wip.yml
+*_wip.parquet
 *wip/
 .env
 *latex.txt
+*.csv
