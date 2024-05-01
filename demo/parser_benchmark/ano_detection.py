@@ -67,6 +67,27 @@ def print_latex_table(storage, data_name,data_proportion,redraws, metric, score_
                 # Print a message indicating that the table was written to the file
     print(f"LaTeX tables written to {filename}")
 
+def handle_test_fraction(test_fraction):
+    values_to_process = []
+
+    if isinstance(test_fraction, dict):
+        # Generate a range of values from min to max with the specified step
+        min_value = test_fraction['min']
+        max_value = test_fraction['max']
+        step = test_fraction['step']
+        current_value = min_value
+        while current_value < max_value + 0.001:#sometimes values read from disk or added come as 0.9499999 when desired  is 0.95
+            rounded_value = round(current_value, 2)
+            values_to_process.append(rounded_value)
+            current_value += step
+
+    elif isinstance(test_fraction, (float, int)):
+        # Add the single value to the list
+        values_to_process.append(test_fraction)
+    else:
+        print("ERROR: Unexpected format for test_fraction")
+
+    return values_to_process
 
 for dataset_name, dataset_info in config['datasets'].items():
     gc.collect()
@@ -76,7 +97,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     data_redraws = dataset_info['proportion_redraws']
     data_repeats = dataset_info['train_test_repeats']
     data_predict = dataset_info['predict']
-    data_test_fraction = dataset_info['test_fraction']
+    data_test_fraction = handle_test_fraction(dataset_info['test_fraction'])
     data_chrono_order = dataset_info['chronological_order']
     data_normalize = dataset_info['normalize']
  
@@ -148,31 +169,37 @@ for dataset_name, dataset_info in config['datasets'].items():
         
         #print (f"Columns in df_to_predict: {df_to_predict.columns}")
         print(f'Predicting repeats:{data_repeats} data_rows:{df_to_predict.height}, anomalies:{df_to_predict["anomaly"].sum()} fraction for testing:{data_test_fraction}, chrono order:{data_chrono_order}')    
-        for j in range (data_repeats):
-            print(f"Run:{j}", end=" ")
-            time_start = time.time()
-            first = True
-            for parser in config['parsers']:
-                parser_name = parser['name']
-                parser_field = parser['field']
-                print(f"Parser:{parser_name}", end=" ")
-                sad.item_list_col = parser_field
-                if first:
-                    sad.test_train_split (df_to_predict, test_frac=data_test_fraction, shuffle=not data_chrono_order)
-                    first = False
-                else: # We keep the existing split but prepare a new parserfield
-                    sad.prepare_train_test_data()
-                for algo in config['algos']:
-                    algo_call = algo['call']
-                    algo_name = algo['name']
-                    print(f".",end="")
-                    sys.stdout.flush()
-                    #sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
-                    method_to_call = getattr(sad, algo_call)
-                    result = method_to_call()
-                    sad.predict()
-            time_elapsed = time.time() - time_start
-            print(f'  time:{time_elapsed}')
+        for tf in data_test_fraction:
+            print (f'Test fraction:{tf}')
+            for j in range (data_repeats):
+                print(f"Run:{j}", end=" ")
+                time_start = time.time()
+                first = True
+                for parser in config['parsers']:
+                    parser_name = parser['name']
+                    parser_field = parser['field']
+                    print(f"Parser:{parser_name}", end=" ")
+                    sad.item_list_col = parser_field
+                    if first:
+                        sad.test_train_split (df_to_predict, test_frac=tf, shuffle=not data_chrono_order)
+                        first = False
+                    else: # We keep the existing split but prepare a new parserfield
+                        sad.prepare_train_test_data()
+                    for algo in config['algos']:
+                        algo_call = algo['call']
+                        algo_name = algo['name']
+                        print(f".",end="")
+                        sys.stdout.flush()
+                        #sad = ad.AnomalyDetection(store_scores=True, print_scores=False)
+                        time_algo_start = time.time()
+                        method_to_call = getattr(sad, algo_call)
+                        result = method_to_call()
+                        sad.predict()
+                        time_algo_start = time.time() - time_algo_start
+                        print(f'algo train + predict:{algo_call} algo_time:{time_algo_start}')
+                    #print(f" done")
+                time_elapsed = time.time() - time_start
+                print(f' time:{time_elapsed}')
 
     print_latex_table(sad.storage, dataset_name,data_proportion, score_type=["auc-roc", "f1"], metric=["median", "mean"], 
                       redraws = data_redraws, repeats= data_repeats, chrono_order= data_chrono_order, normalize=data_normalize,

@@ -4,7 +4,7 @@
 #     dataset: Hdfs
 #     proportion: 1/1
 
-datasets:
+datasets: #Each dataset will be a single latex table in the output
   Hadoop:
     filename: "/hadoop/"
     filename_pattern: "*.log"
@@ -13,6 +13,10 @@ datasets:
     proportion: 1/1 #How much of the data is used. 
     proportion_redraws: 1 #How many times we want to redraws the data. If proportion 1/1 then set this to 1. 
     test_fraction: 0.5 #How much data is used for testing from the proportion, e.g. if proportion 1/10 and test_fraction 0.10  -> 9% is used for training and 1% for testing
+    #test_fraction: #Alternative format that tests multiple test proportions
+    #  min: 0.05
+    #  max: 0.95
+    #  step: 0.05 
     chronological_order : False #Do we maintain chrological order when splitting for train and test. For real data with long real world duration use True. For experiment data use False.   
     train_test_repeats: 2 #100 #How many train test splits. Set this to 1 if chronological_order is True -> Repeating with the same train-test split makes no sense.
     predict: seq #Do we predict event or seq. 
