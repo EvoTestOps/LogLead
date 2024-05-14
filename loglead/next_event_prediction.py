@@ -9,10 +9,12 @@
 
 
 from collections import Counter
-from collections import defaultdict  
+from collections import defaultdict
+
 import numpy as np
-import time
-import polars as pl
+
+__all__ = ['NextEventPredictionNgram']
+
 
 #N-gram based next event prediction
 #Assumes parsed input e.g. via Drain parser 
@@ -30,7 +32,6 @@ class NextEventPredictionNgram:
         self.n_gram_counter_1 = Counter()  # Counter for sequences length n_gram_window_len-1
         self.n1_gram_dict = defaultdict()  # to keep mappings of possible following events e1 e2 -> e1 e2 e3, e1 e2 e4, 
         self.n1_gram_winner = dict()  # The event n following n-1 gram (the prediction)
-
 
     def create_ngram_model(self, train_data):
         ngrams = list()
@@ -53,8 +54,7 @@ class NextEventPredictionNgram:
             else: 
                 self.n1_gram_winner[ngrams_minus_1[idx]] = s #no n-1-gram key or winner add a new one...
 
-
-    #Produce required n-grams. E.g. With sequence [e1 e2 e3 e4 e5] and n_gram_window_len=3 we produce [e1 e2 e3], [e2 e3 e4], and [e3 e4 5] 
+    #Produce required n-grams. E.g. With sequence [e1 e2 e3 e4 e5] and n_gram_window_len=3 we produce [e1 e2 e3], [e2 e3 e4], and [e3 e4 5]
     def slice_ngrams (self, seq):
         #Add SoS and EoS
         #with n-gram 3 it is SoS SoS E1 E2 E3 EoS
@@ -93,8 +93,6 @@ class NextEventPredictionNgram:
         # Return all collected data
         return ngram_preds, ngram_preds_correct, scores_abs_list, scores_prop_norm_sum_list, scores_prop_norm_max_list
     
-
-
     # Return five nep results
     # 1. prediction = What was the predicted event (k=1): E1 E2 E3
     # 2. correct_preds = Binary 1 or 0 if the prediction is correct 1 1 0

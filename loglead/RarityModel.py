@@ -1,9 +1,9 @@
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 import math
-import time
-import polars as pl
+
+import matplotlib.pyplot as plt
 import numpy as np
+
+__all__ = ['RarityModel']
 
 
 class RarityModel:
@@ -14,8 +14,7 @@ class RarityModel:
         self.is_norm = None
         self.common_threshold = common_threshold
         
-    
-    def fit(self, X_train, labels=None):  
+    def fit(self, X_train, labels=None):
         def rarity_score(freq, total_ngrams):
             normalized_freq = freq / total_ngrams
             if normalized_freq > self.common_threshold:
@@ -31,7 +30,6 @@ class RarityModel:
         train_counts = np.array(X_train.sum(axis=0))[0]
         self.score_vector = np.array([rarity_score(count, total_ngrams) for count in train_counts])
         
-    
     def predict(self, X_test):
         X_test_csr = X_test.tocsr()
         #Getting the count of non-zero elements along axis 1 (columns) for each instance
