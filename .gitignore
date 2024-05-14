@@ -9,3 +9,4 @@ private_data/
 .env
 *latex.txt
 *.csv
+.idea
