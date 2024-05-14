@@ -259,8 +259,8 @@ class EventLogEnhancer:
     def parse_lenma(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
-            import parsers.lenma.lenma_template as lmt
-            lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
+            from .parsers import LenmaTemplateManager
+            lenma_tm = LenmaTemplateManager(threshold=0.9)
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
