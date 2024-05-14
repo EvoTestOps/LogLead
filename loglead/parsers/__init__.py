@@ -5,5 +5,7 @@ from .Brain.Brain import BrainParser
 from .iplom.IPLoM import IPLoMParser
 from .lenma.lenma import LenmaTemplateManager
 from .pl_iplom.pl_iplom import PL_IPLoMParser
+from .pyspell.spell import LCSMap
 
-__all__ = ['AELParser', 'BertEmbeddings', 'BrainParser', 'IPLoMParser', 'LenmaTemplateManager', 'PL_IPLoMParser']
+__all__ = ['AELParser', 'BertEmbeddings', 'BrainParser', 'IPLoMParser', 'LenmaTemplateManager', 'PL_IPLoMParser',
+           'LCSMap']
