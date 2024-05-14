@@ -141,7 +141,6 @@ class EventLogEnhancer:
             # tm.drain.print_tree()
         return self.df 
     
-        
     def parse_brain(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_brain_id" not in self.df.columns:
@@ -233,7 +232,6 @@ class EventLogEnhancer:
             df_output = df_output.with_columns(df_output.get_column("row_nr").cast(pl.UInt32).alias("row_nr"))
             self.df = self.df.join(df_output, on="row_nr", how="left")
         return self.df
-
 
     #Faster version of IPLoM coming in 2024
     def parse_pliplom(self, field = "e_message_normalized",  reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
