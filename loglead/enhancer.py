@@ -147,8 +147,9 @@ class EventLogEnhancer:
         if reparse or "e_event_brain_id" not in self.df.columns:
             if "e_event_brain_id" in self.df.columns:
                 self.df = self.df.drop("e_event_brain_id")
-            import parsers.Brain.Brain as brain
-            brain_parser = brain.LogParser(messages=self.df[field])
+
+            from .parsers import BrainParser
+            brain_parser = BrainParser(messages=self.df[field])
             brain_parser.parse() 
             df_new = brain_parser.df_log.select(pl.col("EventId").alias("e_event_brain_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")
