@@ -4,6 +4,9 @@ import yaml
 import sys
 import polars as pl
 import os
+
+import loglead.enchancers.sequence
+
 print(os.getcwd())
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -161,7 +164,7 @@ for dataset_name, dataset_info in config['datasets'].items():
             print(f'Data parsed parser:{parser_name}, rows:{df.height}, time:{time_elapsed}s')
             #Aggregate to sequences
             if data_predict == 'seq':
-                seq_enhancer = er.SequenceEnhancer(enhancer.df, df_seq)
+                seq_enhancer = loglead.enchancers.sequence.SequenceEnhancer(enhancer.df, df_seq)
                 df_seq = seq_enhancer.events(parser_field)
                 df_to_predict = df_seq
             else:

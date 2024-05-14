@@ -1,6 +1,9 @@
 
 import sys
 import time
+
+import loglead.enchancers.sequence
+
 sys.path.append('..')
 import polars as pl
 import loglead.loaders.base as load, loglead.enhancer as er, loglead.anomaly_detection as ad
@@ -35,7 +38,7 @@ df = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_events_01.parquet")
 df_seq = pl.read_parquet(f"{private_data}/P4_Parsed_hdfs_seqs_01.parquet")
 
 
-seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seq)
+seq_enhancer = loglead.enchancers.sequence.SequenceEnhancer(df = df, df_seq = df_seq)
 seq_enhancer.tokens("e_words")
 seq_enhancer.events("e_event_id")
 seq_enhancer.events("e_event_lenma_id")

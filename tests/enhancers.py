@@ -1,13 +1,14 @@
-import polars as pl
 import sys
-import polars as pl
 import glob
 import os
+
+import polars as pl
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.enhancer as eh
-import loglead.loaders.base as load
+from loglead.loaders import BaseLoader
+from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
 home_directory = os.path.expanduser('~')
 test_data_path = os.path.join(home_directory, "Datasets", "test_data") 
@@ -35,7 +36,7 @@ for dataset in datasets:
     df = df.filter(pl.col("m_message").is_not_null())
     # Enhance the event data
     print ("Enhancing data:", end=": ")
-    enhancer = eh.EventLogEnhancer(df)
+    enhancer = EventLogEnhancer(df)
     print ("event lengths",  end=", ")
     df = enhancer.length()
     print ("normalizing",   end=", ")
@@ -52,12 +53,12 @@ for dataset in datasets:
     df = enhancer.parse_tip()
 
     # Enhance / Aggregate sequence level
-    loader = load.BaseLoader(filename=None, df=None, df_seq = None)
+    loader = BaseLoader(filename=None, df=None, df_seq = None)
     seq_file = primary_file.replace(f"{dataset}.parquet", f"{dataset}_seq.parquet")
     if os.path.exists(seq_file):
         df_seq = pl.read_parquet(seq_file)
         loader.df_seq = df_seq
-        enhancer_seq = eh.SequenceEnhancer(df = df, df_seq = df_seq)
+        enhancer_seq = SequenceEnhancer(df = df, df_seq = df_seq)
         print ("\nAggregating drain parsing results",   end=", ")
         df_seq = enhancer_seq.events()
         print ("\nCreating next-event-prediction results from Drain events",   end=", ")

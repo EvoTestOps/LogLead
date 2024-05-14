@@ -6,15 +6,18 @@
 #Part 1 load libraries and setup paths. 
 import sys
 import os
+import random
+
+
 #Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.loaders.hdfs as load
-import loglead.enhancer as er
-import loglead.anomaly_detection as ad
 import polars as pl
-import random
+
+from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
+import loglead.anomaly_detection as ad
+
 #Location of our sample data
 sample_data="../samples"
 
@@ -31,7 +34,7 @@ print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/le
 #_________________________________________________________________________________
 #Part 3 add enhanced reprisentations 
 print(f"\nStarting enhancing all log events:")
-enhancer = er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 
 # For nicer printing a function to format series of elements as a list-like string
 def format_as_list(series):
@@ -77,7 +80,7 @@ print(f"\nStarting aggregating log event info to log sequences:")
 seqs_row_index = random.randint(0, len(df_seqs) - 1)
 seq_id = df_seqs['seq_id'][seqs_row_index]
 print(f"Sequence level dataframe without aggregated info: {df_seqs.filter(pl.col('seq_id') == seq_id)}")
-seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seqs)
+seq_enhancer = SequenceEnhancer(df = df, df_seq = df_seqs)
 df_seqs = seq_enhancer.events("e_event_tip_id")
 df_seqs = seq_enhancer.events("e_event_pliplom_id")
 print(f"list of Tipping events in a sequence: {format_as_list(df_seqs.filter(pl.col('seq_id') == seq_id)['e_event_tip_id'][0])}")

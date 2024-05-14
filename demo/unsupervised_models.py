@@ -1,22 +1,23 @@
 #
 #Separate demo files
 import sys
+sys.path.append('..')
+import time
+
+import polars as pl
 
 from loglead.loaders import BGLLoader
-
-sys.path.append('..')
-# Suppress ConvergenceWarning
-import warnings
-from sklearn.exceptions import ConvergenceWarning
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
 from loglead.loaders import ThuSpiLibLoader
 from loglead.loaders import HadoopLoader
 from loglead.loaders import HDFSLoader
+from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
-import loglead.enhancer as er, loglead.anomaly_detection as ad
-import polars as pl
-import time 
+import loglead.anomaly_detection as ad
+
+# Suppress ConvergenceWarning
+from sklearn.exceptions import ConvergenceWarning
+import warnings
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 #Adjust full data source
 full_data = "/home/ubuntu/Datasets"
@@ -53,7 +54,7 @@ df_seq = loader.df_seq
 print("time loaded", time.time()-stime)
 df = df.filter(pl.col("m_message").is_not_null())
 
-enhancer =  er.EventLogEnhancer(df)
+enhancer =  EventLogEnhancer(df)
 df = enhancer.length()
 
 regexs = [('0','\d'),('0','0+')]
@@ -70,7 +71,7 @@ df = enhancer.parse_drain()
 print("time parse", time.time()-stime)
 stime = time.time()
 
-seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seq)
+seq_enhancer = SequenceEnhancer(df = df, df_seq = df_seq)
 print("ano", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==False)))
 print("normal", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==True)))
 seq_enhancer.seq_len() #OOVD uses data from the df for faster calculations
@@ -105,7 +106,7 @@ df = loader.reduce_dataframes(frac=frac_data)
 df = df.filter(pl.col("m_message").is_not_null())
 print("time loaded", time.time()-stime)
 
-enhancer =  er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 stime = time.time()
 regexs = [('0','\d'),('0','0+')]
 df = enhancer.normalize(regexs, to_lower=True)
@@ -145,7 +146,7 @@ df_seq = loader.df_seq
 print("time loaded", time.time()-stime)
 
 df = df.filter(pl.col("m_message").is_not_null())
-enhancer =  er.EventLogEnhancer(df)
+enhancer =  EventLogEnhancer(df)
 df = enhancer.length()
 
 
@@ -163,7 +164,7 @@ df = enhancer.parse_drain()
 print("time parse", time.time()-stime)
 stime = time.time()
 
-seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seq)
+seq_enhancer = SequenceEnhancer(df = df, df_seq = df_seq)
 print("ano", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==False)))
 print("normal", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"]==True)))
 seq_enhancer.seq_len()
@@ -193,11 +194,11 @@ print("ano", len(df.filter(df["normal"]==False)))
 print("normal", len(df.filter(df["normal"]==True)))
 df = loader.reduce_dataframes(frac=frac_data)
 df = df.filter(pl.col("m_message").is_not_null())
-enhancer =  er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 print("time loaded", time.time()-stime)
 
 
-enhancer =  er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 stime = time.time()
 regexs = [('0','\d'),('0','0+')]
 df = enhancer.normalize(regexs, to_lower=True)
