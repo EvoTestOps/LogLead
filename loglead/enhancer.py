@@ -244,8 +244,8 @@ class EventLogEnhancer:
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            import parsers.pl_iplom.pl_iplom as pl_iplom
-            pliplom_parser = pl_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST,lower_bound=lower_bound, single_outlier_event=single_outlier_event)
+            from .parsers import PL_IPLoMParser
+            pliplom_parser = PL_IPLoMParser(self.df, CT=CT, FST=FST, PST=PST, lower_bound=lower_bound, single_outlier_event=single_outlier_event)
             df_new = pliplom_parser.parse()
             #df_new = plimplom_parser.merge_partitions_to_dataframe()
             df_new = df_new.select([
