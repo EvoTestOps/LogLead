@@ -1,7 +1,12 @@
-from loglead.loaders.base import BaseLoader
-import polars as pl
 from glob import glob
 import os
+
+import polars as pl
+
+from .base import BaseLoader
+
+__all__ = ['AWSCTDLoader']
+
 
 class AWSCTDLoader(BaseLoader):
     """
@@ -14,7 +19,6 @@ class AWSCTDLoader(BaseLoader):
         super().__init__(filename, df, df_seq)
         self._mandatory_columns = ["m_message"]
 
-          
     def load(self):
         m_messages = []
         seq_ids = []

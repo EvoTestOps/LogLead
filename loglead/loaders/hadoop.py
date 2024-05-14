@@ -1,7 +1,12 @@
-from loglead.loaders.base import BaseLoader
-import polars as pl
 import os
 import glob
+
+import polars as pl
+
+from .base import BaseLoader
+
+__all__ = ['HadoopLoader']
+
 
 class HadoopLoader(BaseLoader):
     def __init__(self, filename, df=None, df_seq=None, filename_pattern=None, labels_file_name=None):
@@ -126,8 +131,6 @@ class HadoopLoader(BaseLoader):
         })
         return label_df
     
-        
-        
     def _parse_datetimes(self):
         parsed_times = self.df.select(pl.concat_str([pl.col("date"), pl.col("time")]).alias("m_timestamp"))
 

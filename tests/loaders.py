@@ -3,18 +3,19 @@
 #Separate demo files
 import sys
 
-import polars as pl
 import psutil
 import os
+
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.loaders.base as load
-import loglead.loaders.supercomputers as load_sc
-import loglead.loaders.hdfs as load_hdfs
-import loglead.loaders.hadoop as load_hadoop
-import loglead.loaders.pro as load_pro
-import loglead.loaders.nezha as load_nezha
+from loglead.loaders import BGLLoader
+from loglead.loaders import ThuSpiLibLoader
+from loglead.loaders import HDFSLoader
+from loglead.loaders import HadoopLoader
+from loglead.loaders import ProLoader
+from loglead.loaders import NezhaLoader
 
 home_directory = os.path.expanduser('~')
 full_data = os.path.join(home_directory, "Datasets")
@@ -66,40 +67,40 @@ data_files = {
 def create_correct_loader(dataset):
     loader = None
     if dataset == "hdfs":
-        loader = load_hdfs.HDFSLoader(filename=data_files["hdfs"]["log_file"], 
+        loader = HDFSLoader(filename=data_files["hdfs"]["log_file"],
                                  labels_file_name=data_files["hdfs"]["labels_file"])
     elif dataset == "tb": #Must have gbs for TB
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThuSpiLibLoader(filename=data_files["tb"]["log_file"]) 
+            loader = ThuSpiLibLoader(filename=data_files["tb"]["log_file"])
         else:
-            loader = load_sc.ThuSpiLibLoader(filename=data_files["tb"]["log_file_2k"]) 
+            loader = ThuSpiLibLoader(filename=data_files["tb"]["log_file_2k"])
     elif dataset == "spirit": 
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThuSpiLibLoader(filename=data_files["spirit"]["log_file"]) 
+            loader = ThuSpiLibLoader(filename=data_files["spirit"]["log_file"])
         else:
             print("Skipping spirit due to memory limit") 
     elif dataset == "liberty": 
         if memory > memory_limit_TB:
             # Might take 4-6 minutes in HPC VM. In desktop out of memory
-            loader = load_sc.ThuSpiLibLoader(filename=data_files["liberty"]["log_file"], split_component=False) 
+            loader = ThuSpiLibLoader(filename=data_files["liberty"]["log_file"], split_component=False)
         else:
             print("Skipping liberty due to memory limit") 
     elif dataset == "bgl":
-        loader = load_sc.BGLLoader(filename=data_files["bgl"]["log_file"])
+        loader = BGLLoader(filename=data_files["bgl"]["log_file"])
     elif dataset=="pro":
-       loader = load_pro.ProLoader(filename=data_files["pro"]["log_file"])
+       loader = ProLoader(filename=data_files["pro"]["log_file"])
     elif dataset == "hadoop":
-        loader = load_hadoop.HadoopLoader(filename=data_files["hadoop"]["log_dir"],
+        loader = HadoopLoader(filename=data_files["hadoop"]["log_dir"],
                                    filename_pattern=data_files["hadoop"]["filename_pattern"],
                                    labels_file_name=data_files["hadoop"]["labels_file"]) 
     elif dataset == "nezha_tt":
-        loader = load_nezha.NezhaLoader(filename= data_files["nezha_tt"]["log_file"],
+        loader = NezhaLoader(filename= data_files["nezha_tt"]["log_file"],
                                         system = data_files["nezha_tt"]["system"]) 
     elif dataset == "nezha_ws":
         if memory > memory_limit_NEZHA_WS:
-            loader = load_nezha.NezhaLoader(filename= data_files["nezha_ws"]["log_file"],
+            loader = NezhaLoader(filename= data_files["nezha_ws"]["log_file"],
                                             system = data_files["nezha_ws"]["system"])
         else:
             print("Skipping liberty due to nezha_ws limit")      

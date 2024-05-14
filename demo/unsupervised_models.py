@@ -1,15 +1,18 @@
 #
 #Separate demo files
 import sys
+
+from loglead.loaders import BGLLoader
+
 sys.path.append('..')
 # Suppress ConvergenceWarning
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-import loglead.loaders.supercomputers as load_sc
-import loglead.loaders.hadoop as load_hadoop
-import loglead.loaders.hdfs as load_hdfs
+from loglead.loaders import ThuSpiLibLoader
+from loglead.loaders import HadoopLoader
+from loglead.loaders import HDFSLoader
 
 import loglead.enhancer as er, loglead.anomaly_detection as ad
 import polars as pl
@@ -40,7 +43,7 @@ print("---------- Hadoop ----------")
 frac_data = 1
 test_frac = 0.5
 stime = time.time()
-loader = load_hadoop.HadoopLoader(filename=f"{full_data}/hadoop/",
+loader = HadoopLoader(filename=f"{full_data}/hadoop/",
                                             filename_pattern  ="*.log",
                                             labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
 df = loader.execute()
@@ -94,7 +97,7 @@ print("---------- BGL ----------")
 frac_data = 0.01
 test_frac = 0.95
 stime = time.time()
-loader = load_sc.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
+loader = BGLLoader(filename=f"{full_data}/bgl/BGL.log")
 df = loader.execute()
 print("ano", len(df.filter(df["normal"]==False)))
 print("normal", len(df.filter(df["normal"]==True)))
@@ -134,8 +137,8 @@ print("---------- HDFS ----------")
 frac_data = 0.01
 test_frac = 0.95
 stime = time.time()
-loader = load_hdfs.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
-                                    labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
+loader = HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
+                    labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 df = loader.execute()
 df = loader.reduce_dataframes(frac=frac_data)
 df_seq = loader.df_seq       
@@ -184,7 +187,7 @@ print("---------- Thunderbird ----------")
 frac_data = 0.001
 test_frac = 0.95
 stime = time.time()
-loader = load_sc.ThuSpiLibLoader(filename=f"{full_data}/thunderbird/Thunderbird.log", split_component=False)
+loader = ThuSpiLibLoader(filename=f"{full_data}/thunderbird/Thunderbird.log", split_component=False)
 df = loader.execute()
 print("ano", len(df.filter(df["normal"]==False)))
 print("normal", len(df.filter(df["normal"]==True)))

@@ -1,9 +1,9 @@
-
-#import glob
-import polars as pl
-#import os
-from collections import Counter
 import json
+
+import polars as pl
+
+__all__ = ['BaseLoader']
+
 
 # Base class
 class BaseLoader:
@@ -52,7 +52,6 @@ class BaseLoader:
             self.df = self.df.with_columns(pl.col("anomaly").not_().alias("normal"))
         #self._mandatory_columns = ["m_message"]
 
-    
     def check_for_nulls(self):
         null_counts = {}  # Dictionary to store count of nulls for each column
         for col in self.df.columns:
@@ -131,24 +130,3 @@ class BaseLoader:
         json_data = json.loads(json_line)
         return pl.DataFrame([json_data])
 
-#Process log files created with the GELF logging driver.
-# 
-class GELFLoader(BaseLoader):
-    def load(self):
-        with open(self.filename, 'r') as file:
-            lines = file.readlines()
-
-        # Assuming each line in the file is a separate JSON object
-        json_frames = [self.parse_json(line) for line in lines]
-        self.df = pl.concat(json_frames)
-
-    def preprocess(self):
-        # Rename some columns to match the expected column names and parse datetime
-        self.df = self.df.with_columns(
-            pl.col("message").alias("m_message")
-            ).drop("message")
-        
-        parsed_timestamps = self.df.select(
-            pl.col("@timestamp").str.strptime(pl.Datetime, strict=False).alias("m_timestamp")
-        ).drop("@timestamp")
-        self.df = self.df.with_columns(parsed_timestamps)

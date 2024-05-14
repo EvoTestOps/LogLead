@@ -1,13 +1,17 @@
 import glob
 import os
-from loglead.loaders.base import BaseLoader
-import polars as pl
 import re
 import json
-
 import traceback
 import logging
+
+import polars as pl
+
+from loglead.loaders.base import BaseLoader
+
 logger = logging.getLogger(__name__)
+__all__ = ['NezhaLoader']
+
 
 class NezhaLoader(BaseLoader):
     def __init__(self, filename, system, df=None, df_seq=None):
@@ -27,7 +31,6 @@ class NezhaLoader(BaseLoader):
         else:
             # If it's not, raise an error
             raise ValueError(f"Invalid system name: {system}. Valid options are: {', '.join(valid_options)}")
-
 
     def load(self):
         log_queries = []
@@ -119,7 +122,6 @@ class NezhaLoader(BaseLoader):
                         collected_df = q.collect()
                         print(f"Columns in {group}: {collected_df.columns}")
                     raise
-
 
     def load_rca (self, file_path):
         # Read JSON data from a file
@@ -240,7 +242,6 @@ class NezhaLoader(BaseLoader):
         self.df_seq = self.add_labels_to_df_seq(self.df)
         self.df_trace_seq = self.add_labels_to_df_seq(self.df_trace)
 
-
     def process_metrics(self):            
         self.df_label = self.df_label.with_columns(
             (pl.col("m_timestamp") + pl.duration(minutes=1)).alias("m_timestamp+1"),
@@ -258,8 +259,6 @@ class NezhaLoader(BaseLoader):
         ]
         for col in column_names:
             self.df_metric_default = self.df_metric_default.cast({col:pl.Float64})
-
-
 
     def _extract_log_message(self):
         self.df = self.df.with_row_count("row_key")#Used for matching later
@@ -545,11 +544,3 @@ class NezhaLoader(BaseLoader):
         self.df = self.df.with_columns(pl.col("seq_id").str.replace_all("_log.csv", ""))
         self.df_merge = self.df .join(self.df_trace, on="seq_id", how="inner")
         return self.df_merge
-
-# full_data = "/home/mmantyla/Datasets"
-# loader = NezhaLoader(filename= f"{full_data}/nezha/",) 
-# df = loader.execute()
-# loader.df.describe()
-# loader.df_trace.describe()
-# loader.df_metric_default.describe()
-

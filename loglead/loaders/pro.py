@@ -1,7 +1,12 @@
-from loglead.loaders.base import BaseLoader
-import polars as pl
 import glob
 import os
+
+import polars as pl
+
+from .base import BaseLoader
+
+__all__ = ['ProLoader']
+
 
 # Processor for the Pro log file - Not open dataset
 class ProLoader(BaseLoader):
