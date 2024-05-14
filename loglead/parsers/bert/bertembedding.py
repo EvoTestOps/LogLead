@@ -1,7 +1,10 @@
+import time
+
 import tensorflow as tf
 from transformers import AlbertTokenizer, TFAlbertModel
 from transformers import BertTokenizer, TFBertModel
-import time
+
+__all__ = ['BertEmbeddings']
 
 
 class BertEmbeddings:
