@@ -212,12 +212,12 @@ class EventLogEnhancer:
         if reparse or "e_event_iplom_id" not in self.df.columns:
             if "e_event_iplom_id" in self.df.columns:
                 self.df = self.df.drop("e_event_iplom_id")
-            import parsers.iplom.IPLoM as iplom
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            #TODO Storing each parser in self might eat a lot of memeory 
-            iplom_parser = iplom.LogParser(messages=self.df[field], CT=CT,PST=PST,lowerBound=lower_bound)#FST not implemented
+            from .parsers import IPLoMParser
+            #TODO Storing each parser in self might eat a lot of memeory
+            iplom_parser = IPLoMParser(messages=self.df[field], CT=CT, PST=PST, lowerBound=lower_bound)#FST not implemented
             iplom_parser.parse()
             df_output = pl.DataFrame({
                 "row_nr": [row[0] for row in iplom_parser.output],
