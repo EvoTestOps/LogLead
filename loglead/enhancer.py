@@ -159,8 +159,9 @@ class EventLogEnhancer:
         if reparse or "e_event_ael_id" not in self.df.columns:
             if "e_event_ael_id" in self.df.columns:
                 self.df = self.df.drop("e_event_ael_id")
-            import parsers.AEL.AEL as ael
-            ael_parser = ael.LogParser(messages=self.df[field])
+
+            from .parsers import AELParser
+            ael_parser = AELParser(messages=self.df[field])
             ael_parser.parse() 
             df_new = ael_parser.df_log.select(pl.col("EventId").alias("e_event_ael_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")

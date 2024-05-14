@@ -15,17 +15,19 @@
 # =========================================================================
 
 
-import regex as re
-import os
 import hashlib
-import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from functools import reduce
+
 import polars as pl
+import regex as re
+import pandas as pd
+
+__all__ = ['AELParser']
 
 
-class Event:
+class _Event:
     def __init__(self, logidx, Eventstr=""):
         self.id = hashlib.md5(Eventstr.encode("utf-8")).hexdigest()[0:8]
         self.logs = [logidx]
@@ -37,7 +39,7 @@ class Event:
         self.id = hashlib.md5(self.Eventstr.encode("utf-8")).hexdigest()[0:8]
 
 
-class LogParser:
+class AELParser:
     def __init__(
         self,
         messages,
@@ -109,7 +111,7 @@ class LogParser:
                         event.logs.append(logidx)
                         break
                 if not matched:
-                    abin["Events"].append(Event(logidx, log))
+                    abin["Events"].append(_Event(logidx, log))
 
     def reconcile(self):
         """
