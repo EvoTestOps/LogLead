@@ -126,6 +126,7 @@ class BaseLoader:
 
         return self.df
     
-    def parse_json(self, json_line):
+    @staticmethod
+    def parse_json(json_line):
         json_data = json.loads(json_line)
         return pl.DataFrame([json_data])
