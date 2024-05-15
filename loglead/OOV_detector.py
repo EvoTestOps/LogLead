@@ -6,18 +6,18 @@ __all__ = ['OOV_detector']
 
 
 class OOV_detector:
-    def __init__(self, len_col, test_df, threshold = 1):
+    def __init__(self, len_col, test_df, threshold=1):
         self.len_col = len_col
         self.test_df = test_df
         self.scores = 0
         self.threshold = threshold
             
-    def fit(self, X_train = None, labels = None):
-        #The "training set" to compare against comes inherently from test data's sparse matrix
+    def fit(self, X_train=None, labels=None):
+        # The "training set" to compare against comes inherently from test data's sparse matrix
         return
     
     def predict(self, X_test):
-        #Give array of 0s if the needed length column is lacking in the df        
+        # Give array of 0s if the needed length column is lacking in the df
         if self.len_col not in self.test_df.columns:
             print("Column not found for OOVD")
             return np.zeros(self.test_df.select(pl.count()).item())
@@ -31,7 +31,7 @@ class OOV_detector:
     
     def custom_plot(self, labels, x_axis_scale=1.0):
         # Double the font size
-        #mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})
+        # mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})
         
         labels_bool = np.array(labels).astype(bool)
         scores_norm = self.scores[~labels_bool]
@@ -50,4 +50,3 @@ class OOV_detector:
 
         plt.tight_layout()
         plt.show()
-

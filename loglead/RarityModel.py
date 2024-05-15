@@ -32,15 +32,15 @@ class RarityModel:
         
     def predict(self, X_test):
         X_test_csr = X_test.tocsr()
-        #Getting the count of non-zero elements along axis 1 (columns) for each instance
+        # Getting the count of non-zero elements along axis 1 (columns) for each instance
         non_zero_counts = np.array(X_test_csr.getnnz(axis=1), dtype=np.float64)  #Convert to float64 here
         non_zero_counts[non_zero_counts == 0] = 1  #ensuring no divisions by 0
         self.scores = X_test_csr.dot(self.score_vector)
-        #Ensuring self.scores is a float array
+        # Ensuring self.scores is a float array
         self.scores = self.scores.astype(np.float64)
-        #Dividing the scores by the count of non-zero elements
+        # Dividing the scores by the count of non-zero elements
         self.scores /= non_zero_counts
-        #Comparing the scores to the threshold
+        # Comparing the scores to the threshold
         self.is_ano = (self.scores > self.threshold).astype(int)
         return self.is_ano
     

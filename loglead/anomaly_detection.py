@@ -155,8 +155,6 @@ class AnomalyDetection:
                 predictions_proba = self.model.predict_proba(X_test_to_use)[:, 1]
             df_seq = self.test_df.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))      
 
-
-
         if self.print_scores:
             self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
         if custom_plot:
@@ -210,15 +208,17 @@ class AnomalyDetection:
                 len_col = self.item_list_col+"_len"
         self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
         
-    def evaluate_all_ads(self, disabled_methods=[]):
-        for method_name in sorted(dir(self)): 
-            if (method_name.startswith("train_") 
-                and not method_name.startswith("train_model") 
-                and method_name not in disabled_methods):
+    def evaluate_all_ads(self, disabled_methods=None):
+        if disabled_methods is None:
+            disabled_methods = []
+        for method_name in sorted(dir(self)):
+            if (method_name.startswith("train_")
+                    and not method_name.startswith("train_model")
+                    and method_name not in disabled_methods):
                 method = getattr(self, method_name)
                 if callable(method):
                     if not self.print_scores:
-                        print (f"Running {method_name}")
+                        print(f"Running {method_name}")
                     time_start = time.time()
                     method()
                     self.predict()
@@ -234,7 +234,7 @@ class AnomalyDetection:
             method(**params)
             self.predict()
 
-    def _print_evaluation_scores(self, y_test, y_pred,y_pred_proba, model, f_importance = False, auc_roc = True):
+    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -392,9 +392,6 @@ class _ModelResultsStorage:
         df_pivot = df_pivot.map(lambda x: f"{x:.3f}")
         return df_pivot
         
-        
-        return df_pivot
-
     def print_confusion_matrices(self, model_filter=None, signature_filter=None):
         for result in self.test_results:
             #model_name = type(result['model']).__name__
@@ -415,7 +412,6 @@ class _ModelResultsStorage:
             print("Confusion Matrix:")
             print(cm)
             
-
     def print_scores(self, model_filter=None, signature_filter=None, score_type='all'):
         # Check for valid score_type
         valid_score_types = ['accuracy', 'f1', 'all']
