@@ -81,7 +81,8 @@ class EventLogEnhancer:
             )
         return self.df
 
-    def _create_cngram(self, message, ngram=3):
+    @staticmethod
+    def _create_cngram(message, ngram=3):
         if ngram <= 0:
             return []
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
