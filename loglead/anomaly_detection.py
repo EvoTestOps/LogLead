@@ -111,7 +111,7 @@ class AnomalyDetector:
 
         return X, labels    
         
-    def train_model(self, model, filter_anos=False, **model_kwargs):
+    def train_model(self, model,  /, *, filter_anos=False, **model_kwargs):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
         if isclass(model):
