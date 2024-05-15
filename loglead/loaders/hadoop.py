@@ -39,7 +39,8 @@ class HadoopLoader(BaseLoader):
             # Iterate over all files in the subdirectory that match the given pattern
             for file in glob.glob(file_pattern):
                 try:
-                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator, row_count_name="row_nr_per_file")
+                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0,
+                                    separator=self._csv_separator, row_count_name="row_nr_per_file")
                     q = q.with_columns(
                         pl.lit(seq_id).alias('seq_id'), #Folder is seq_id
                         pl.lit(os.path.basename(file)).alias('seq_id_sub') #File is seq_id_sub

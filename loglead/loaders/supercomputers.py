@@ -13,7 +13,7 @@ class ThuSpiLibLoader(BaseLoader):
 
     def load(self):
         self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
-                              separator=self._csv_separator, ignore_errors=True) #There is one UTF error in the file
+                              separator=self._csv_separator, ignore_errors=True)  # There is one UTF error in the file
     
     def preprocess(self):
         if self.split_component:
@@ -23,14 +23,14 @@ class ThuSpiLibLoader(BaseLoader):
         else:
             self._split_and_unnest(["label", "timestamp", "date", "userid", "month", 
                                     "day", "time", "location", "m_message"])
-        #parse datatime
-        self.df = self.df.with_columns(m_timestamp = pl.from_epoch(pl.col("timestamp")))
-        #Label contains multiple anomaly cases. Convert to binary
-        self.df = self.df.with_columns(normal = pl.col("label").str.starts_with("-"))
+        # parse datatime
+        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp")))
+        # Label contains multiple anomaly cases. Convert to binary
+        self.df = self.df.with_columns(normal=pl.col("label").str.starts_with("-"))
 
-    #Reason for extra processing. We want so separte pid from component and in the log file they are embedded
-    #Data description
-    #https://github.com/logpai/loghub/blob/master/Thunderbird/Thunderbird_2k.log_structured.csv     
+    # Reason for extra processing. We want so separte pid from component and in the log file they are embedded
+    # Data description
+    # https://github.com/logpai/loghub/blob/master/Thunderbird/Thunderbird_2k.log_structured.csv
     def _split_component_and_pid(self):
         component_and_pid = self.df.select(pl.col("component_pid")).to_series().str.splitn("[", n=2)
         component_and_pid = component_and_pid.struct.rename_fields(["component", "pid"])
@@ -39,8 +39,7 @@ class ThuSpiLibLoader(BaseLoader):
         component_and_pid = component_and_pid.unnest("fields")
         component_and_pid = component_and_pid.with_columns(pl.col("component").str.rstrip(":"))
         component_and_pid = component_and_pid.with_columns(pl.col("pid").str.rstrip("]:"))
-        self.df= pl.concat([self.df, component_and_pid], how="horizontal")  
+        self.df = pl.concat([self.df, component_and_pid], how="horizontal")
         self.df = self.df.drop("component_pid")
         self.df = self.df.select(["label", "timestamp", "date", "userid", "month", 
-                                "day", "time", "location", "component","pid", "m_message"])
-
+                                  "day", "time", "location", "component", "pid", "m_message"])

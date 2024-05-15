@@ -34,7 +34,8 @@ class AWSCTDLoader(BaseLoader):
                     label = line_parts[-1]
                     if label == "Clean":
                         label = "Normal"
-                    seq_id = logfile_parts[-2] + '/' + logfile_parts[-1].replace('.csv', '') + '_' + str(line_nr)  # Use filename + incrementing id per sequence
+                    # Use filename + incrementing id per sequence
+                    seq_id = logfile_parts[-2] + '/' + logfile_parts[-1].replace('.csv', '') + '_' + str(line_nr)
 
                     for event_id in line_parts[:-1]:
                         # Append data to lists

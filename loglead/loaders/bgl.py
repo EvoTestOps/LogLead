@@ -14,7 +14,7 @@ class BGLLoader(BaseLoader):
 
     def preprocess(self):
         self._split_and_unnest(["label", "timestamp", "date", "node", "time",
-                            "noderepeat", "type", "component", "level", "m_message"])
-        self.df = self.df.with_columns(normal = pl.col("label").str.starts_with("-")) #Same format as Tb
-        #parse datatime
-        self.df = self.df.with_columns(m_timestamp = pl.from_epoch(pl.col("timestamp")))
+                                "noderepeat", "type", "component", "level", "m_message"])
+        self.df = self.df.with_columns(normal=pl.col("label").str.starts_with("-"))  # Same format as Tb
+        # Parse datatime
+        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp")))
