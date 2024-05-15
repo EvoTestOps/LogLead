@@ -16,4 +16,3 @@ ini_location = os.path.join(current_script_directory, 'drain3_no_masking.ini')
 tmc = TemplateMinerConfig()
 tmc.load(ini_location)
 DrainTemplateMinerNoMasking = TemplateMiner(config=tmc)
-

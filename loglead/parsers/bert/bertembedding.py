@@ -8,11 +8,11 @@ __all__ = ['BertEmbeddings']
 
 
 class BertEmbeddings:
-    def __init__(self, bertmodel = "basebert"):
+    def __init__(self, bertmodel="basebert"):
 
         self.basebert = bertmodel
         
-        #Print out all GPU and CPU devices
+        # Print out all GPU and CPU devices
         devices = tf.config.list_physical_devices()
         print("All physical devices: ", devices)
 
@@ -33,7 +33,7 @@ class BertEmbeddings:
             print("Using albert")
 
     def create_bert_emb(self, sentences):
-        #length in word piece tokens
+        # length in word piece tokens
         max_length = 30
         # Set cache batch size depending on GPU memory
         cache_size = 1000

@@ -12,6 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 __all__ = ['LenmaTemplateManager']
 
+
 class _Template(object):
     def __init__(self, index, words, logid):
         self._index = index

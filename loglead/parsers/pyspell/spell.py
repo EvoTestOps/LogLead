@@ -3,7 +3,6 @@
 
 import re
 import json
-import pickle
 
 __all__ = ['LCSMap']
 
