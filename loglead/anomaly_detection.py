@@ -282,12 +282,35 @@ class AnomalyDetection:
             X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
             if isinstance(self.model, IsolationForest):
                 y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
-                print(f"AUCROC: {_auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
             if isinstance(self.model, KMeans):
                 y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
-                print(f"AUCROC: {_auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
             if isinstance(self.model, (RarityModel, OOV_detector)):
-                print(f"AUCROC: {_auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
+
+    @staticmethod
+    def _auc_roc_analysis(labels, preds, titlestr ="ROC", plot=False):
+        # Compute the ROC curve
+        fpr, tpr, thresholds = roc_curve(labels, preds)
+        # Compute the AUC from the points of the ROC curve
+        roc_auc = auc(fpr, tpr)
+
+        if plot:
+            # Plot the ROC curve
+            plt.figure()
+            lw = 2
+            plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(titlestr)
+            plt.legend(loc="lower right")
+            plt.show()
+
+        return roc_auc
 
 
 class _ModelResultsStorage:
@@ -440,24 +463,3 @@ class _ModelResultsStorage:
                 print(f"F1 Score: {f1:.4f}")
 
 
-def _auc_roc_analysis(labels, preds, titlestr ="ROC", plot=False):
-    # Compute the ROC curve
-    fpr, tpr, thresholds = roc_curve(labels, preds)
-    # Compute the AUC from the points of the ROC curve
-    roc_auc = auc(fpr, tpr)
-
-    if plot:
-        # Plot the ROC curve
-        plt.figure()
-        lw = 2
-        plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
-        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(titlestr)
-        plt.legend(loc="lower right")
-        plt.show()
-
-    return roc_auc
