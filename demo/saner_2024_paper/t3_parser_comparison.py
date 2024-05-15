@@ -2,19 +2,19 @@
 # LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
  
 import sys
-import time
 sys.path.append('..')
-import polars as pl
 import copy
-import loglead.loaders.base as load
-import loglead.enhancer as er
-from parsers.bert.bertembedding import BertEmbeddings
+import time
+import statistics
+
+from loglead.enhancers import EventLogEnhancer
+from loglead.loaders import HDFSLoader
+
 full_data = "/home/ubuntu/Datasets"
 
 
-
-loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
-                                            labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
+loader = HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
+                    labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
 
 
 loader.execute()
@@ -23,19 +23,17 @@ df50k = copy.deepcopy(loader).reduce_dataframes(0.005)
 df100k = copy.deepcopy(loader).reduce_dataframes(0.01)
 df200k = copy.deepcopy(loader).reduce_dataframes(0.02)
 
-datas =  [df50k, df100k, df200k]
-parsers = ["drain", "spell", "lenma", "neural"]
-parsers = ["neural"]
+datas = [df50k, df100k, df200k]
+# parsers = ["drain", "spell", "lenma", "neural"]
+# parsers = ["neural"]
 parsers = ["drain", "spell", "lenma"]
 
-import time
-import statistics
 for data in datas:
     df = data
     for parser in parsers:
         elapsed_times = []
         for _ in range(10):
-            enricher = er.EventLogEnhancer(df)
+            enricher = EventLogEnhancer(df)
             start_time = time.time()
             df = enricher.normalize()
             if parser == "drain":
@@ -49,7 +47,6 @@ for data in datas:
             elif parser == "neural":
                 df_parsers = enricher.create_neural_emb()
             
-
             end_time = time.time()
             elapsed_time = end_time - start_time
             elapsed_times.append(elapsed_time)

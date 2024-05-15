@@ -4,28 +4,28 @@
 import sys
 import time
 sys.path.append('..')
-import polars as pl
 
-import loglead.loaders.base as load
-import loglead.enhancer as er
+from loglead.enhancers import EventLogEnhancer
+from loglead.loaders import *
 
 #full_data = "/home/ubuntu/Datasets"
 full_data = "/home/mmantyla/Datasets"
 
 datasets = ["hdfs", "hadoop", "bgl"]
 
+
 def create_correct_loader(dataset):
-    if dataset=="hdfs":
-        loader = load.HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log", 
-                                            labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
-    elif dataset=="tb":
-        loader = load.ThunderbirdLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
-    elif dataset=="bgl":
-        loader = load.BGLLoader(filename=f"{full_data}/bgl/BGL.log")
-    elif(dataset=="hadoop"):    
-        loader = load.HadoopLoader(filename=f"{full_data}/hadoop/",
-                                        filename_pattern  ="*.log",
-                                        labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
+    if dataset == "hdfs":
+        loader = HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",
+                            labels_file_name=f"{full_data}/hdfs/anomaly_label.csv")
+    elif dataset == "tb":
+        loader = ThuSpiLibLoader(filename=f"{full_data}/thunderbird/Thunderbird.log") #Might take 2-3 minutes in HPC cloud. In desktop out of memory
+    elif dataset == "bgl":
+        loader = BGLLoader(filename=f"{full_data}/bgl/BGL.log")
+    elif dataset == "hadoop":
+        loader = HadoopLoader(filename=f"{full_data}/hadoop/",
+                              filename_pattern  ="*.log",
+                              labels_file_name=f"{full_data}/hadoop/abnormal_label_accurate.txt")
         
     return loader
 
@@ -52,11 +52,11 @@ for dataset_name in datasets:
     dataset_info["without_masking"][dataset_name]['row_count'] = row_count
     dataset_info["with_masking"][dataset_name]['row_count'] = row_count
     
-    enhancer = er.EventLogEnhancer(df)
+    enhancer = EventLogEnhancer(df)
 
     # Running without drain_masking
     for _ in range(10):
-        enhancer_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
+        enhancer_copy = EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
         df_temp = enhancer_copy.normalize()
         df_temp = enhancer_copy.parse_drain(reparse=True)
@@ -65,7 +65,7 @@ for dataset_name in datasets:
 
     # Running with drain_masking
     for _ in range(10):
-        enhancer_copy = er.EventLogEnhancer(df)  # Use a fresh copy for each iteration
+        enhancer_copy = EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
         df_temp = enhancer_copy.parse_drain(drain_masking=True, reparse=True)
         elapsed_time = time.time() - time_start
