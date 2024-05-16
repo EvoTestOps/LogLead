@@ -296,8 +296,8 @@ class AnomalyDetector:
         if plot:
             try:
                 import matplotlib.pyplot as plt
-            except ImportError:
-                raise ImportError("Package matplotlib is missing optional dependency")
+            except Exception as e:
+                raise ImportError("Error import matplotlib") from e
             # Plot the ROC curve
             plt.figure()
             lw = 2

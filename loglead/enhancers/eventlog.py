@@ -1,8 +1,6 @@
 import hashlib
 
 import polars as pl
-#Lazy import inside the method.
-#from .bertembedding import BertEmbeddings
 
 # Drain.ini default regexes
 # No lookahead or lookbedinde so reimplemented with capture groups. Still problem with overlaps See
@@ -252,6 +250,7 @@ class EventLogEnhancer:
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
             from loglead.parsers import LenmaTemplateManager
+
             lenma_tm = LenmaTemplateManager(threshold=0.9)
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
@@ -309,7 +308,6 @@ class EventLogEnhancer:
     def create_neural_emb(self, field="e_message_normalized"):
         self._handle_prerequisites([field])
         if "e_bert_emb" not in self.df.columns:
-            #Lazy import only if needed
             from loglead.parsers import BertEmbeddings
             #if "e_message_normalized" not in self.df.columns:
             #    self.normalize()

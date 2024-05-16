@@ -48,8 +48,8 @@ class RarityModel:
         #mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})
         try:
             import matplotlib.pyplot as plt
-        except ImportError:
-            raise ImportError("Package matplotlib is missing optional dependency")
+        except Exception as e:
+            raise ImportError("Error importing matplotlib") from e
 
         labels_bool = np.array(labels).astype(bool)
         scores_norm = self.scores[~labels_bool]
