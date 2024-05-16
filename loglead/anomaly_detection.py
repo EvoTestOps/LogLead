@@ -1,4 +1,5 @@
 import time
+from inspect import isclass
 
 import polars as pl
 import numpy as np
@@ -113,7 +114,10 @@ class AnomalyDetector:
     def train_model(self, model, filter_anos=False, **model_kwargs):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
-        self.model = model(**model_kwargs)
+        if isclass(model):
+            self.model = model(**model_kwargs)
+        else:
+            self.model = model  # Backwards compatibility with previous implementation
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
