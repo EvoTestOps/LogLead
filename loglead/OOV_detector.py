@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import polars as pl
 import numpy as np
 
@@ -32,7 +31,11 @@ class OOV_detector:
     def custom_plot(self, labels, x_axis_scale=1.0):
         # Double the font size
         # mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})
-        
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError("Package matplotlib is missing optional dependency")
+
         labels_bool = np.array(labels).astype(bool)
         scores_norm = self.scores[~labels_bool]
         scores_ano = self.scores[labels_bool]

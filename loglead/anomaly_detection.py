@@ -4,7 +4,6 @@ from inspect import isclass
 import polars as pl
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 #Faster sklearn enabled. See https://intel.github.io/scikit-learn-intelex/latest/
 # Causes problems in RandomForrest. We have to use older version due to tensorflow numpy combatibilities
 # from sklearnex import patch_sklearn
@@ -295,6 +294,10 @@ class AnomalyDetector:
         roc_auc = auc(fpr, tpr)
 
         if plot:
+            try:
+                import matplotlib.pyplot as plt
+            except ImportError:
+                raise ImportError("Package matplotlib is missing optional dependency")
             # Plot the ROC curve
             plt.figure()
             lw = 2
