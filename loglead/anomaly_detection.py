@@ -121,11 +121,6 @@ class AnomalyDetector:
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
-    #def dep_train_model(self, df_seq, model):
-    #    X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
-    #    self.model = model
-    #    self.model.fit(X_train, labels)
-    
     def predict(self, custom_plot=False):
         #Binary scores
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
@@ -215,20 +210,18 @@ class AnomalyDetector:
         
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
-            disabled_methods = []
-        for method_name in sorted(dir(self)):
-            if (method_name.startswith("train_")
-                    and not method_name.startswith("train_model")
-                    and method_name not in disabled_methods):
-                method = getattr(self, method_name)
-                if callable(method):
-                    if not self.print_scores:
-                        print(f"Running {method_name}")
-                    time_start = time.time()
-                    method()
-                    self.predict()
-                    if self.print_scores:
-                        print(f'Total time: {time.time()-time_start:.2f} seconds')
+            disabled_methods = set()
+        train_methods = {getattr(self, m) for m in dir(self) if m.startswith('train_') and m not in disabled_methods
+                         and callable(getattr(self, m))}
+        train_methods.discard(self.train_model)
+        for method in train_methods:
+            if self.print_scores:
+                print(f"Running {method}")
+            time_start = time.time()
+            method()
+            self.predict()
+            if self.print_scores:
+                print(f'Total time: {time.time()-time_start:.2f} seconds')
         if self.print_scores:
             print("---------------------------------------------------------------")
 

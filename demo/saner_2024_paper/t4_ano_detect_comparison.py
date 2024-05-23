@@ -52,7 +52,7 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 #Disable unsupervised
-disable = ["train_IsolationForest", "train_LOF", "train_KMeans", "train_OneClassSVM", "train_RarityModel"]
+disable = {"train_IsolationForest", "train_LOF", "train_KMeans", "train_OneClassSVM", "train_RarityModel"}
 #Need a loop to run these multiple times
 sad = AnomalyDetector(store_scores=True, print_scores=False)
 
