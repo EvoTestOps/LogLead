@@ -280,10 +280,10 @@ class EventLogEnhancer:
     def parse_spell(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_spell_id" not in self.df.columns:
-            from loglead.parsers import LCSMap
+            from loglead.parsers import SpellParser
             #if "e_message_normalized" not in self.df.columns:
             #    self.normalize()
-            spell = LCSMap(r'\s+')
+            spell = SpellParser(r'\s+')
             self.df = self.df.with_columns(
                 spell_obj=pl.col(field)
                     .map_elements(lambda x: spell.insert(x), return_dtype=pl.Object))

@@ -1,5 +1,5 @@
 __all__ = ['AELParser', 'BrainParser', 'IPLoMParser', 'LenmaTemplateManager', 'PL_IPLoMParser',
-           'LCSMap', 'DrainTemplateMiner', 'DrainTemplateMinerNoMasking']
+           'SpellParser', 'DrainTemplateMiner', 'DrainTemplateMinerNoMasking']
 from .AEL.AEL import AELParser
 try:
     from .bert.bertembedding import BertEmbeddings
@@ -11,4 +11,4 @@ from .drain3.drain import DrainTemplateMiner, DrainTemplateMinerNoMasking
 from .iplom.IPLoM import IPLoMParser
 from .lenma.lenma import LenmaTemplateManager
 from .pl_iplom.pl_iplom import PL_IPLoMParser
-from .pyspell.spell import LCSMap
+from .pyspell.spell import SpellParser

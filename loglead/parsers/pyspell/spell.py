@@ -4,7 +4,7 @@
 import re
 import json
 
-__all__ = ['LCSMap']
+__all__ = ['SpellParser']
 
 
 class _lcsobj():
@@ -172,7 +172,7 @@ class _lcsobj():
         return self._id
 
 
-class LCSMap():
+class SpellParser():
 
     def __init__(self, refmt):
         self._refmt = refmt
