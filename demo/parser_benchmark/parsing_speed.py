@@ -4,7 +4,13 @@ import argparse
 
 import yaml
 import polars as pl
-
+import sys
+import os
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
+sys.path.append(os.environ.get("LOGLEAD_PATH"))
+print(LOGLEAD_PATH)
 from loglead.loaders import *
 from loglead.enhancers import EventLogEnhancer
 
@@ -12,7 +18,11 @@ from loglead.enhancers import EventLogEnhancer
 full_data = "/home/mmantyla/Datasets"
 
 # Load the configuration
-default_config = '/home/mmantyla/LogLead/demo/parser_benchmark/speed_config.yml'
+#default_config = '/home/mmantyla/LogLead/demo/parser_benchmark/speed_config.yml'
+# Base path for datasets
+full_data = os.environ.get("LOG_DATA_PATH")
+# Load the configuration
+default_config = LOGLEAD_PATH + '/demo/parser_benchmark/speed_config.yml'
 #default_config = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_missing.yml'
 default_threshold = 600  # How many seconds is the threshold after which remaining runs for the parser are skipped
 #config_path = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_fiplom.yml'
@@ -70,6 +80,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     loader_class = eval(f"{dataset_info['loader']}")
     loader_args = {key: full_data + value if key.endswith('name') else value 
                    for key, value in dataset_info.items() if key != 'loader'}
+    print (f"Loader: {loader_class}, args:{loader_args}")
     loader = loader_class(**loader_args)
     time_start = time.time()
 
