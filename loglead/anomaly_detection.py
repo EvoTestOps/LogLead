@@ -23,6 +23,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import roc_auc_score
+from sklearn.feature_extraction.text import CountVectorizer
 
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
@@ -43,7 +44,7 @@ class AnomalyDetection:
         self.train_vocabulary = None
         self.auc_roc = auc_roc
 
-    def test_train_split(self, df, test_frac=0.9, shuffle=True,vec_name="CountVectorizer"):
+    def test_train_split(self, df, test_frac=0.9, shuffle=True, vectorizer_class=CountVectorizer):
         # Shuffle the DataFrame
         if shuffle:
             df = df.sample(fraction = 1.0, shuffle=True)
@@ -58,17 +59,18 @@ class AnomalyDetection:
         # Split the DataFrame using head and tail
         self.train_df = df.head(-test_size) #Returns all rows expect last abs(-test_size)
         self.test_df = df.tail(test_size) #Returns the last test_size rows
-        self.prepare_train_test_data(vec_name=vec_name)
+        self.prepare_train_test_data(vectorizer_class=vectorizer_class)
         
-    def prepare_train_test_data(self, vec_name="CountVectorizer"):
+    def prepare_train_test_data(self, vectorizer_class=CountVectorizer):
         #Prepare all data for running
-        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name)
-        self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name)
+        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vectorizer_class)
+        self.X_test, self.labels_test = self._prepare_data(False, self.test_df, vectorizer_class)
         #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name)
-        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()),
+                                                     vectorizer_class)
+        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vectorizer_class)
      
-    def _prepare_data(self, train, df_seq, vec_name):
+    def _prepare_data(self, train, df_seq, vectorizer_class):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
@@ -77,7 +79,6 @@ class AnomalyDetection:
             # Extract the column
             column_data = df_seq.select(pl.col(self.item_list_col))             
             events = column_data.to_series().to_list()
-            vectorizer_class = globals()[vec_name]
             # We are training
             if train:
                 # Check the datatype  
