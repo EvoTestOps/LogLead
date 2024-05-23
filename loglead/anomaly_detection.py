@@ -28,10 +28,10 @@ from sklearn.feature_extraction.text import CountVectorizer
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
 
-__all__ = ['AnomalyDetection']
+__all__ = ['AnomalyDetector']
 
 
-class AnomalyDetection:
+class AnomalyDetector:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
                  store_scores=False, print_scores=True, auc_roc=False):
         self.item_list_col = item_list_col

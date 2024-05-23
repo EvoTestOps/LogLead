@@ -7,7 +7,7 @@ import polars as pl
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 
 # Set your directory
 home_directory = os.path.expanduser('~')
@@ -45,7 +45,7 @@ for dataset in datasets:
         df["normal"].sum() > 10 and
         df["anomaly"].sum() > 10):
             print(f"Running event anomaly detectors with {col}")
-            sad = AnomalyDetection(item_list_col=col, print_scores= False, store_scores=True)
+            sad = AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
             sad.test_train_split (df, test_frac=0.5) 
             sad.evaluate_all_ads(disabled_methods=disabled_methods)
 
@@ -65,7 +65,7 @@ for dataset in datasets:
             df["normal"].sum() > 10 and
             df["anomaly"].sum() > 10):
                 print(f"Running seqeuence anomaly detectors with {col}")
-                sad =  AnomalyDetection(item_list_col=col, print_scores= False, store_scores=True)
+                sad =  AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
                 #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
                 sad.test_train_split (df_seq, test_frac=0.2) 
                 sad.evaluate_all_ads(disabled_methods=disabled_methods)
@@ -74,7 +74,7 @@ for dataset in datasets:
         "anomaly" in df_seq.columns and 
         df_seq["normal"].sum() > 10 and
         df_seq["anomaly"].sum() > 10):
-            sad = AnomalyDetection(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
+            sad = AnomalyDetector(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
             #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
             sad.test_train_split (df_seq, test_frac=0.2) 
             sad.evaluate_all_ads(disabled_methods=[])        

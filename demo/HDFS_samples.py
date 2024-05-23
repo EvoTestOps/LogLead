@@ -15,7 +15,7 @@ os.chdir(script_dir)
 sys.path.append('..')
 import polars as pl
 
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
 # Location of our sample data
@@ -105,7 +105,7 @@ print(f"\nStarting anomaly detection of HDFS Sequences")
 print(f"Predicting with sequence length and duration ")
 numeric_cols = ["seq_len",  "duration_sec",]
 # Auc-roc computation is not enabled by default as it can reduce speed
-sad = AnomalyDetection(auc_roc=True)
+sad = AnomalyDetector(auc_roc=True)
 # Using 10% for training 90% for testing
 sad.numeric_cols = numeric_cols
 sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)
@@ -144,7 +144,7 @@ df_seq = sad.predict()
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
-sad = AnomalyDetection(store_scores=True, print_scores=False, auc_roc=True)
+sad = AnomalyDetector(store_scores=True, print_scores=False, auc_roc=True)
 for i in range(3):  # We do just three loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)

@@ -14,7 +14,7 @@ import yaml
 LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
 sys.path.append(os.environ.get("LOGLEAD_PATH"))
 
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 from loglead.loaders import *
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
@@ -121,7 +121,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     # In Hadoop anomaly is majority class. Flip it to keep F1-binary equally difficult.
     if dataset_name == "Hadoop":
         loader.df_seq = loader.df_seq.with_columns(~pl.col("anomaly"))
-    sad = AnomalyDetection(store_scores=True, print_scores=False, auc_roc=True)
+    sad = AnomalyDetector(store_scores=True, print_scores=False, auc_roc=True)
     for i in range(data_redraws):
         proportion = proportion_to_float(data_proportion)
         if proportion < 1:  # Create a new baseloader for reducing dataframes.

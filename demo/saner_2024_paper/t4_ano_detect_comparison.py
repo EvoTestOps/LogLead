@@ -3,7 +3,7 @@ sys.path.append('..')
 
 import polars as pl
 
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 from loglead.loaders import HDFSLoader
 
@@ -54,7 +54,7 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 #Disable unsupervised
 disable = ["train_IsolationForest", "train_LOF", "train_KMeans", "train_OneClassSVM", "train_RarityModel"]
 #Need a loop to run these multiple times
-sad = AnomalyDetection(store_scores=True, print_scores=False)
+sad = AnomalyDetector(store_scores=True, print_scores=False)
 
 for i in range(10):
     print(f"{i}", end="")

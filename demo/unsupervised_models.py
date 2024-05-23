@@ -9,7 +9,7 @@ from loglead.loaders import ThuSpiLibLoader
 from loglead.loaders import HadoopLoader
 from loglead.loaders import HDFSLoader
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 
 # Suppress ConvergenceWarning
 from sklearn.exceptions import ConvergenceWarning
@@ -74,7 +74,7 @@ print("normal", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"] is 
 seq_enhancer.seq_len()  # OOVD uses data from the df for faster calculations
 seq_enhancer.start_time()
 
-sad = AnomalyDetection()
+sad = AnomalyDetector()
 for item in items:
     print("-----", item, "-----")
     if item != "e_event_drain_id":
@@ -121,7 +121,7 @@ stime = time.time()
 
 df = enhancer.length("e_message_normalized")
 
-sad = AnomalyDetection()
+sad = AnomalyDetector()
 for item in items:
     print("-----", item, "-----")
     sad.item_list_col = item
@@ -166,7 +166,7 @@ print("ano", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"] is Fal
 print("normal", len(seq_enhancer.df_seq.filter(seq_enhancer.df_seq["normal"] is True)))
 seq_enhancer.seq_len()
 
-sad = AnomalyDetection()
+sad = AnomalyDetector()
 for item in items:
     print("-----", item, "-----")
     if item != "e_event_drain_id":
@@ -213,7 +213,7 @@ stime = time.time()
 
 df = enhancer.length("e_message_normalized")
 
-sad = AnomalyDetection()
+sad = AnomalyDetector()
 for item in items:
     print("-----", item, "-----")
     sad.item_list_col = item

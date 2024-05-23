@@ -15,7 +15,7 @@ os.chdir(script_dir)
 sys.path.append('..')
 
 from loglead.enhancers import EventLogEnhancer
-from loglead import AnomalyDetection
+from loglead import AnomalyDetector
 
 # Location of our sample data
 sample_data = "../samples"
@@ -70,7 +70,7 @@ print(f"event length words:   {df['e_words_len'][row_index]}")
 # Part 5 we do some anomaly detection. No part 4 here as TB is not labeled on sequence level. See HDFS_samples.py
 print(f"\nStarting anomaly detection of TB Events")
 numeric_cols = ["e_chars_len",  "e_lines_len",]
-sad = AnomalyDetection()
+sad = AnomalyDetector()
 # Using 10% for training 90% for testing
 sad.numeric_cols = numeric_cols
 sad.test_train_split(df, test_frac=0.90)
@@ -110,7 +110,7 @@ df_seq = sad.predict()
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
-sad = AnomalyDetection(store_scores=True, print_scores=False)
+sad = AnomalyDetector(store_scores=True, print_scores=False)
 for i in range(2):  # We do just two loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split(df, test_frac=0.90)
