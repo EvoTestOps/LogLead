@@ -211,7 +211,7 @@ class AnomalyDetector:
                 len_col = "e_event_id_len" #item list col has the parser name when using events, but length doesn't
             else:
                 len_col = self.item_list_col+"_len"
-        self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, df=self.test_df, threshold=threshold)
+        self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, test_df=self.test_df, threshold=threshold)
         
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
