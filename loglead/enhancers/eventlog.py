@@ -1,11 +1,8 @@
-import polars as pl
-
-
 import hashlib
-#Lazy import inside the method. 
+
+import polars as pl
+#Lazy import inside the method.
 #from .bertembedding import BertEmbeddings
-import os
-import loglead.next_event_prediction as nep
 
 # Drain.ini default regexes
 # No lookahead or lookbedinde so reimplemented with capture groups. Still problem with overlaps See
@@ -26,6 +23,8 @@ masking_patterns_drain = [
     ("${start}<NUM>${end}", r"(?P<start>[^A-Za-z0-9]|^)([\-\+]?\d+)(?P<end>[^A-Za-z0-9]|$)"),
     ("${cmd}<CMD>", r"(?P<cmd>executed cmd )(\".+?\")")
 ]
+
+__all__ = ['EventLogEnhancer']
 
 
 class EventLogEnhancer:
@@ -82,7 +81,8 @@ class EventLogEnhancer:
             )
         return self.df
 
-    def _create_cngram(self, message, ngram=3):
+    @staticmethod
+    def _create_cngram(message, ngram=3):
         if ngram <= 0:
             return []
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
@@ -91,7 +91,6 @@ class EventLogEnhancer:
     def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_drain_id" not in self.df.columns:
-            import drain3 as dr
             # Drain returns dict
             # {'change_type': 'none',
             # 'cluster_id': 1,
@@ -102,9 +101,6 @@ class EventLogEnhancer:
 
             # We might have multiline log message, i.e. log_message + stack trace.
             # Use only first line of log message for parsing
-            current_script_path = os.path.abspath(__file__)
-            current_script_directory = os.path.dirname(current_script_path)
-            drain3_ini_location =  os.path.join(current_script_directory, '../parsers/drain3/')
             return_dtype = pl.Struct([
                 pl.Field("change_type", pl.Utf8),
                 pl.Field("cluster_id", pl.Int64),
@@ -113,8 +109,7 @@ class EventLogEnhancer:
                 pl.Field("cluster_count", pl.Int64)
             ])
             if drain_masking:
-                dr.template_miner.config_filename = os.path.join(drain3_ini_location,'drain3.ini') #TODO fix the path relative
-                tm = dr.TemplateMiner()
+                from loglead.parsers import DrainTemplateMiner as tm
                 self.df = self.df.with_columns(
                     message_trimmed=pl.col("m_message").str.split("\n").list.first()
                 )
@@ -123,8 +118,7 @@ class EventLogEnhancer:
             else:
                 #if "e_message_normalized" not in self.df.columns:
                 #    self.normalize()
-                dr.template_miner.config_filename =os.path.join(drain3_ini_location, 'drain3_no_masking.ini') #drain3_no_masking.ini'  #TODO fix the path relative
-                tm = dr.TemplateMiner()
+                from loglead.parsers import DrainTemplateMinerNoMasking as tm
                 self.df = self.df.with_columns(
                     drain=pl.col(field).map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
 
@@ -141,14 +135,14 @@ class EventLogEnhancer:
             # tm.drain.print_tree()
         return self.df 
     
-        
     def parse_brain(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_brain_id" not in self.df.columns:
             if "e_event_brain_id" in self.df.columns:
                 self.df = self.df.drop("e_event_brain_id")
-            import parsers.Brain.Brain as brain
-            brain_parser = brain.LogParser(messages=self.df[field])
+
+            from loglead.parsers import BrainParser
+            brain_parser = BrainParser(messages=self.df[field])
             brain_parser.parse() 
             df_new = brain_parser.df_log.select(pl.col("EventId").alias("e_event_brain_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")
@@ -159,8 +153,9 @@ class EventLogEnhancer:
         if reparse or "e_event_ael_id" not in self.df.columns:
             if "e_event_ael_id" in self.df.columns:
                 self.df = self.df.drop("e_event_ael_id")
-            import parsers.AEL.AEL as ael
-            ael_parser = ael.LogParser(messages=self.df[field])
+
+            from loglead.parsers import AELParser
+            ael_parser = AELParser(messages=self.df[field])
             ael_parser.parse() 
             df_new = ael_parser.df_log.select(pl.col("EventId").alias("e_event_ael_id"))
             self.df = pl.concat([self.df, df_new], how="horizontal")
@@ -210,12 +205,12 @@ class EventLogEnhancer:
         if reparse or "e_event_iplom_id" not in self.df.columns:
             if "e_event_iplom_id" in self.df.columns:
                 self.df = self.df.drop("e_event_iplom_id")
-            import parsers.iplom.IPLoM as iplom
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            #TODO Storing each parser in self might eat a lot of memeory 
-            iplom_parser = iplom.LogParser(messages=self.df[field], CT=CT,PST=PST,lowerBound=lower_bound)#FST not implemented
+            from loglead.parsers import IPLoMParser
+            #TODO Storing each parser in self might eat a lot of memeory
+            iplom_parser = IPLoMParser(messages=self.df[field], CT=CT, PST=PST, lowerBound=lower_bound)#FST not implemented
             iplom_parser.parse()
             df_output = pl.DataFrame({
                 "row_nr": [row[0] for row in iplom_parser.output],
@@ -232,7 +227,6 @@ class EventLogEnhancer:
             self.df = self.df.join(df_output, on="row_nr", how="left")
         return self.df
 
-
     #Faster version of IPLoM coming in 2024
     def parse_pliplom(self, field = "e_message_normalized",  reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
@@ -242,8 +236,8 @@ class EventLogEnhancer:
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
-            import parsers.pl_iplom.pl_iplom as pl_iplom
-            pliplom_parser = pl_iplom.IPLoM(self.df, CT=CT, FST=FST, PST=PST,lower_bound=lower_bound, single_outlier_event=single_outlier_event)
+            from loglead.parsers import PL_IPLoMParser
+            pliplom_parser = PL_IPLoMParser(self.df, CT=CT, FST=FST, PST=PST, lower_bound=lower_bound, single_outlier_event=single_outlier_event)
             df_new = pliplom_parser.parse()
             #df_new = plimplom_parser.merge_partitions_to_dataframe()
             df_new = df_new.select([
@@ -257,8 +251,8 @@ class EventLogEnhancer:
     def parse_lenma(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
-            import parsers.lenma.lenma_template as lmt
-            lenma_tm = lmt.LenmaTemplateManager(threshold=0.9)
+            from loglead.parsers import LenmaTemplateManager
+            lenma_tm = LenmaTemplateManager(threshold=0.9)
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_count()
@@ -286,10 +280,10 @@ class EventLogEnhancer:
     def parse_spell(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_spell_id" not in self.df.columns:
-            from parsers.pyspell.spell import lcsmap
+            from loglead.parsers import SpellParser
             #if "e_message_normalized" not in self.df.columns:
             #    self.normalize()
-            spell = lcsmap(r'\s+')
+            spell = SpellParser(r'\s+')
             self.df = self.df.with_columns(
                 spell_obj=pl.col(field)
                     .map_elements(lambda x: spell.insert(x), return_dtype=pl.Object))
@@ -316,7 +310,7 @@ class EventLogEnhancer:
         self._handle_prerequisites([field])
         if "e_bert_emb" not in self.df.columns:
             #Lazy import only if needed
-            from parsers.bert.bertembedding import BertEmbeddings
+            from loglead.parsers import BertEmbeddings
             #if "e_message_normalized" not in self.df.columns:
             #    self.normalize()
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")
@@ -401,7 +395,6 @@ class EventLogEnhancer:
 
         return self.df
 
-    
     def item_cumsum(self, column="e_message_normalized", chronological_order=True, ano_only=True, unique_only=True):
         self._handle_prerequisites([column, 'm_timestamp'])
         if ano_only:
@@ -431,131 +424,3 @@ class EventLogEnhancer:
 
         return self.df
 
-class SequenceEnhancer:
-    def __init__(self, df, df_seq):
-        self.df = df
-        self.df_seq = df_seq
-
-    def start_time(self):
-        df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').min().alias('start_time'))
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-
-    def end_time(self):
-        df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').max().alias('end_time'))
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-
-    def time_stamp(self):
-        #We used median as time stamp for sequence
-        df_temp = self.df.group_by('seq_id').agg(pl.col('m_timestamp').median().alias('time_stamp'))
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-
-
-    def seq_len(self):
-        # Count the number of rows for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        #Add an alias  that is compatible with the token len naming. 
-        #TODO Should be in events() function
-        self.df_seq = self.df_seq.with_columns(self.df_seq['seq_len'].alias('e_event_id_len'))
-
-        return self.df_seq
-
-    def events(self, event_col = "e_event_drain_id"):
-        # Aggregate event ids into a list for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(pl.col(event_col).alias(event_col))
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-
-
-    def tokens(self, token="e_words"):
-        #df_temp = self.df.group_by('seq_id').agg(pl.col(token).flatten().alias(token))
-        #Same as above but the above crashes due to out of memory problems. We might need this fix also in other rows
-        df_temp = self.df.select("seq_id", token).explode(token).group_by('seq_id').agg(pl.col(token))
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-
-        #lengths
-        df_temp = self.df.group_by('seq_id').agg(pl.col(token+"_len").sum().alias(token+"_len"))
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-
-        return self.df_seq
-    
-    def duration(self):
-        # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
-        df_temp = self.df.group_by('seq_id').agg(
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('duration'),
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('duration_sec')
-        )
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-
-    def eve_len(self):
-        # Count the number of rows for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(
-            eve_len_max=pl.col('e_chars_len').max(),
-            eve_len_min=pl.col('e_chars_len').min(),
-            eve_len_avg=pl.col('e_chars_len').mean(),
-            eve_len_med=pl.col('e_chars_len').median(),
-            eve_len_over1=(pl.col('e_chars_len') > 1).sum()
-        )
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq     
-    
-    def embeddings(self, embedding_column="e_bert_emb"):
-        # Aggregate by averaging the embeddings for each sequence (seq_id)
-        df_temp = self.df.select(pl.col("seq_id"), pl.col(embedding_column).list.to_struct()).unnest(embedding_column)
-        df_temp = df_temp.group_by('seq_id').mean()
-        df_temp = df_temp.select(pl.col("seq_id"),pl.concat_list(pl.col("*").exclude("seq_id")).alias(embedding_column))
-        # Join this result with df_sequences on seq_id
-        self.df_seq = self.df_seq.join(df_temp, on='seq_id')
-        return self.df_seq
-        
-    def next_event_prediction (self, event_col = "e_event_drain_id"):
-        if event_col not in self.df_seq.columns:#Ensure events are present otherwise no nep can be done
-            self.events(event_col)
-        nepn = nep.NextEventPredictionNgram()
-        #Create model and score with same data.
-        #This follows the enchancer logic that there is no splitting. In AD we operate with splits  
-        #Also sequence parsing is not done with splits so this follows the same logic
-        seq_data = self.df_seq[event_col].to_list()
-        nepn.create_ngram_model(seq_data)
-        #predicted events
-        preds, correct,  s_abs, spn_sum, spn_max = nepn.predict_list(seq_data)
-        self.df_seq = self.df_seq.with_columns(nep_predict = pl.Series(preds), 
-                                    nep_corr= pl.Series(correct),
-                                    nep_abs = pl.Series(s_abs),
-                                    nep_prob_nsum = pl.Series(spn_sum),
-                                    nep_prob_nmax = pl.Series(spn_max))
-        # Add average, max, and min columns for nep_corr
-        # This info is already in nep_prob_nmax with 1 being correct and <1 being zeros
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.mean().alias("nep_corr_avg"))
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.max().alias("nep_corr_max"))
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_corr").list.min().alias("nep_corr_min"))
-        # Add average, max, and min columns for nep_abs
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.mean().alias("nep_abs_avg"))
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.max().alias("nep_abs_max"))
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_abs").list.min().alias("nep_abs_min"))
-        # Add average, max, and min columns for nep_prob_nsum
-        # For prediction it looks as nep_prob_nmax is superior
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.mean().alias("nep_prob_nsum_avg"))
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.max().alias("nep_prob_nsum_max"))
-        #self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nsum").list.min().alias("nep_prob_nsum_min"))
-        # Add average, max, and min columns for nep_prob_nmax
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.mean().alias("nep_prob_nmax_avg"))
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.max().alias("nep_prob_nmax_max"))
-        self.df_seq = self.df_seq.with_columns(pl.col("nep_prob_nmax").list.min().alias("nep_prob_nmax_min"))
-
-        self._perplexity(probab_col = "nep_prob_nmax")
-        return self.df_seq
-
-    def _perplexity(self, probab_col = "nep_prob_nmax"): 
-        self.df_seq = self.df_seq.with_columns(pl.col(probab_col).list.eval(pl.element().log()) #Log of probabilties in a list
-                                    .list.mean() #Average of probs
-                                    .mul(-1).exp().alias(probab_col + "_perp")) #flip sign and exponent

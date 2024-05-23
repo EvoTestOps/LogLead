@@ -28,6 +28,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+
 #Bugs in logparser Iplom implementation. To be reported. "Fixed" in this file
 #No check that partitionL has IDs that are long enough. Default is 200. So if event is 201 long this will fail
 #https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L163
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 #https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L437C12-L437C31 
 # https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L477  
 
-class Partition:
+class _Partition:
     """Wrap around the logs and the step number"""
 
     def __init__(self, stepNo, numOfLogs=0, lenOfLogs=0):
@@ -46,7 +47,7 @@ class Partition:
         self.lenOfLogs = lenOfLogs
 
 
-class Event:
+class _Event:
     def __init__(self, eventStr):
         self.eventStr = eventStr
         if len(eventStr) == 1 and eventStr[0] == "Outlier": #Keeping the outlier event readable. 
@@ -56,7 +57,7 @@ class Event:
         self.eventCount = 0
 
 
-class Para:
+class _Para:
     """Para class
 
     Attributes
@@ -96,7 +97,7 @@ class Para:
 #       self.logformat = log_format
 
 
-class LogParser:
+class IPLoMParser:
     def __init__(
         self,
         messages,
@@ -113,7 +114,7 @@ class LogParser:
         keep_para=True,
 
     ):
-        self.para = Para(
+        self.para = _Para(
 #            log_format=log_format,
             indir=indir,
             outdir=outdir,
@@ -136,7 +137,7 @@ class LogParser:
 
         # Initialize some partitions which contain logs with different length
         for logLen in range(self.para.maxEventLen + 1):
-            self.partitionsL.append(Partition(stepNo=1, numOfLogs=0, lenOfLogs=logLen))
+            self.partitionsL.append(_Partition(stepNo=1, numOfLogs=0, lenOfLogs=logLen))
 
 
     def parse(self, logname="FakeName"):
@@ -250,7 +251,7 @@ class LogParser:
                     self.partitionsL[0].logLL += logDLL[key]
                     self.partitionsL[0].numOfLogs += len(logDLL[key])
                 else:
-                    newPartition = Partition(
+                    newPartition = _Partition(
                         stepNo=2,
                         numOfLogs=len(logDLL[key]),
                         lenOfLogs=partition.lenOfLogs,
@@ -360,7 +361,7 @@ class LogParser:
 
             newPartitionsD = {}
             if partition.stepNo == 2:
-                newPartitionsD["dumpKeyforMMrelationInStep2__"] = Partition(
+                newPartitionsD["dumpKeyforMMrelationInStep2__"] = _Partition(
                     stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                 )
             # Split partition
@@ -368,7 +369,7 @@ class LogParser:
                 # If is 1-1
                 if logL[p1] in oneToOneS:
                     if logL[p1] not in newPartitionsD:
-                        newPartitionsD[logL[p1]] = Partition(
+                        newPartitionsD[logL[p1]] = _Partition(
                             stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                         )
                     newPartitionsD[logL[p1]].logLL.append(logL)
@@ -382,14 +383,14 @@ class LogParser:
                     )
                     if split_rank == 1:
                         if logL[p1] not in newPartitionsD:
-                            newPartitionsD[logL[p1]] = Partition(
+                            newPartitionsD[logL[p1]] = _Partition(
                                 stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                             )
                         newPartitionsD[logL[p1]].logLL.append(logL)
                         newPartitionsD[logL[p1]].numOfLogs += 1
                     else:
                         if logL[p2] not in newPartitionsD:
-                            newPartitionsD[logL[p2]] = Partition(
+                            newPartitionsD[logL[p2]] = _Partition(
                                 stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                             )
                         newPartitionsD[logL[p2]].logLL.append(logL)
@@ -402,14 +403,14 @@ class LogParser:
                     )
                     if split_rank == 1:
                         if logL[p1] not in newPartitionsD:
-                            newPartitionsD[logL[p1]] = Partition(
+                            newPartitionsD[logL[p1]] = _Partition(
                                 stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                             )
                         newPartitionsD[logL[p1]].logLL.append(logL)
                         newPartitionsD[logL[p1]].numOfLogs += 1
                     else:
                         if logL[p2] not in newPartitionsD:
-                            newPartitionsD[logL[p2]] = Partition(
+                            newPartitionsD[logL[p2]] = _Partition(
                                 stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                             )
                         newPartitionsD[logL[p2]].logLL.append(logL)
@@ -425,14 +426,14 @@ class LogParser:
                     else:
                         if len(p1Set) < len(p2Set):
                             if logL[p1] not in newPartitionsD:
-                                newPartitionsD[logL[p1]] = Partition(
+                                newPartitionsD[logL[p1]] = _Partition(
                                     stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                                 )
                             newPartitionsD[logL[p1]].logLL.append(logL)
                             newPartitionsD[logL[p1]].numOfLogs += 1
                         else:
                             if logL[p2] not in newPartitionsD:
-                                newPartitionsD[logL[p2]] = Partition(
+                                newPartitionsD[logL[p2]] = _Partition(
                                     stepNo=3, numOfLogs=0, lenOfLogs=partition.lenOfLogs
                                 )
                             newPartitionsD[logL[p2]].logLL.append(logL)
@@ -462,7 +463,7 @@ class LogParser:
         #Bug fix
         #if self.para.PST == 0 and self.partitionsL[0].numOfLogs != 0:
         if self.para.PST != 0 and self.partitionsL[0].numOfLogs != 0:
-            event = Event(["Outlier"])
+            event = _Event(["Outlier"])
             event.eventCount = self.partitionsL[0].numOfLogs
             self.eventsL.append(event)
 
@@ -492,7 +493,7 @@ class LogParser:
                 else:
                     e[columnIdx] = "<*>"
 
-            event = Event(e)
+            event = _Event(e)
             event.eventCount = partition.numOfLogs
 
             self.eventsL.append(event)

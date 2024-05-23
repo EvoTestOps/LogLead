@@ -1,11 +1,14 @@
-
-import polars as pl 
 import time
 import logging
+
+import polars as pl
+
 logger = logging.getLogger(__name__)
 
+__all__ = ['PL_IPLoMParser']
 
-class Partition:
+
+class _Partition:
     def __init__(self, df, len, split_trace):
         self.df = df
         #self.has_subpartitions = False
@@ -36,15 +39,13 @@ class Partition:
         #logger.info (f"Template created: {self.template}")
 
 
-
-
 #TODO 
 # 1) Log Template creation, DONE
 # 2) check why we get no trace S1 S3. We should have atleast some        
 # 2) Log Id Creation, 
 # 3) Rolling log IDs and templates back to Enhancer
 # how it is done on tipping
-class IPLoM:
+class PL_IPLoMParser:
     def __init__(self, df, CT = 0.35, PST=0.001, FST=0.00001,lower_bound = 0.25, single_outlier_event = True):
         self.df = df
         self.CT = CT #Cluster goodness threshold
@@ -199,7 +200,6 @@ class IPLoM:
         logger.info (f"Merge done in {time_elapsed:.2f}")
         return self.acc_df
 
-
     def s1_clust_by_message_length(self):
         logger.debug ("s1 start")
         #STEP1 - Cluster (aggragete) logs based on word length
@@ -226,7 +226,7 @@ class IPLoM:
             df_part = df_aggre_s1[i].with_columns(pl.col("events", "row_nr")).explode("events", "row_nr")
             df_part = df_part.with_columns(pl.col("events").list.to_struct()).unnest("events")
             df_part = df_part.drop("e_words_len", "part_len")
-            self.add_partition(Partition(df = df_part, len=len_words, split_trace="S1 "))
+            self.add_partition(_Partition(df = df_part, len=len_words, split_trace="S1 "))
         return df_aggre_s1 #For easier debugging
     
     def add_partition(self, partition, parent_partition = None):
@@ -256,7 +256,7 @@ class IPLoM:
             for key, dataframe in row_dict.items():
                 logger.debug(f"s2 least frequent for word dataframe Appending: {key}")
                 #partition.subpartitions.append(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+" S2"))
-                self.add_partition(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+"S2 "), parent_partition=partition)
+                self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S2 "), parent_partition=partition)
             partition.df = None #To save memory
         else: 
             self.df_s2_dict = None
@@ -446,12 +446,12 @@ class IPLoM:
         for key, dataframe in p1_part_dict.items():
             logger.debug(f"S3P1 dict with key Appending: {key}")
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
-            self.add_partition(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+"S3 "), parent_partition=partition)
+            self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S3 "), parent_partition=partition)
        
         for key, dataframe in p2_part_dict.items():
             logger.debug(f"S3P2 dict with key Appending: {key}")
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
-            self.add_partition(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+"S3 "), parent_partition=partition)
+            self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S3 "), parent_partition=partition)
         #part_df is reduced in the process. If we do assign here we the same log rows in multiple levels
         
      
@@ -459,7 +459,6 @@ class IPLoM:
             partition.df = None 
         else:
             partition.df = part_df
-
 
     def _get_rank_position(self, len, card, one_to_m):
         dist = card / len
@@ -474,8 +473,6 @@ class IPLoM:
             else:
                 return 2
 
-              
-        
     def _relation_type(self, df_part, p1, p2):
         # Get the column names from indices
         col_p1 = df_part.columns[p1]

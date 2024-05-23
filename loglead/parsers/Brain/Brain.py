@@ -15,10 +15,8 @@
 # limitations under the License.
 # =========================================================================
 
-from datetime import datetime
 from collections import Counter
-import os
-import pandas as pd
+
 import regex as re
 
 RED = "\033[31m"
@@ -26,7 +24,7 @@ RESET = "\033[0m"
 PINK = "\033[38;2;255;192;203m"
 
 
-class LogParser:
+class BrainParser:
     def __init__(
         self,
         messages,
@@ -68,7 +66,7 @@ class LogParser:
 
         template_set = {}
         for key in group_len.keys():
-            Tree = tupletree(
+            Tree = _tupletree(
                 sorted_tuple_vector[key],
                 word_combinations[key],
                 word_combinations_reverse[key],
@@ -81,7 +79,7 @@ class LogParser:
             parse_result = Tree.down_split(
                 root_set_detail_ID, self.threshold, root_set_detail
             )
-            template_set.update(output_result(parse_result))
+            template_set.update(_output_result(parse_result))
         #endtime = datetime.now()
         #print("Parsing done...")
         #print("Time taken   =   " + PINK + str(endtime - starttime) + RESET)
@@ -251,7 +249,7 @@ class LogParser:
         return group_len, tuple_vector, frequency_vector
 
 
-class tupletree:
+class _tupletree:
     """
     tupletree(sorted_tuple_vector[key], word_combinations[key], word_combinations_reverse[key], tuple_vector[key], group_len[key])
 
@@ -375,7 +373,7 @@ class tupletree:
         return root_set_detail_ID
 
 
-def output_result(parse_result):
+def _output_result(parse_result):
     template_set = {}
     for key in parse_result.keys():
         for pr in parse_result[key]:
@@ -388,7 +386,7 @@ def output_result(parse_result):
                     template.append("<*>")
                     i += 1
                     continue
-                if exclude_digits(this):
+                if _exclude_digits(this):
                     template.append("<*>")
                     i += 1
                     continue
@@ -400,7 +398,7 @@ def output_result(parse_result):
 
 
 
-def exclude_digits(string):
+def _exclude_digits(string):
     """
     exclude the digits-domain words from partial constant
     """

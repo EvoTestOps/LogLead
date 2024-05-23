@@ -1,11 +1,15 @@
+import time
+
 import polars as pl
 import numpy as np
-from collections import Counter
+import pandas as pd
+import matplotlib.pyplot as plt
 #Faster sklearn enabled. See https://intel.github.io/scikit-learn-intelex/latest/
 # Causes problems in RandomForrest. We have to use older version due to tensorflow numpy combatibilities
 # from sklearnex import patch_sklearn
 #patch_sklearn()
-from sklearn.feature_extraction.text import CountVectorizer
+from scipy.sparse import hstack
+from xgboost import XGBClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import LinearSVC
@@ -13,30 +17,21 @@ from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
 from sklearn.svm import OneClassSVM
 from sklearn.metrics import f1_score
 from sklearn.metrics import confusion_matrix
-import csv
-from io import StringIO
-import pandas as pd
-from loglead.RarityModel import RarityModel
-from loglead.OOV_detector import OOV_detector
-
-
 from sklearn.metrics import accuracy_score
-from scipy.sparse import hstack
-import scipy.sparse
-import math
-import time
-
-from scipy.sparse import csr_matrix
-import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import roc_auc_score
+from sklearn.feature_extraction.text import CountVectorizer
 
-class AnomalyDetection:
+from .RarityModel import RarityModel
+from .OOV_detector import OOV_detector
+
+__all__ = ['AnomalyDetector']
+
+
+class AnomalyDetector:
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
                  store_scores=False, print_scores=True, auc_roc=False):
         self.item_list_col = item_list_col
@@ -44,13 +39,12 @@ class AnomalyDetection:
         self.label_col = label_col
         self.emb_list_col = emb_list_col
         self.store_scores = store_scores
-        self.storage = ModelResultsStorage()
+        self.storage = _ModelResultsStorage()
         self.print_scores=print_scores
         self.train_vocabulary = None
         self.auc_roc = auc_roc
 
-        
-    def test_train_split(self, df, test_frac=0.9, shuffle=True,vec_name="CountVectorizer"):
+    def test_train_split(self, df, test_frac=0.9, shuffle=True, vectorizer_class=CountVectorizer):
         # Shuffle the DataFrame
         if shuffle:
             df = df.sample(fraction = 1.0, shuffle=True)
@@ -65,18 +59,18 @@ class AnomalyDetection:
         # Split the DataFrame using head and tail
         self.train_df = df.head(-test_size) #Returns all rows expect last abs(-test_size)
         self.test_df = df.tail(test_size) #Returns the last test_size rows
-        self.prepare_train_test_data(vec_name=vec_name)
+        self.prepare_train_test_data(vectorizer_class=vectorizer_class)
         
-    def prepare_train_test_data(self, vec_name="CountVectorizer"):
+    def prepare_train_test_data(self, vectorizer_class=CountVectorizer):
         #Prepare all data for running
-        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vec_name)
-        self.X_test, self.labels_test = self._prepare_data(False, self.test_df,vec_name)
+        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vectorizer_class)
+        self.X_test, self.labels_test = self._prepare_data(False, self.test_df, vectorizer_class)
         #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()), vec_name)
-        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vec_name)
+        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()),
+                                                     vectorizer_class)
+        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vectorizer_class)
      
-        
-    def _prepare_data(self, train, df_seq, vec_name):
+    def _prepare_data(self, train, df_seq, vectorizer_class):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
 
@@ -85,7 +79,6 @@ class AnomalyDetection:
             # Extract the column
             column_data = df_seq.select(pl.col(self.item_list_col))             
             events = column_data.to_series().to_list()
-            vectorizer_class = globals()[vec_name]
             # We are training
             if train:
                 # Check the datatype  
@@ -117,8 +110,6 @@ class AnomalyDetection:
 
         return X, labels    
         
-
-         
     def train_model(self, model, filter_anos=False):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
@@ -164,8 +155,6 @@ class AnomalyDetection:
                 # Supervised models give probabilities using predict_proba method
                 predictions_proba = self.model.predict_proba(X_test_to_use)[:, 1]
             df_seq = self.test_df.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))      
-
-
 
         if self.print_scores:
             self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
@@ -220,16 +209,17 @@ class AnomalyDetection:
                 len_col = self.item_list_col+"_len"
         self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
         
-
-    def evaluate_all_ads(self, disabled_methods=[]):
-        for method_name in sorted(dir(self)): 
-            if (method_name.startswith("train_") 
-                and not method_name.startswith("train_model") 
-                and method_name not in disabled_methods):
+    def evaluate_all_ads(self, disabled_methods=None):
+        if disabled_methods is None:
+            disabled_methods = []
+        for method_name in sorted(dir(self)):
+            if (method_name.startswith("train_")
+                    and not method_name.startswith("train_model")
+                    and method_name not in disabled_methods):
                 method = getattr(self, method_name)
                 if callable(method):
                     if not self.print_scores:
-                        print (f"Running {method_name}")
+                        print(f"Running {method_name}")
                     time_start = time.time()
                     method()
                     self.predict()
@@ -245,8 +235,7 @@ class AnomalyDetection:
             method(**params)
             self.predict()
 
-
-    def _print_evaluation_scores(self, y_test, y_pred,y_pred_proba, model, f_importance = False, auc_roc = True):
+    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -294,16 +283,38 @@ class AnomalyDetection:
             X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
             if isinstance(self.model, IsolationForest):
                 y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
-                print(f"AUCROC: {auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
             if isinstance(self.model, KMeans):
                 y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
-                print(f"AUCROC: {auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
             if isinstance(self.model, (RarityModel, OOV_detector)):
-                print(f"AUCROC: {auc_roc_analysis(y_test,  model.scores, titlestr):.4f}")
+                print(f"AUCROC: {self._auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
+
+    @staticmethod
+    def _auc_roc_analysis(labels, preds, titlestr ="ROC", plot=False):
+        # Compute the ROC curve
+        fpr, tpr, thresholds = roc_curve(labels, preds)
+        # Compute the AUC from the points of the ROC curve
+        roc_auc = auc(fpr, tpr)
+
+        if plot:
+            # Plot the ROC curve
+            plt.figure()
+            lw = 2
+            plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(titlestr)
+            plt.legend(loc="lower right")
+            plt.show()
+
+        return roc_auc
 
 
-
-class ModelResultsStorage:
+class _ModelResultsStorage:
     def __init__(self):
         self.test_results = []
 
@@ -405,9 +416,6 @@ class ModelResultsStorage:
         df_pivot = df_pivot.map(lambda x: f"{x:.3f}")
         return df_pivot
         
-        
-        return df_pivot
-
     def print_confusion_matrices(self, model_filter=None, signature_filter=None):
         for result in self.test_results:
             #model_name = type(result['model']).__name__
@@ -428,7 +436,6 @@ class ModelResultsStorage:
             print("Confusion Matrix:")
             print(cm)
             
-
     def print_scores(self, model_filter=None, signature_filter=None, score_type='all'):
         # Check for valid score_type
         valid_score_types = ['accuracy', 'f1', 'all']
@@ -457,37 +464,3 @@ class ModelResultsStorage:
                 print(f"F1 Score: {f1:.4f}")
 
 
-
-def auc_roc_analysis(labels, preds, titlestr = "ROC", plot=False):
-    # Compute the ROC curve
-    fpr, tpr, thresholds = roc_curve(labels, preds)
-    # Compute the AUC from the points of the ROC curve
-    roc_auc = auc(fpr, tpr)
-
-    if plot:
-        # Plot the ROC curve
-        plt.figure()
-        lw = 2
-        plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
-        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(titlestr)
-        plt.legend(loc="lower right")
-        plt.show()
-
-    return roc_auc
-
-    
-def test_train_split(df, test_frac):
-    # Shuffle the DataFrame
-    df = df.sample(fraction = 1.0, shuffle=True)
-    # Split ratio
-    test_size = int(test_frac * df.shape[0])
-
-    # Split the DataFrame using head and tail
-    test_df = df.head(test_size)
-    train_df = df.tail(-test_size)
-    return train_df, test_df

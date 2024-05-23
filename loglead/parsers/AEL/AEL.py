@@ -15,17 +15,19 @@
 # =========================================================================
 
 
-import regex as re
-import os
 import hashlib
-import pandas as pd
-from datetime import datetime
+# from datetime import datetime
 from collections import defaultdict
 from functools import reduce
+
 import polars as pl
+import regex as re
+import pandas as pd
+
+__all__ = ['AELParser']
 
 
-class Event:
+class _Event:
     def __init__(self, logidx, Eventstr=""):
         self.id = hashlib.md5(Eventstr.encode("utf-8")).hexdigest()[0:8]
         self.logs = [logidx]
@@ -37,22 +39,22 @@ class Event:
         self.id = hashlib.md5(self.Eventstr.encode("utf-8")).hexdigest()[0:8]
 
 
-class LogParser:
+class AELParser:
     def __init__(
         self,
         messages,
-        #indir,
-        #outdir,
-        #log_format,
+        # indir,
+        # outdir,
+        # log_format,
         minEventCount=2,
         merge_percent=1,
         rex=[],
         keep_para=True,
     ):
         self.messages = messages
-        #self.logformat = log_format
-        #self.path = indir
-        #self.savePath = outdir
+        # self.logformat = log_format
+        # self.path = indir
+        # self.savePath = outdir
         self.rex = rex
         self.minEventCount = minEventCount
         self.merge_percent = merge_percent
@@ -63,8 +65,8 @@ class LogParser:
         self.keep_para = keep_para
 
     def parse(self, logname="Fakename"):
-        start_time = datetime.now()
-        #print("Parsing file: " + os.path.join(self.path, logname))
+        # start_time = datetime.now()
+        # print("Parsing file: " + os.path.join(self.path, logname))
         self.logname = logname
         self.load_data()
         self.tokenize()
@@ -109,7 +111,7 @@ class LogParser:
                         event.logs.append(logidx)
                         break
                 if not matched:
-                    abin["Events"].append(Event(logidx, log))
+                    abin["Events"].append(_Event(logidx, log))
 
     def reconcile(self):
         """
@@ -183,7 +185,6 @@ class LogParser:
         #)
         self.df_log = pl.DataFrame(self.df_log)
         self.df_event = pl.DataFrame(self.df_event)
-
 
     def merge_event(self, e1, e2):
         for pos in range(len(e1.EventToken)):

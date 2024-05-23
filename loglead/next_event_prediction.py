@@ -1,36 +1,37 @@
-#This file implements next event prediction.
-#It is a slightly modified version from https://github.com/EvoTestOps/next_event_prediction
-#That was presented in paper
+# This file implements next event prediction.
+# It is a slightly modified version from https://github.com/EvoTestOps/next_event_prediction
+# That was presented in paper
 # Mäntylä M., Varela M., Hashemi S. 
-#"Pinpointing Anomaly Events in Logs from Stability Testing - N-Grams vs. Deep-Learning",
-#5th International Workshop on the Next Level of Test Automation (NEXTA), ICST Workshops, pp. 1-8, 2022, 
-#Preprint: https://arxiv.org/abs/2202.09214
-#Only N-gram version implemented here. For LSTM see link above. 
+# "Pinpointing Anomaly Events in Logs from Stability Testing - N-Grams vs. Deep-Learning",
+# 5th International Workshop on the Next Level of Test Automation (NEXTA), ICST Workshops, pp. 1-8, 2022,
+# Preprint: https://arxiv.org/abs/2202.09214
+# Only N-gram version implemented here. For LSTM see link above.
 
 
 from collections import Counter
-from collections import defaultdict  
-import numpy as np
-import time
-import polars as pl
+from collections import defaultdict
 
-#N-gram based next event prediction
-#Assumes parsed input e.g. via Drain parser 
-#Implemented on top of Python dictionaries with O(1) lookup time. 
-#Run in O(n) time 
+import numpy as np
+
+__all__ = ['NextEventPredictionNgram']
+
+
 class NextEventPredictionNgram:
+    """ N-gram based next event prediction
+        Assumes parsed input e.g. via Drain parser
+        Implemented on top of Python dictionaries with O(1) lookup time.
+        Runs in O(n) time
+    """
     
-    _start_ ="SoS" #Start of Sequence used in padding the sequence
-    _end_ = "EoS" #End of Sequence used in padding the sequence
+    _start_ = "SoS"  # Start of Sequence used in padding the sequence
+    _end_ = "EoS"  # End of Sequence used in padding the sequence
 
     def __init__(self, ngrams=5):
         self.n_gram_window_len = ngrams  # Length of window. Default is 5 (4+1: use 4 to predict 1)
-
         self.n_gram_counter = Counter()  # Counter for sequences length n_gram_window_len
         self.n_gram_counter_1 = Counter()  # Counter for sequences length n_gram_window_len-1
         self.n1_gram_dict = defaultdict()  # to keep mappings of possible following events e1 e2 -> e1 e2 e3, e1 e2 e4, 
         self.n1_gram_winner = dict()  # The event n following n-1 gram (the prediction)
-
 
     def create_ngram_model(self, train_data):
         ngrams = list()
@@ -39,27 +40,26 @@ class NextEventPredictionNgram:
             n, n_minus_1 = self.slice_ngrams(seq)
             ngrams.extend(n)
             ngrams_minus_1.extend(n_minus_1)
-        self.n_gram_counter += Counter (ngrams)
-        self.n_gram_counter_1 += Counter (ngrams_minus_1)
+        self.n_gram_counter += Counter(ngrams)
+        self.n_gram_counter_1 += Counter(ngrams_minus_1)
 
         for idx, s in enumerate(ngrams):
             #dictionary for faster access from n-1 grams to n-grams, e.g. from  [e1 e2 e3] -> [e1 e2 e3 e4]; [e1 e2 e3] -> [e1 e2 e3 e5] etc...
-            self.n1_gram_dict.setdefault(ngrams_minus_1[idx],[]).append(s)
+            self.n1_gram_dict.setdefault(ngrams_minus_1[idx], []).append(s)
             #precompute the most likely sequence following n-1gram. Needed to keep prediction times fast
-            if (ngrams_minus_1[idx] in self.n1_gram_winner): #is there existing winner 
+            if ngrams_minus_1[idx] in self.n1_gram_winner: #is there existing winner
                 n_gram = self.n1_gram_winner[ngrams_minus_1[idx]]
-                if (self.n_gram_counter[n_gram] < self.n_gram_counter[s]): #there is but we are bigger replace
+                if self.n_gram_counter[n_gram] < self.n_gram_counter[s]: #there is but we are bigger replace
                     self.n1_gram_winner[ngrams_minus_1[idx]] = s
             else: 
                 self.n1_gram_winner[ngrams_minus_1[idx]] = s #no n-1-gram key or winner add a new one...
 
-
-    #Produce required n-grams. E.g. With sequence [e1 e2 e3 e4 e5] and n_gram_window_len=3 we produce [e1 e2 e3], [e2 e3 e4], and [e3 e4 5] 
-    def slice_ngrams (self, seq):
+    #Produce required n-grams. E.g. With sequence [e1 e2 e3 e4 e5] and n_gram_window_len=3 we produce [e1 e2 e3], [e2 e3 e4], and [e3 e4 5]
+    def slice_ngrams(self, seq):
         #Add SoS and EoS
         #with n-gram 3 it is SoS SoS E1 E2 E3 EoS
         #No need to pad more than one EoS as the final event to be predicted is EoS
-        seq = [self._start_]*(self.n_gram_window_len-1) +seq+[self._end_]
+        seq = [self._start_]*(self.n_gram_window_len-1) + seq + [self._end_]
         ngrams = list()
         ngrams_minus_1 = list()
         for i in range(self.n_gram_window_len, len(seq)+1):#len +1 because [0:i] leaves out the last element 
@@ -93,8 +93,6 @@ class NextEventPredictionNgram:
         # Return all collected data
         return ngram_preds, ngram_preds_correct, scores_abs_list, scores_prop_norm_sum_list, scores_prop_norm_max_list
     
-
-
     # Return five nep results
     # 1. prediction = What was the predicted event (k=1): E1 E2 E3
     # 2. correct_preds = Binary 1 or 0 if the prediction is correct 1 1 0

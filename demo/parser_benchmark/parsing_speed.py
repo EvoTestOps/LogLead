@@ -1,26 +1,30 @@
 import gc
 import time
-import yaml
-import sys
-import polars as pl
-import os
-print(os.getcwd())
-#sys.path.append('../..')
-import sys
-sys.path.append('/home/mmantyla/LogLead')
-import loglead.loaders as loaders  # Assuming loaders are correctly organized
-#from loglead.loaders.hadoop import HadoopLoader
-import loglead.enhancer as er
-import loglead.anomaly_detection as ad
 import argparse
+
+import yaml
+import polars as pl
+import sys
+import os
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
+sys.path.append(os.environ.get("LOGLEAD_PATH"))
+print(LOGLEAD_PATH)
+from loglead.loaders import *
+from loglead.enhancers import EventLogEnhancer
 
 # Base path for datasets
 full_data = "/home/mmantyla/Datasets"
 
 # Load the configuration
-default_config = '/home/mmantyla/LogLead/demo/parser_benchmark/speed_config.yml'
+#default_config = '/home/mmantyla/LogLead/demo/parser_benchmark/speed_config.yml'
+# Base path for datasets
+full_data = os.environ.get("LOG_DATA_PATH")
+# Load the configuration
+default_config = LOGLEAD_PATH + '/demo/parser_benchmark/speed_config.yml'
 #default_config = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_missing.yml'
-default_threshold = 600 #How many seconds is the threshold after which remaining runs for the parser are skipped
+default_threshold = 600  # How many seconds is the threshold after which remaining runs for the parser are skipped
 #config_path = '/home/mmantyla/LogLead/demo/parser_speed_tests/config_fiplom.yml'
 
 # Adding argparse for command-line argument parsing
@@ -32,16 +36,18 @@ parser.add_argument('-t', dest='threshold_seconds', type=int, default=default_th
 args = parser.parse_args()
 
 
-
 def load_config(config_path):
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
+
 config = load_config(args.config_path)
+
 
 def proportion_to_float(proportion_str):
     numerator, denominator = map(int, proportion_str.split('/'))
     return numerator / denominator
+
 
 def is_excluded(parser, dataset, proportion, exclusions):
     # Check if the proportion is a string and convert it to a float if necessary
@@ -64,7 +70,6 @@ def is_excluded(parser, dataset, proportion, exclusions):
 # Example usage remains the same
 
 
-
 # Main processing loop
 for dataset_name, dataset_info in config['datasets'].items():
     gc.collect()
@@ -72,9 +77,10 @@ for dataset_name, dataset_info in config['datasets'].items():
     print(f"Processing dataset: {dataset_name}")
     
     # Dynamic dataset loading based on configuration
-    loader_class = getattr(loaders, dataset_info['loader'])
+    loader_class = eval(f"{dataset_info['loader']}")
     loader_args = {key: full_data + value if key.endswith('name') else value 
                    for key, value in dataset_info.items() if key != 'loader'}
+    print (f"Loader: {loader_class}, args:{loader_args}")
     loader = loader_class(**loader_args)
     time_start = time.time()
 
@@ -93,7 +99,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     #    df = df.filter(pl.col("system_name") == "TrainTicket")
     df = df.select(pl.col("m_message"))
     
-    enhancer = er.EventLogEnhancer(df)
+    enhancer = EventLogEnhancer(df)
     time_start = time.time()
     df = enhancer.normalize()
     df = enhancer.words(column="e_message_normalized")
@@ -101,10 +107,9 @@ for dataset_name, dataset_info in config['datasets'].items():
     print(f'Data normalized and split to words {time_elapsed:.2f} seconds')
     import logging
     logging.basicConfig(level=logging.ERROR,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S')
     logger = logging.getLogger(__name__)
-
 
     for parser in config['parsers']:
         parser_name = parser['name']
@@ -119,12 +124,12 @@ for dataset_name, dataset_info in config['datasets'].items():
             
             # Reduce the dataframe according to the current fraction
             # gc.collect() might be necessary if memory management is a concern
-            loader_class = getattr(loaders, "BaseLoader")
+            loader_class = BaseLoader
             loader2 = loader_class(df=df, filename="Fake")
             df_reduced = loader2.reduce_dataframes(frac=proportion)
             
             # Parse
-            enhancer_reduced = er.EventLogEnhancer(df_reduced)
+            enhancer_reduced = EventLogEnhancer(df_reduced)
             time_start = time.time()
             
             method_to_call = getattr(enhancer_reduced, parser_call)
@@ -146,9 +151,6 @@ for dataset_name, dataset_info in config['datasets'].items():
             #templates_str = ", ".join(map(str, templates_to_show))  # Convert each template to string in case they are not.
             #print(f'Templates: {templates_str}')
     
-
-
-
         # for proportion_str in config['proportions']:
         #     proportion = proportion_to_float(proportion_str)
             

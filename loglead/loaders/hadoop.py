@@ -1,7 +1,12 @@
-from loglead.loaders.base import BaseLoader
-import polars as pl
 import os
 import glob
+
+import polars as pl
+
+from .base import BaseLoader
+
+__all__ = ['HadoopLoader']
+
 
 class HadoopLoader(BaseLoader):
     def __init__(self, filename, df=None, df_seq=None, filename_pattern=None, labels_file_name=None):
@@ -34,7 +39,8 @@ class HadoopLoader(BaseLoader):
             # Iterate over all files in the subdirectory that match the given pattern
             for file in glob.glob(file_pattern):
                 try:
-                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator, row_count_name="row_nr_per_file")
+                    q = pl.scan_csv(file, has_header=False, infer_schema_length=0,
+                                    separator=self._csv_separator, row_count_name="row_nr_per_file")
                     q = q.with_columns(
                         pl.lit(seq_id).alias('seq_id'), #Folder is seq_id
                         pl.lit(os.path.basename(file)).alias('seq_id_sub') #File is seq_id_sub
@@ -126,8 +132,6 @@ class HadoopLoader(BaseLoader):
         })
         return label_df
     
-        
-        
     def _parse_datetimes(self):
         parsed_times = self.df.select(pl.concat_str([pl.col("date"), pl.col("time")]).alias("m_timestamp"))
 

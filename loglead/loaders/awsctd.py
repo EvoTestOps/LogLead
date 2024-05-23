@@ -1,7 +1,12 @@
-from loglead.loaders.base import BaseLoader
-import polars as pl
 from glob import glob
 import os
+
+import polars as pl
+
+from .base import BaseLoader
+
+__all__ = ['AWSCTDLoader']
+
 
 class AWSCTDLoader(BaseLoader):
     """
@@ -14,7 +19,6 @@ class AWSCTDLoader(BaseLoader):
         super().__init__(filename, df, df_seq)
         self._mandatory_columns = ["m_message"]
 
-          
     def load(self):
         m_messages = []
         seq_ids = []
@@ -30,7 +34,8 @@ class AWSCTDLoader(BaseLoader):
                     label = line_parts[-1]
                     if label == "Clean":
                         label = "Normal"
-                    seq_id = logfile_parts[-2] + '/' + logfile_parts[-1].replace('.csv', '') + '_' + str(line_nr)  # Use filename + incrementing id per sequence
+                    # Use filename + incrementing id per sequence
+                    seq_id = logfile_parts[-2] + '/' + logfile_parts[-1].replace('.csv', '') + '_' + str(line_nr)
 
                     for event_id in line_parts[:-1]:
                         # Append data to lists

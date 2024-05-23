@@ -3,9 +3,11 @@
 
 import re
 import json
-import pickle
 
-class lcsobj():
+__all__ = ['SpellParser']
+
+
+class _lcsobj():
 
     def __init__(self, objid, seq, lineid, refmt):
         self._refmt = refmt
@@ -169,7 +171,8 @@ class lcsobj():
     def get_id(self):
         return self._id
 
-class lcsmap():
+
+class SpellParser():
 
     def __init__(self, refmt):
         self._refmt = refmt
@@ -183,7 +186,7 @@ class lcsmap():
         obj = self.match(seq)
         if obj == None:
             self._lineid += 1
-            obj = lcsobj(self._id, seq, self._lineid, self._refmt)
+            obj = _lcsobj(self._id, seq, self._lineid, self._refmt)
             self._lcsobjs.append(obj)
             self._id += 1
         else:
@@ -219,22 +222,3 @@ class lcsmap():
         for i in self._lcsobjs:
             print(count, i.tojson())
             count += 1
-
-
-def save(filename, spell_lcsmap):
-    if type(spell_lcsmap) == lcsmap:
-        with open(filename,'wb') as f:
-            pickle.dump(spell_lcsmap, f)
-    else:
-        if __debug__ == True:
-            print("%s isnt slm object"%filename)
-
-def load(filename):
-    with open(filename,'rb') as f:
-        slm = pickle.load(f)
-        if type(slm) == lcsmap:
-            return slm
-        else:
-            if __debug__ == True:
-                print("%s isnt slm object"%filename)
-            return None

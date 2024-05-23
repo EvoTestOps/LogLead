@@ -1,12 +1,13 @@
-import polars as pl
 import sys
-import polars as pl
 import glob
 import os
+
+import polars as pl
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
-import loglead.anomaly_detection as ad
+from loglead import AnomalyDetector
 
 # Set your directory
 home_directory = os.path.expanduser('~')
@@ -15,8 +16,8 @@ test_data_path = os.path.join(home_directory, "Datasets", "test_data")
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
 
-print ("Anomaly detectors test starting.")
-print (f"Found files {all_files}")
+print("Anomaly detectors test starting.")
+print(f"Found files {all_files}")
 # Extract unique dataset names with '_eh_' , excluding '_seq' files
 datasets = set()
 for f in all_files:
@@ -44,7 +45,7 @@ for dataset in datasets:
         df["normal"].sum() > 10 and
         df["anomaly"].sum() > 10):
             print(f"Running event anomaly detectors with {col}")
-            sad =  ad.AnomalyDetection(item_list_col=col, print_scores= False, store_scores=True)
+            sad = AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
             sad.test_train_split (df, test_frac=0.5) 
             sad.evaluate_all_ads(disabled_methods=disabled_methods)
 
@@ -64,7 +65,7 @@ for dataset in datasets:
             df["normal"].sum() > 10 and
             df["anomaly"].sum() > 10):
                 print(f"Running seqeuence anomaly detectors with {col}")
-                sad =  ad.AnomalyDetection(item_list_col=col, print_scores= False, store_scores=True)
+                sad =  AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
                 #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
                 sad.test_train_split (df_seq, test_frac=0.2) 
                 sad.evaluate_all_ads(disabled_methods=disabled_methods)
@@ -73,9 +74,9 @@ for dataset in datasets:
         "anomaly" in df_seq.columns and 
         df_seq["normal"].sum() > 10 and
         df_seq["anomaly"].sum() > 10):
-            sad =  ad.AnomalyDetection(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
+            sad = AnomalyDetector(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
             #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
             sad.test_train_split (df_seq, test_frac=0.2) 
             sad.evaluate_all_ads(disabled_methods=[])        
 
-print ("Anomaly detectors test complete.")
+print("Anomaly detectors test complete.")
