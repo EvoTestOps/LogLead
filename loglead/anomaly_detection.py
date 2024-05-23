@@ -217,11 +217,11 @@ class AnomalyDetector:
         for method in train_methods:
             if self.print_scores:
                 print(f"Running {method}")
-            time_start = time.time()
+            time_start = time.process_time()
             method()
             self.predict()
             if self.print_scores:
-                print(f'Total time: {time.time()-time_start:.2f} seconds')
+                print(f'Total time: {time.process_time()-time_start:.2f} seconds')
         if self.print_scores:
             print("---------------------------------------------------------------")
 
