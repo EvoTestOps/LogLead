@@ -183,12 +183,12 @@ class AnomalyDetector:
         self.train_model(IsolationForest, filter_anos=filter_anos,
                          n_estimators=n_estimators, max_samples=max_samples, contamination=contamination)
                           
-    def train_LOF(self, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
+    def train_LOF(self, n_neighbors=20, contamination="auto", filter_anos=True):
         #LOF novelty=True model needs to be trained without anomalies
         #If we set novelty=False then Predict is no longer available for calling.
         #It messes up our general model prediction routine
         self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
-                         max_samples=max_samples, contamination=contamination, novelty=True)
+                         contamination=contamination, novelty=True)
     
     def train_KMeans(self):
         self.train_model(KMeans, n_init="auto", n_clusters=2)
