@@ -170,7 +170,7 @@ class AnomalyDetector:
         return df_seq 
        
     def train_LR(self, max_iter=4000, tol=0.0003):
-        self.train_model(LogisticRegression, max_iter=max_iter)
+        self.train_model(LogisticRegression, max_iter=max_iter, tol=tol)
     
     def train_DT(self):
         self.train_model(DecisionTreeClassifier)
@@ -187,7 +187,8 @@ class AnomalyDetector:
         #LOF novelty=True model needs to be trained without anomalies
         #If we set novelty=False then Predict is no longer available for calling.
         #It messes up our general model prediction routine
-        self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,  contamination=contamination, novelty=True)
+        self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
+                         max_samples=max_samples, contamination=contamination, novelty=True)
     
     def train_KMeans(self):
         self.train_model(KMeans, n_init="auto", n_clusters=2)
