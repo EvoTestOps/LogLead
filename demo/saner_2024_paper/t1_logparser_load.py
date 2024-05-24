@@ -1,38 +1,39 @@
 
-# =========================================================================
-# Copyright (C) 2016-2023 LOGPAI (https://github.com/logpai).
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# =========================================================================
 import pandas as pd
 import regex as re
 import datetime
-#Routine loads data from logfile and creates a dataframe.
-#Routine taken from LogPai/Logpaser/Drain project
-#https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L327C1-L344C21
-#Following modification were made.
-#1) Converted to normal function instead of class member function
-#2) Added a counter that reports progress every 1,000,000 rows
-#3) Added errors=ignore as there is a non-utf character in TB.
-#4) Moved generate_logformat_regex inside this function
 def log_to_dataframe(log_file, log_format):
-    """Function to transform log file to dataframe"""
-
-    # Routine from https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L346
-    # Changes
-    # 1) Changed to normal function from class member function
+    """Function to transform log file to dataframe
+    Routine loads data from logfile and creates a dataframe.
+    Routine taken from LogPai/Logpaser/Drain project
+    https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L327C1-L344C21
+    Following modification were made.
+    1) Converted to normal function instead of class member function
+    2) Added a counter that reports progress every 1,000,000 rows
+    3) Added errors=ignore as there is a non-utf character in TB.
+    4) Moved generate_logformat_regex inside this function
+    # =========================================================================
+    # Copyright (C) 2016-2023 LOGPAI (https://github.com/logpai).
+    #
+    # Licensed under the Apache License, Version 2.0 (the "License");
+    # you may not use this file except in compliance with the License.
+    # You may obtain a copy of the License at
+    #
+    #     http://www.apache.org/licenses/LICENSE-2.0
+    #
+    # Unless required by applicable law or agreed to in writing, software
+    # distributed under the License is distributed on an "AS IS" BASIS,
+    # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    # See the License for the specific language governing permissions and
+    # limitations under the License.
+    # =========================================================================
+    """
     def generate_logformat_regex(logformat):
-        """Function to generate regular expression to split log messages"""
+        """Function to generate regular expression to split log messages
+        Routine from https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L346
+        Changes
+        1) Changed to normal function from class member function
+        """
         headers = []
         splitters = re.split(r"(<[^<>]+>)", logformat)
         regex = ""
