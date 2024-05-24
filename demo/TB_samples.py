@@ -16,12 +16,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
 # Location of our sample data
-sample_data = "../samples"
+sample_data = os.path.join(script_dir, 'samples', 'tb_0125percent.parquet')
 
 # _________________________________________________________________________________
 # Part 2 load data from sample file
 # Load TB from sample data
-df = pl.read_parquet(f"{sample_data}/tb_0125percent.parquet")
+df = pl.read_parquet(sample_data)
 print(f"Read TB 0.125% sample. Numbers of events: {len(df)}")
 ano_count = df["anomaly"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(df)*100:.2f}%")
