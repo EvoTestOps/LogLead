@@ -1,14 +1,19 @@
-import sys
-sys.path.append('..')
+import os
 
 import polars as pl
+from dotenv import dotenv_values
 
 from loglead import AnomalyDetector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 from loglead.loaders import HDFSLoader
 
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
 
-full_data = "/home/ubuntu/Datasets"
+# Adjust full data source
+envs = dotenv_values()
+full_data = envs.get("LOG_DATA_PATH")
 private_data = "../private_data"
 
 loader = HDFSLoader(filename=f"{full_data}/hdfs/HDFS.log",

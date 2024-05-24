@@ -1,12 +1,8 @@
-import sys
 import psutil
 import os
 import yaml
 import argparse
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
-LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
-sys.path.append(os.environ.get("LOGLEAD_PATH"))
+
 from loglead.loaders import BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader, ProLoader, NezhaLoader
 
 # Set up argument parser
@@ -20,6 +16,7 @@ with open(config_file, 'r') as file:
     config = yaml.safe_load(file)
 
 full_data_path = os.path.expanduser(config['root_folder'])
+
 
 memory_limit_TB = 50
 memory_limit_NEZHA_WS = 17

@@ -4,20 +4,17 @@
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
-import sys
 import os
 import random
 
-
-# Ensure this always gets executed in the same location
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
-sys.path.append('..')
 import polars as pl
 
 from loglead import AnomalyDetector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
 # Location of our sample data
 sample_data = "../samples"
 

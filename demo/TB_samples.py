@@ -4,18 +4,16 @@
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
-import sys
 import os
 
 import polars as pl
 
+from loglead.enhancers import EventLogEnhancer
+from loglead import AnomalyDetector
+
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
-sys.path.append('..')
-
-from loglead.enhancers import EventLogEnhancer
-from loglead import AnomalyDetector
 
 # Location of our sample data
 sample_data = "../samples"

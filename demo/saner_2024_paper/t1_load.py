@@ -1,19 +1,17 @@
 # This file performs same actions in both LogLEAD and in LogParsers code.
 # LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
  
-# Separate demo files
-import sys
 import time
-sys.path.append('..')
 
 import polars as pl
+from dotenv import dotenv_values
 
 from loglead.loaders import *
 from .t1_logparser_load import log_to_dataframe
 
-# Base directory for datasets
-#full_data = "/home/ubuntu/Datasets"
-full_data = "/home/mmantyla/Datasets"
+# Adjust full data source
+envs = dotenv_values()
+full_data = envs.get("LOG_DATA_PATH")
 
 logparser_format = {
     "hdfs": "<Date> <Time> <Pid> <Level> <Component>: <Content>",
