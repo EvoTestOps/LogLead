@@ -17,16 +17,36 @@
 import pandas as pd
 import regex as re
 import datetime
-#Routine loads data from logfile and creates a dataframe. 
+#Routine loads data from logfile and creates a dataframe.
 #Routine taken from LogPai/Logpaser/Drain project
 #https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L327C1-L344C21
 #Following modification were made.
 #1) Converted to normal function instead of class member function
 #2) Added a counter that reports progress every 1,000,000 rows
 #3) Added errors=ignore as there is a non-utf character in TB.
-#4) Moved generate_logformat_regex inside this function 
+#4) Moved generate_logformat_regex inside this function
 def log_to_dataframe(log_file, log_format):
     """Function to transform log file to dataframe"""
+
+    # Routine from https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L346
+    # Changes
+    # 1) Changed to normal function from class member function
+    def generate_logformat_regex(logformat):
+        """Function to generate regular expression to split log messages"""
+        headers = []
+        splitters = re.split(r"(<[^<>]+>)", logformat)
+        regex = ""
+        for k in range(len(splitters)):
+            if k % 2 == 0:
+                splitter = re.sub(" +", "\\\s+", splitters[k])
+                regex += splitter
+            else:
+                header = splitters[k].strip("<").strip(">")
+                regex += "(?P<%s>.*?)" % header
+                headers.append(header)
+        regex = re.compile("^" + regex + "$")
+        return headers, regex
+
     headers, regex = generate_logformat_regex(log_format)
     log_messages = []
     linecount = 0
@@ -48,23 +68,4 @@ def log_to_dataframe(log_file, log_format):
     logdf["LineId"] = [i + 1 for i in range(linecount)]
     print("Total lines: ", len(logdf))
     return logdf
-
-# Routine from https://github.com/logpai/logparser/blob/main/logparser/Drain/Drain.py#L346
-#Changes
-#1) Changed to normal function from class member function
-def generate_logformat_regex(logformat):
-    """Function to generate regular expression to split log messages"""
-    headers = []
-    splitters = re.split(r"(<[^<>]+>)", logformat)
-    regex = ""
-    for k in range(len(splitters)):
-        if k % 2 == 0:
-            splitter = re.sub(" +", "\\\s+", splitters[k])
-            regex += splitter
-        else:
-            header = splitters[k].strip("<").strip(">")
-            regex += "(?P<%s>.*?)" % header
-            headers.append(header)
-    regex = re.compile("^" + regex + "$")
-    return headers, regex        
 
