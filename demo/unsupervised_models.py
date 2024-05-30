@@ -84,7 +84,6 @@ for item in items:
     sad.item_list_col = item
 
     stime = time.time()
-    seq_enhancer.sort_start_time()
     sad.test_train_split(seq_enhancer.df_seq, test_frac=test_frac)
     print("time split and prepare:", time.time()-stime)
 

@@ -32,7 +32,6 @@ class SequenceEnhancer:
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         # Add an alias  that is compatible with the token len naming.
-        # TODO Should be in events() function
         self.df_seq = self.df_seq.with_columns(self.df_seq['seq_len'].alias('e_event_id_len'))
 
         return self.df_seq
