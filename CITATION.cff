@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+authors:
+- family-names: Mäntylä
+  given-names: Mika
+- family-names: Wang
+  given-names: Yuqing
+- family-names: Nyyssölä
+  given-names: Jesse
+- family-names: Bakhtin
+  given-names: Alexander
+message: "If you use this software, please cite it as below."
+title: "LogLead"
+version: "0.0.1" # Update this version as necessary
+date-released: 2024-05-23 # Update the date together with version
+url: "https://github.com/EvoTestOps/LogLead"
+
+preferred-citation:
+  type: conference-paper
+  authors:
+    - family-names: Mäntylä
+      given-names: Mika
+    - family-names: Wang
+      given-names: Yuqing
+    - family-names: Nyyssölä
+      given-names: Jesse
+  title: "LogLead - Fast and Integrated Log Loader, Enhancer, and Anomaly Detector"
+  booktitle: "Proceedings of the IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER)"
+  year: 2024
+  publisher: IEEE
+  address: Rovaniemi, Finland
+  pages: "1-5"
+  url: "https://arxiv.org/abs/2311.11809"

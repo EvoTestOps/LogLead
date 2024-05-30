@@ -57,19 +57,3 @@ LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detec
 * Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [Support Vector Machine](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [eXtreme Gradient Boosting](https://en.wikipedia.org/wiki/XGBoost)
 * Unsupervised (4): [One-class SVM](https://en.wikipedia.org/wiki/Support_vector_machine#One-class_SVM), [Local Outlier Factor](https://en.wikipedia.org/wiki/Local_outlier_factor), [Isolation Forest](https://en.wikipedia.org/wiki/Isolation_forest), [K-Means](https://en.wikipedia.org/wiki/K-means_clustering)
 * Custom Unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) counts amount words or character n-grams that are novel in test set. [Rarity Model](https://github.com/EvoTestOps/LogLead/blob/main/loglead/RarityModel.py), scores seen words or character n-grams based on their rarity in training set. See our public [preprint](https://arxiv.org/abs/2312.01934) for more details
-
-
-## Paper 
-More detailed description of the work is documented in our [conference paper](https://arxiv.org/abs/2311.11809). If you use this software in your research, please cite it as below:
-
-```bibtex
-@inproceedings{mantyla2023loglead,
-  author = {M\"{a}ntyl\"{a}, Mika and Wang, Yuqing and Nyyss\"{o}l\"{a}, Jesse},
-  title = {LogLead - Fast and Integrated Log Loader, Enhancer, and Anomaly Detector},
-  booktitle = {Proceedings of the IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER)},
-  year = {2024},
-  publisher = {IEEE},
-  address = {Rovaniemi, Finland},
-  pages = {1-5},
-  url  = {https://arxiv.org/abs/2311.11809}
-}
