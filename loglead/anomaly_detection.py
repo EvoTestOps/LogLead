@@ -215,7 +215,7 @@ class AnomalyDetector:
                          and callable(getattr(self, m))}
         train_methods.discard(self.train_model)
         for method in train_methods:
-            if self.print_scores:
+            if not self.print_scores:
                 print(f"Running {method}")
             time_start = time.process_time()
             method()
