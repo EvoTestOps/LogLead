@@ -1,4 +1,5 @@
 import time
+from inspect import isclass
 
 import polars as pl
 import numpy as np
@@ -110,18 +111,16 @@ class AnomalyDetector:
 
         return X, labels    
         
-    def train_model(self, model, filter_anos=False):
+    def train_model(self, model,  /, *, filter_anos=False, **model_kwargs):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
         #Store the current the model and whether it uses ano data or no
-        self.model = model
+        if isclass(model):
+            self.model = model(**model_kwargs)
+        else:
+            self.model = model  # Backwards compatibility with previous implementation
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
-    #def dep_train_model(self, df_seq, model):
-    #    X_train, labels = self._prepare_data(train=True, df_seq=df_seq)
-    #    self.model = model
-    #    self.model.fit(X_train, labels)
-    
     def predict(self, custom_plot=False):
         #Binary scores
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
@@ -166,40 +165,40 @@ class AnomalyDetector:
         return df_seq 
        
     def train_LR(self, max_iter=4000, tol=0.0003):
-        self.train_model (LogisticRegression(max_iter=max_iter))
+        self.train_model(LogisticRegression, max_iter=max_iter, tol=tol)
     
     def train_DT(self):
-        self.train_model (DecisionTreeClassifier())
+        self.train_model(DecisionTreeClassifier)
 
     def train_LSVM(self, penalty='l1', tol=0.1, C=1, dual=False, class_weight=None, max_iter=4000):
-        self.train_model (LinearSVC(
-            penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight, max_iter=max_iter))
+        self.train_model(LinearSVC, penalty=penalty, tol=tol, C=C, dual=dual, class_weight=class_weight,
+                         max_iter=max_iter)
 
     def train_IsolationForest(self, n_estimators=100,  max_samples='auto', contamination="auto",filter_anos=False):
-        self.train_model (IsolationForest(
-            n_estimators=n_estimators, max_samples=max_samples, contamination=contamination), filter_anos=filter_anos)
+        self.train_model(IsolationForest, filter_anos=filter_anos,
+                         n_estimators=n_estimators, max_samples=max_samples, contamination=contamination)
                           
-    def train_LOF(self, n_neighbors=20, max_samples='auto', contamination="auto", filter_anos=True):
+    def train_LOF(self, n_neighbors=20, contamination="auto", filter_anos=True):
         #LOF novelty=True model needs to be trained without anomalies
         #If we set novelty=False then Predict is no longer available for calling.
         #It messes up our general model prediction routine
-        self.train_model (LocalOutlierFactor(
-            n_neighbors=n_neighbors,  contamination=contamination, novelty=True), filter_anos=filter_anos)
+        self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
+                         contamination=contamination, novelty=True)
     
     def train_KMeans(self):
-        self.train_model(KMeans(n_init="auto",n_clusters=2))
+        self.train_model(KMeans, n_init="auto", n_clusters=2)
 
     def train_OneClassSVM(self):
-        self.train_model(OneClassSVM(max_iter=1000))
+        self.train_model(OneClassSVM, max_iter=1000)
 
     def train_RF(self):
-        self.train_model( RandomForestClassifier())
+        self.train_model(RandomForestClassifier)
 
     def train_XGB(self):
-        self.train_model(XGBClassifier())
+        self.train_model(XGBClassifier)
 
     def train_RarityModel(self, filter_anos=True, threshold=250):
-        self.train_model(RarityModel(threshold), filter_anos=filter_anos)
+        self.train_model(RarityModel, filter_anos=filter_anos, threshold=threshold)
         
     def train_OOVDetector(self, len_col=None, filter_anos=True, threshold=1):
         if len_col == None: 
@@ -207,24 +206,22 @@ class AnomalyDetector:
                 len_col = "e_event_id_len" #item list col has the parser name when using events, but length doesn't
             else:
                 len_col = self.item_list_col+"_len"
-        self.train_model(OOV_detector(len_col, self.test_df, threshold), filter_anos=filter_anos)
+        self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, test_df=self.test_df, threshold=threshold)
         
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
-            disabled_methods = []
-        for method_name in sorted(dir(self)):
-            if (method_name.startswith("train_")
-                    and not method_name.startswith("train_model")
-                    and method_name not in disabled_methods):
-                method = getattr(self, method_name)
-                if callable(method):
-                    if not self.print_scores:
-                        print(f"Running {method_name}")
-                    time_start = time.time()
-                    method()
-                    self.predict()
-                    if self.print_scores:
-                        print(f'Total time: {time.time()-time_start:.2f} seconds')
+            disabled_methods = set()
+        train_methods = {getattr(self, m) for m in dir(self) if m.startswith('train_') and m not in disabled_methods
+                         and callable(getattr(self, m))}
+        train_methods.discard(self.train_model)
+        for method in train_methods:
+            if not self.print_scores:
+                print(f"Running {method}")
+            time_start = time.process_time()
+            method()
+            self.predict()
+            if self.print_scores:
+                print(f'Total time: {time.process_time()-time_start:.2f} seconds')
         if self.print_scores:
             print("---------------------------------------------------------------")
 

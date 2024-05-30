@@ -35,11 +35,11 @@ for dataset in datasets:
     df = pl.read_parquet(primary_file)
 
     for col in cols_event:
-        disabled_methods = []
-        disabled_methods.append("train_LOF") #Too slow. Disabled to make tests run faster
-        disabled_methods.append("train_OneClassSVM") #Too slow. Disabled to make tests run faster
+        disabled_methods = set()
+        disabled_methods.add("train_LOF") #Too slow. Disabled to make tests run faster
+        disabled_methods.add("train_OneClassSVM") #Too slow. Disabled to make tests run faster
         if col == "m_message":
-            disabled_methods.append("train_OOVDetector")
+            disabled_methods.add("train_OOVDetector")
           #Only run if the predictor column AND anomaly labels are present AND we have at least two classes in the data
         if (col in df.columns and "anomaly" in df.columns and 
         df["normal"].sum() > 10 and
@@ -55,11 +55,11 @@ for dataset in datasets:
         df_seq = pl.read_parquet(seq_file)
         print(f"Running seqeuence anomaly detectors with {seq_file}")
         for col in cols_event:
-            disabled_methods = []
-            disabled_methods.append("train_LOF") #Too slow. Disabled to make tests run faster
-            disabled_methods.append("train_OneClassSVM") #Too slow. Disabled to make tests run faster
+            disabled_methods = set()
+            disabled_methods.add("train_LOF") #Too slow. Disabled to make tests run faster
+            disabled_methods.add("train_OneClassSVM") #Too slow. Disabled to make tests run faster
             if col == "m_message":
-                disabled_methods.append("train_OOVDetector")
+                disabled_methods.add("train_OOVDetector")
                 #Only run if the predictor column AND anomaly labels are present AND we have at least two classes in the data
             if (col in df.columns and "anomaly" in df.columns and 
             df["normal"].sum() > 10 and
@@ -77,6 +77,6 @@ for dataset in datasets:
             sad = AnomalyDetector(numeric_cols = numeric_cols, print_scores= False, store_scores=True)
             #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
             sad.test_train_split (df_seq, test_frac=0.2) 
-            sad.evaluate_all_ads(disabled_methods=[])        
+            sad.evaluate_all_ads()
 
 print("Anomaly detectors test complete.")
