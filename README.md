@@ -7,6 +7,27 @@ Currently, it features nearly 1,000 unique anomaly detection combinations, encom
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
+## Installing LogLead
+
+Simply install with `pip`:
+
+```
+python -m pip install loglead
+```
+
+And for plotting functions:
+
+```
+python -m pip install loglead[plot]
+```
+
+NOTE: pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
+If you want to use them, make a `conda` environment using the [environment](environment.yml) file and then install `loglead` there.
+
+### Known issues
+
+- If `scikit-learn` wheel fails to compile, check that you can `gcc` and `g++` installed.
+
 ## Demos
 In the following demonstrations, you'll notice a significant aspect of LogLead's design efficiency: code reusability. Both demos, while analyzing different datasets, share a substantial amount of their underlying code. This not only showcases LogLead's versatility in handling various log formats but also its ability to streamline the analysis process through reusable code components.
 
