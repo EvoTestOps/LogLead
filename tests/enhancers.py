@@ -1,22 +1,34 @@
 import sys
 import glob
 import os
-
 import polars as pl
+import yaml
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
-sys.path.append('..')
-
+import argparse
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
+sys.path.append(os.environ.get("LOGLEAD_PATH"))
 from loglead.loaders import BaseLoader
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
-home_directory = os.path.expanduser('~')
-test_data_path = os.path.join(home_directory, "Datasets", "test_data") 
+# Set up argument parser
+parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
+parser.add_argument('--config', type=str, default='datasets.yml', help='Path to the YAML file containing dataset information. Default is datasets.yml.')
+args = parser.parse_args()
+
+# Read the configuration file
+config_file = args.config
+with open(config_file, 'r') as file:
+    config = yaml.safe_load(file)
+
+test_data_path = os.path.expanduser(config['root_folder'])
+test_data_path = os.path.join(test_data_path, "test_data") 
+
 
 # Get all .parquet files in the directory
 all_files = glob.glob(os.path.join(test_data_path, "*.parquet"))
-print("Enhancers test starting.")
+print(f"Enhancers test starting. Test data path: {test_data_path}")
 print(f"Found files {all_files}")
 # Extract unique dataset names, excluding '_seq' files
 datasets = set()
@@ -62,6 +74,7 @@ for dataset in datasets:
         enhancer_seq = SequenceEnhancer(df=df, df_seq=df_seq)
         print("\nAggregating drain parsing results",   end=", ")
         df_seq = enhancer_seq.events()
+        df_seq = enhancer_seq.events(event_col="e_event_tip_id")
         print("\nCreating next-event-prediction results from Drain events",   end=", ")
         df_seq = enhancer_seq.next_event_prediction()
         print("Aggregating tokens / words",   end=", ")

@@ -28,13 +28,17 @@ dependencies:
   - bottleneck>=1.3.7
   - brotli>=1.0.9
   - brotli-bin>=1.0.9
+  - brotli-python>=1.0.9
   - bzip2>=1.0.8
   - c-ares>=1.19.1
   - ca-certificates>=2024.3.11
+  - certifi>=2024.2.2
+  - charset-normalizer>=2.0.4
   - click>=8.1.7
   - cloudpickle>=2.2.1
   - comm>=0.2.1
   - contourpy>=1.2.0
+  - curl>=8.7.1
   - cycler>=0.11.0
   - cyrus-sasl>=2.1.28
   - dbus>=1.13.18
@@ -45,8 +49,13 @@ dependencies:
   - fontconfig>=2.14.1
   - fonttools>=4.25.0
   - freetype>=2.12.1
+  - gdbm>=1.18
+  - gettext>=0.21.0
   - gflags>=2.2.2
   - giflib>=5.2.1
+  - git>=2.40.1
+  - gitdb>=4.0.7
+  - gitpython>=3.1.37
   - glib>=2.78.4
   - glib-tools>=2.78.4
   - glog>=0.5.0
@@ -54,6 +63,7 @@ dependencies:
   - gst-plugins-base>=1.14.1
   - gstreamer>=1.14.1
   - icu>=73.1
+  - idna>=3.7
   - intel-openmp>=2023.1.0
   - ipykernel>=6.28.0
   - ipython>=8.20.0
@@ -133,6 +143,7 @@ dependencies:
   - parso>=0.8.3
   - pcre>=8.45
   - pcre2>=10.42
+  - perl>=5.34.0
   - pexpect>=4.8.0
   - pickleshare>=0.7.5
   - pillow>=10.2.0
@@ -147,10 +158,12 @@ dependencies:
   - pure_eval>=0.2.2
   - py-xgboost>=1.7.6
   - pyarrow>=14.0.2
+   - pybind11-abi>=5
   - pygments>=2.15.1
   - pyparsing>=3.0.9
   - pyqt>=5.15.10
   - pyqt5-sip>=12.13.0
+  - pysocks>=1.7.1
   - python>=3.11.5
   - python-dateutil>=2.8.2
   - python-dotenv>=0.21.0
@@ -164,6 +177,7 @@ dependencies:
   - readline>=8.2
   - referencing>=0.30.2
   - regex>=2023.10.3
+  - requests>=2.32.2
   - rpds-py>=0.10.6
   - s2n>=1.3.27
   - scikit-learn>=1.2.2
@@ -173,6 +187,7 @@ dependencies:
   - sip>=6.7.12
   - six>=1.16.0
   - slicer>=0.0.7
+  - smmap>4.0.0
   - snappy>=1.1.10
   - sqlite>=3.41.2
   - stack_data>=0.2.0
@@ -184,6 +199,8 @@ dependencies:
   - tqdm>=4.65.0
   - traitlets>=5.7.1
   - tzdata>=2024a
+  - unicodedata2>=15.1.0
+  - urllib3>=2.2.1
   - utf8proc>=2.6.1
   - wcwidth>=0.2.5
   - wheel>=0.41.2

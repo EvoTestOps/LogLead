@@ -1,0 +1,33 @@
+root_folder: '~/Datasets'
+
+datasets:
+  - name: bgl
+    url: https://zenodo.org/records/8196385/files/BGL.zip?download=1
+    log_file: BGL.log
+  - name: hadoop
+    url: https://zenodo.org/records/8196385/files/Hadoop.zip?download=1
+    filename_pattern: "*.log"
+    labels_file: abnormal_label.txt
+  - name: hdfs
+    url: https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1
+    log_file: HDFS.log
+    labels_file: preprocessed/anomaly_label.csv
+  - name: liberty
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
+    log_file: liberty2.log
+  - name: spirit
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
+    log_file: spirit2.log
+  - name: thunderbird
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
+    log_file: tbird2.log 
+  - name: nezha
+    urls: 
+      - https://github.com/IntelligentDDS/Nezha/tree/main/construct_data/
+      - https://github.com/IntelligentDDS/Nezha/tree/main/rca_data/
+    systems: 
+      - TrainTicket
+      - WebShop
+  - name: profilence
+    log_file: "*.txt"
+  

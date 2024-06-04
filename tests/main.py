@@ -4,7 +4,8 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
-
+runpy.run_path('download_data.py')
+print ("___________________________________________________")
 runpy.run_path('loaders.py')
 print ("___________________________________________________")
 runpy.run_path('enhancers.py')
