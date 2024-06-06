@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "LogLead"
 version = "0.0.2"
 authors = [
+    {name = "Mika Mäntylä", email="mika.mantyla@helsinki.fi"},
     {name = "Jesse Nyyssölä", email = "jesse.nyyssola@helsinki.fi"},
-    {name = "Yuqing Wang", email="yuqing.wang@helsinki.fi"},
-    {name = "Mika Mäntylä", email="mika.mantyla@helsinki.fi"}]
+    {name = "Yuqing Wang", email="yuqing.wang@helsinki.fi"}]
 maintainers = [
     {name = "Alexander Bakhtin", email = "alexander.bakhtin@protonmail.com"}]
 description = "LogLead stands for Log Loader, Enhancer, and Anomaly Detector"
@@ -25,7 +25,7 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.9",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Logging"]
