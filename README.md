@@ -15,12 +15,6 @@ Simply install with `pip`:
 python -m pip install loglead
 ```
 
-And for plotting functions:
-
-```
-python -m pip install loglead[plot]
-```
-
 NOTE: pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
 If you want to use them, make a `conda` environment using the [environment](environment.yml) file and then install `loglead` there.
 
