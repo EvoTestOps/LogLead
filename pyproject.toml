@@ -12,7 +12,7 @@ authors = [
 maintainers = [
     {name = "Alexander Bakhtin", email = "alexander.bakhtin@protonmail.com"}]
 description = "LogLead stands for Log Loader, Enhancer, and Anomaly Detector"
-readme = "README.md"
+readme = "PYPI_README.md"
 license = {file = "LICENSE"}
 keywords = [
     "logs",
