@@ -16,7 +16,7 @@ readme = "README.md"
 license = {file = "LICENSE"}
 keywords = [
     "logs",
-    "anomanly detection",
+    "anomaly detection",
     "log parsing"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
