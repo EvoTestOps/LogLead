@@ -1,13 +1,9 @@
-import sys
 import glob
 import os
 import yaml
 import polars as pl
 import argparse
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
-LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
-sys.path.append(os.environ.get("LOGLEAD_PATH"))
+
 from loglead import AnomalyDetector
 
 # Set up argument parser

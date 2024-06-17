@@ -1,15 +1,16 @@
 #This file performs same actions in both LogLead and in LogParsers code. 
 #LogParsers loading routine has been slightly modified. Modifications are explained in the separate file
- 
-import sys
+
 import time
-sys.path.append('..')
+
+from dotenv import dotenv_values
 
 from loglead.enhancers import EventLogEnhancer
 from loglead.loaders import *
 
-#full_data = "/home/ubuntu/Datasets"
-full_data = "/home/mmantyla/Datasets"
+# Adjust full data source
+envs = dotenv_values()
+full_data = envs.get("LOG_DATA_PATH")
 
 datasets = ["hdfs", "hadoop", "bgl"]
 

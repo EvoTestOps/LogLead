@@ -1,8 +1,7 @@
-import sys
-sys.path.append('..')
 import time
 
 import polars as pl
+from dotenv import dotenv_values
 
 from loglead.loaders import BGLLoader
 from loglead.loaders import ThuSpiLibLoader
@@ -17,7 +16,8 @@ import warnings
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 # Adjust full data source
-full_data = "/home/ubuntu/Datasets"
+envs = dotenv_values()
+full_data = envs.get("LOG_DATA_PATH")
 
 # List the representations (column names) for anomaly detection
 items = ["e_words", "e_trigrams", "e_event_drain_id"]  # "e_alphanumerics"
