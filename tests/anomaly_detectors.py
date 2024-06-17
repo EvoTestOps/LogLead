@@ -39,6 +39,13 @@ for f in all_files:
 cols_event = ["m_message", "e_words", "e_event_drain_id", "e_trigrams", "e_event_tip_id", "e_event_lenma_id", "e_bert_emb"] 
 numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_prob_nmax_avg", "nep_prob_nmax_min"]
 for dataset in datasets:
+    # Check if ad should be skipped for this dataset
+    dataset_config = next((d for d in config['datasets'] if d['name'] in dataset), None)
+
+    if dataset_config and not dataset_config.get('anomaly_detection', True):
+        print(f"Skipping anomaly detection for dataset: {dataset}")
+        continue
+
     # Load the event level data
     primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
     print(f"\nLoading {primary_file}")
@@ -77,16 +84,19 @@ for dataset in datasets:
             df_seq["normal"].sum() > 9 and
             df_seq["anomaly"].sum() > 9):
                 print(f"Running seqeuence anomaly detectors with {col}")
-                sad =  AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
+                sad =  AnomalyDetector(item_list_col=col, print_scores= True, store_scores=True)
                 #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
                 sad.test_train_split (df_seq, test_frac=0.2) 
                 sad.evaluate_all_ads(disabled_methods=disabled_methods)
             else: 
-                print (f"Column {col} missing or too low number (<11) of normal sequences { df_seq["normal"].sum()} or anomaly sequences {df_seq["anomaly"].sum()}")    
-        print(f"Running seqeuence anomaly detectors with numeric columns {numeric_cols}")
+                print (f"Column {col} missing or too low number (<11) of normal sequences { df_seq['normal'].sum()} or anomaly sequences {df_seq['anomaly'].sum()}")    
+        # Check that numeric columns exist
+        all_columns_exist = all(column in df_seq.columns for column in numeric_cols)
         if ("anomaly" in df_seq.columns and 
         df_seq["normal"].sum() > 9 and
-        df_seq["anomaly"].sum() > 9):
+        df_seq["anomaly"].sum() > 9 and 
+        all_columns_exist):
+            print(f"Running seqeuence anomaly detectors with numeric columns {numeric_cols}")
             disabled_methods = set()
             disabled_methods.add("train_RarityModel")
             disabled_methods.add("train_OOVDetector")

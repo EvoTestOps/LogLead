@@ -4,23 +4,59 @@ datasets:
   - name: bgl
     url: https://zenodo.org/records/8196385/files/BGL.zip?download=1
     log_file: BGL.log
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 4747963
+    reduction_fraction: 0.02
   - name: hadoop
     url: https://zenodo.org/records/8196385/files/Hadoop.zip?download=1
     filename_pattern: "*.log"
     labels_file: abnormal_label.txt
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 180897
+    reduction_fraction: 0.56
   - name: hdfs
     url: https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1
     log_file: HDFS.log
     labels_file: preprocessed/anomaly_label.csv
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 11175629
+    reduction_fraction: 0.01
   - name: liberty
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
     log_file: liberty2.log
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 0
+    reduction_fraction: 0.0005
   - name: spirit
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
     log_file: spirit2.log
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 0
+    reduction_fraction: 0.0005
   - name: thunderbird
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
     log_file: tbird2.log 
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 211212192
+    reduction_fraction: 0.0005
   - name: nezha
     urls: 
       - https://github.com/IntelligentDDS/Nezha/tree/main/construct_data/
@@ -28,6 +64,39 @@ datasets:
     systems: 
       - TrainTicket
       - WebShop
-  - name: profilence
-    log_file: "*.txt"
-  
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    train_ticket:
+      expected_length: 272270
+      reduction_fraction: 0.33
+    web_shop:
+      expected_length: 3958203
+      reduction_fraction: 0.025
+  # - name: profilence
+  #   log_file: "*.txt"
+  #   download: true
+  #   load: true
+  #   enhance: true 
+  #   anomaly_detection: true
+  #   expected_length: 5203599
+  #   reduction_fraction: 0.02
+  - name: adfa
+    url: https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset/raw/master/ADFA-LD.zip
+    folder: ADFA-LD
+    download: true
+    load: true
+    enhance: false 
+    anomaly_detection: true
+    expected_length: 2747550
+    reduction_fraction: 0.0364
+  - name: awsctd
+    url: https://github.com/DjPasco/AWSCTD/raw/master/CSV.7z
+    folder: AWSCTD
+    download: true
+    load: false
+    enhance: false 
+    anomaly_detection: true
+    expected_length: 174847810
+    reduction_fraction: 0.0057

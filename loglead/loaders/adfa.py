@@ -24,9 +24,10 @@ class ADFALoader(BaseLoader):
         m_messages = []
         seq_ids = []
         labels = []
+        self.filename = self.filename.replace('\\', '/') # Windows issues
+
 
         logfiles = [y for x in os.walk(self.filename) for y in glob(os.path.join(x[0], '*.txt'))]
-        print(logfiles)
         for logfile in logfiles:
             if 'ADFA-LD+Syscall+List.txt' in logfile:
                 continue  # Skip label file
@@ -62,5 +63,6 @@ class ADFALoader(BaseLoader):
             (pl.col('label') != "Normal").alias('is_anomaly')
         ).groupby('seq_id').agg([
             pl.col('m_message'),  # Aggregates all 'm_message' into a list
-            pl.any('is_anomaly').alias('anomaly')  # Checks if there's any label not equal to 'Normal'
+            pl.any('is_anomaly').alias('anomaly'),  # Checks if there's any label not equal to 'Normal'
+            (~pl.any('is_anomaly')).alias('normal')  # Adds the opposite of 'anomaly' as 'normal'
         ])

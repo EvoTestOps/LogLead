@@ -3,6 +3,8 @@ import glob
 import os
 import polars as pl
 import yaml
+import shutil
+
 
 import argparse
 from dotenv import load_dotenv, find_dotenv
@@ -41,6 +43,30 @@ for f in all_files:
 
 # Loop through each dataset and enhance
 for dataset in datasets:
+    
+    # Check if enhancement should be skipped for this dataset.
+    # Even if it is, create a file where nulls are removed so it can be used for ano detection
+    
+    dataset_config = next((d for d in config['datasets'] if d['name'] in dataset), None)
+    if dataset_config and not dataset_config.get('enhance', True):
+        print(f"Skipping enhancement for dataset: {dataset}")
+        # Load the event level data
+        primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
+        print(f"\nLoading {primary_file}")
+        df = pl.read_parquet(primary_file)
+        # Kill nulls if they still exist
+        if "m_message" in df.columns:
+            df = df.filter(pl.col("m_message").is_not_null())
+        # Save the file with a naming that suggests it can be used in anomaly detection
+        df.write_parquet(f"{test_data_path}/{dataset}_ehSkipped.parquet")
+        seq_file = primary_file.replace(f"{dataset}.parquet", f"{dataset}_seq.parquet")
+        if os.path.exists(seq_file):
+            df_seq = pl.read_parquet(seq_file)
+            if "m_message" in df_seq.columns:
+                df_seq = df_seq.filter(pl.col("m_message").is_not_null())
+            df_seq.write_parquet(f"{test_data_path}/{dataset}_ehSkipped_seq.parquet")
+        continue
+
     # Load the event level data
     primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
     print(f"\nLoading {primary_file}")

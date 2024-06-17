@@ -127,6 +127,18 @@ def ungzip_file(gz_path, dest_folder):
     else:
         print(f'{file_path} is not a directory, no additional moving needed.')
 
+def un7z_file(sevenz_path, dest_folder):
+    import py7zr
+    """
+    Extracts a 7z file to the specified destination folder.
+    
+    Args:
+        sevenz_path (str): The path to the 7z file.
+        dest_folder (str): The directory where the contents should be extracted.
+    """
+    with py7zr.SevenZipFile(sevenz_path, mode='r') as z:
+        z.extractall(path=dest_folder)
+    print(f'Extracted {sevenz_path} to {dest_folder}')
 
 def clone_github_repo(repo_url, dest_folder):
     """
@@ -187,7 +199,10 @@ def download_all_parts(name, urls, dest_folder):
         if url is None:
             print(f'No valid URL provided for {name}. Skipping download.')
             continue
-        if 'github.com' in url:
+
+        # If the github link already points to a single file, we don't need a temp folder
+        file_extensions = ['.zip', '.gz', '.7z', '.tar', '.rar', '.csv', '.txt']
+        if 'github.com' in url and not any(url.lower().endswith(ext) for ext in file_extensions):
             try:
                 repo_url, folder_path = transform_github_url(url)
                 last_folder_name = folder_path.split('/')[-1]
@@ -211,6 +226,8 @@ def download_all_parts(name, urls, dest_folder):
                     unzip_file(file_path, dest_folder)
                 elif file_path.endswith('.gz'):
                     ungzip_file(file_path, dest_folder)
+                elif file_path.endswith('.7z'):
+                    un7z_file(file_path, dest_folder)
                 os.remove(file_path)  # Remove the zip or gz file after extraction
     
     # Clean up cloned repositories
@@ -230,6 +247,10 @@ def main(dest_base_folder, yaml_file):
     
     for dataset in data['datasets']:
         name = dataset['name']
+        skip_download = not dataset.get('download', True)
+        if skip_download:
+            print(f'Skipping download for {name}.')
+            continue
         urls = dataset.get('urls', [dataset.get('url')])
         if not any(urls):
             print(f'No URLs provided for {name}. Skipping download.')
