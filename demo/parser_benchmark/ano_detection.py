@@ -26,6 +26,9 @@ os.chdir(script_dir)
 # Base path for datasets
 envs = dotenv_values()
 full_data = envs.get("LOG_DATA_PATH")
+if not full_data:
+    print("WARNING!: LOG_DATA_PATH is not set. This will most likely fail")
+
 # Load the configuration
 default_config = os.path.join(script_dir, 'ano_detection_config.yml')
 
@@ -38,8 +41,12 @@ args = parser.parse_args()
 
 
 def load_config(config_path):
-    with open(config_path, 'r') as file:
-        return yaml.safe_load(file)
+    try:
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{config_path}' not found. Please provide a valid configuration file path using the '-c' option.")
+        sys.exit(1)
 
 
 config = load_config(args.config_path)

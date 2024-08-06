@@ -16,7 +16,9 @@ os.chdir(script_dir)
 
 # Base path for datasets
 envs = dotenv_values()
-full_data = envs.get("LOG_DATA_PATH")
+full_data = envs.get("LOG_DATA_PATH", "")
+if not full_data:
+    print("WARNING!: LOG_DATA_PATH is not set. This will most likely fail")
 # Load the configuration
 default_config = os.path.join(script_dir, 'speed_config.yml')
 default_threshold = 600  # How many seconds is the threshold after which remaining runs for the parser are skipped
@@ -31,8 +33,11 @@ args = parser.parse_args()
 
 
 def load_config(config_path):
-    with open(config_path, 'r') as file:
-        return yaml.safe_load(file)
+    try:
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{config_path}' not found. Please provide a valid configuration file path using the '-c' option.")
 
 
 config = load_config(args.config_path)

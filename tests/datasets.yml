@@ -7,11 +7,11 @@ datasets:
   - name: hadoop
     url: https://zenodo.org/records/8196385/files/Hadoop.zip?download=1
     filename_pattern: "*.log"
-    labels_file: abnormal_label.txt
+    labels_file: abnormal_label_accurate.txt
   - name: hdfs
     url: https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1
     log_file: HDFS.log
-    labels_file: preprocessed/anomaly_label.csv
+    labels_file: anomaly_label.csv
   - name: liberty
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
     log_file: liberty2.log

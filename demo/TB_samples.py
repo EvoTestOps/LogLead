@@ -105,19 +105,19 @@ df_seq = sad.predict()
 
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store scores
-print(f"Running all anomaly detectors with Words and Trigrams and storing results")
+print(f"Running all anomaly detectors, excluding OneClassSVM and LOF, with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
 sad = AnomalyDetector(store_scores=True, print_scores=False)
 for i in range(2):  # We do just two loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split(df, test_frac=0.90)
-    sad.evaluate_all_ads()
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
     
     # We keep existing split but need to prepare data for trigram data
     sad.item_list_col = "e_trigrams"
     sad.prepare_train_test_data()
-    sad.evaluate_all_ads()
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
 
 
 print(f"Inspecting results. Averages of runs:")
