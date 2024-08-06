@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "LogLead"
+version = "0.0.2"
+authors = [
+    {name = "Mika Mäntylä", email="mika.mantyla@helsinki.fi"},
+    {name = "Jesse Nyyssölä", email = "jesse.nyyssola@helsinki.fi"},
+    {name = "Yuqing Wang", email="yuqing.wang@helsinki.fi"},
+    {name = "Alexander Bakhtin", email = "alexander.bakhtin@protonmail.com"}]
+maintainers = [
+    {name = "Alexander Bakhtin", email = "alexander.bakhtin@protonmail.com"}]
+description = "LogLead stands for Log Loader, Enhancer, and Anomaly Detector"
+readme = "PYPI_README.md"
+license = {file = "LICENSE"}
+keywords = [
+    "logs",
+    "anomaly detection",
+    "log parsing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Logging"]
+
+requires-python = ">=3.9"
+dependencies = [
+"polars[numpy, pandas, pyarrow]==0.20.21",
+"scipy>=1.10.1",
+'regex>=2023.10.3',
+'drain3>=0.9.11',
+'tipping>=0.1.3',
+"scikit-learn>=1.2.2",
+"xgboost>=1.7.3",
+"python-dotenv>=1.0.1",
+"pyyaml",
+"psutil",
+"jinja2",
+"matplotlib",
+"requests",
+"tqdm",
+"GitPython",
+"py7zr]
+
+[project.urls]
+Homepage = "https://github.com/EvoTestOps/LogLead"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["loglead*"]

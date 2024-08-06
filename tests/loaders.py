@@ -1,8 +1,8 @@
-import sys
 import psutil
 import os
 import yaml
 import argparse
+import sys
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")

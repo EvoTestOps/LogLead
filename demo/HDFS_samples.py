@@ -4,28 +4,25 @@
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
-import sys
 import os
 import random
 
-
-# Ensure this always gets executed in the same location
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
-sys.path.append('..')
 import polars as pl
 
 from loglead import AnomalyDetector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
 # Location of our sample data
-sample_data = "../samples"
+sample_data = os.path.join(script_dir, 'samples')
 
 # _________________________________________________________________________________
 # Part 2 load data from sample file
 # Load HDFS from sample data
-df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
-df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
+df = pl.read_parquet(os.path.join(sample_data, "hdfs_events_2percent.parquet"))
+df_seqs = pl.read_parquet(os.path.join(sample_data, "hdfs_seqs_2percent.parquet"))
 print(f"Read HDFS 2% sample. Numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
 ano_count = df_seqs["anomaly"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/len(df_seqs)*100:.2f}%")

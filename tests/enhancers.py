@@ -1,4 +1,3 @@
-import sys
 import glob
 import os
 import polars as pl
@@ -7,10 +6,7 @@ import shutil
 
 
 import argparse
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
-LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
-sys.path.append(os.environ.get("LOGLEAD_PATH"))
+
 from loglead.loaders import BaseLoader
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 

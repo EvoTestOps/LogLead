@@ -4,26 +4,24 @@
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
-import sys
 import os
 
 import polars as pl
 
-# Ensure this always gets executed in the same location
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
-sys.path.append('..')
-
 from loglead.enhancers import EventLogEnhancer
 from loglead import AnomalyDetector
 
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+
 # Location of our sample data
-sample_data = "../samples"
+sample_data = os.path.join(script_dir, 'samples', 'tb_0125percent.parquet')
 
 # _________________________________________________________________________________
 # Part 2 load data from sample file
 # Load TB from sample data
-df = pl.read_parquet(f"{sample_data}/tb_0125percent.parquet")
+df = pl.read_parquet(sample_data)
 print(f"Read TB 0.125% sample. Numbers of events: {len(df)}")
 ano_count = df["anomaly"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(df)*100:.2f}%")
@@ -107,19 +105,19 @@ df_seq = sad.predict()
 
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store scores
-print(f"Running all anomaly detectors with Words and Trigrams and storing results")
+print(f"Running all anomaly detectors, excluding OneClassSVM and LOF, with Words and Trigrams and storing results")
 print(f"We run everything two times - Adjust as needed")
 
 sad = AnomalyDetector(store_scores=True, print_scores=False)
 for i in range(2):  # We do just two loops in this demo
     sad.item_list_col = "e_words"
     sad.test_train_split(df, test_frac=0.90)
-    sad.evaluate_all_ads()
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
     
     # We keep existing split but need to prepare data for trigram data
     sad.item_list_col = "e_trigrams"
     sad.prepare_train_test_data()
-    sad.evaluate_all_ads()
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
 
 
 print(f"Inspecting results. Averages of runs:")

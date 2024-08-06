@@ -6,13 +6,9 @@ import argparse
 import datetime
 import random
 
-print(os.getcwd())
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
+from dotenv import dotenv_values
 import polars as pl
 import yaml
-LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
-sys.path.append(os.environ.get("LOGLEAD_PATH"))
 
 from loglead import AnomalyDetector
 from loglead.loaders import *
@@ -23,10 +19,18 @@ from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 #from sklearn.exceptions import ConvergenceWarning
 #warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+
 # Base path for datasets
-full_data = os.environ.get("LOG_DATA_PATH")
+envs = dotenv_values()
+full_data = envs.get("LOG_DATA_PATH")
+if not full_data:
+    print("WARNING!: LOG_DATA_PATH is not set. This will most likely fail")
+
 # Load the configuration
-default_config = LOGLEAD_PATH + '/demo/parser_benchmark/ano_detection_config.yml'
+default_config = os.path.join(script_dir, 'ano_detection_config.yml')
 
 
 # Adding argparse for command-line argument parsing
@@ -37,8 +41,12 @@ args = parser.parse_args()
 
 
 def load_config(config_path):
-    with open(config_path, 'r') as file:
-        return yaml.safe_load(file)
+    try:
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        print(f"Error: Configuration file '{config_path}' not found. Please provide a valid configuration file path using the '-c' option.")
+        sys.exit(1)
 
 
 config = load_config(args.config_path)
