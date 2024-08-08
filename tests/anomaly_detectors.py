@@ -80,7 +80,7 @@ for dataset in datasets:
             df_seq["normal"].sum() > 9 and
             df_seq["anomaly"].sum() > 9):
                 print(f"Running seqeuence anomaly detectors with {col}")
-                sad =  AnomalyDetector(item_list_col=col, print_scores= True, store_scores=True)
+                sad =  AnomalyDetector(item_list_col=col, print_scores= False, store_scores=True)
                 #High training fraction to ensure we always have suffiecient samples as these are reduced dataframes 
                 sad.test_train_split (df_seq, test_frac=0.2) 
                 sad.evaluate_all_ads(disabled_methods=disabled_methods)

@@ -10,3 +10,5 @@ private_data/
 *latex.txt
 *.csv
 .idea
+dist/
+LogLead.egg-info
