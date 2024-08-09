@@ -11,4 +11,5 @@ private_data/
 *.csv
 .idea
 dist/
+build/
 LogLead.egg-info

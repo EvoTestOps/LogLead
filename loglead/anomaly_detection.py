@@ -41,7 +41,7 @@ class AnomalyDetector:
         self.store_scores = store_scores
         self.storage = _ModelResultsStorage()
         self.print_scores=print_scores
-        self.train_vocabulary = None
+        self.train_vocabulary = None #TODO Is this used anywhere?
         self.auc_roc = auc_roc
 
     def test_train_split(self, df, test_frac=0.9, shuffle=True, vectorizer_class=CountVectorizer):
@@ -63,35 +63,52 @@ class AnomalyDetector:
         
     def prepare_train_test_data(self, vectorizer_class=CountVectorizer):
         #Prepare all data for running
-        self.X_train, self.labels_train = self._prepare_data(True, self.train_df, vectorizer_class)
-        self.X_test, self.labels_test = self._prepare_data(False, self.test_df, vectorizer_class)
+        self.X_train, self.labels_train, self.vectorizer  = self._prepare_data(self.train_df, vectorizer_class)
+        self.X_test, self.labels_test, _ = self._prepare_data(self.test_df, self.vectorizer)
         #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _ = self._prepare_data(True, self.train_df.filter(pl.col(self.label_col).not_()),
+        self.X_train_no_anos, _, self.vectorizer_no_anos = self._prepare_data(self.train_df.filter(pl.col(self.label_col).not_()),
                                                      vectorizer_class)
-        self.X_test_no_anos, self.labels_test_no_anos = self._prepare_data(False, self.test_df, vectorizer_class)
+        self.X_test_no_anos, self.labels_test_no_anos, _ = self._prepare_data(self.test_df, self.vectorizer_no_anos)
      
-    def _prepare_data(self, train, df_seq, vectorizer_class):
+    # added a way to get the test data
+    @property
+    def test_data(self):
+        return self.X_test, self.labels_test
+
+    # added a way to get the vectorizer
+    @property
+    def vec(self):
+        return self.vectorizer
+
+    @property #TODO used?
+    def voc(self):
+        return self.train_vocabulary
+     
+    # did some changes so the vectorizer does not get overwritten by anos 
+    def _prepare_data(self, df_seq, vectorizer_class):
         X = None
         labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
+        vectorizer = None
 
         # Extract events
         if self.item_list_col:
             # Extract the column
             column_data = df_seq.select(pl.col(self.item_list_col))             
             events = column_data.to_series().to_list()
-            # We are training
-            if train:
+            # We are training because vectorizer is a class
+#            if train:
+            if isinstance(vectorizer_class, type):
                 # Check the datatype  
                 if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
-                    self.vectorizer = vectorizer_class() 
+                    vectorizer = vectorizer_class() 
                 elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
-                    self.vectorizer = vectorizer_class(analyzer=lambda x: x)
-                X = self.vectorizer.fit_transform(events)
-                self.train_vocabulary = self.vectorizer.vocabulary_
-
-            # We are predicting
-            else:
-                X = self.vectorizer.transform(events)
+                    vectorizer = vectorizer_class(analyzer=lambda x: x)
+                X = vectorizer.fit_transform(events)
+                self.train_vocabulary = vectorizer.vocabulary_ #Needed?
+            # We are predicting because vectorizer_class is instance of the previously created vectorizer. 
+            elif isinstance(vectorizer_class, object):
+                  vectorizer = vectorizer_class
+                  X = self.vectorizer.transform(events)
 
         # Extract lists of embeddings
         if  self.emb_list_col:
@@ -108,7 +125,7 @@ class AnomalyDetector:
             additional_features = df_seq.select(self.numeric_cols).to_pandas().values
             X = hstack([X, additional_features]) if X is not None else additional_features
 
-        return X, labels    
+        return X, labels, vectorizer    
         
     def train_model(self, model,  /, *, filter_anos=False, **model_kwargs):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
@@ -196,6 +213,8 @@ class AnomalyDetector:
     def train_XGB(self):
         self.train_model(XGBClassifier)
 
+    # stop
+
     def train_RarityModel(self, filter_anos=True, threshold=250):
         self.train_model(RarityModel, filter_anos=filter_anos, threshold=threshold)
         
@@ -221,8 +240,11 @@ class AnomalyDetector:
             self.predict()
             if self.print_scores:
                 print(f'Total time: {time.process_time()-time_start:.2f} seconds')
-        if self.print_scores:
-            print("---------------------------------------------------------------")
+
+    @property
+    def get_model(self):
+        return self.model
+
 
     def evaluate_with_params(self, models_dict):
         for func_name, params in models_dict.items():
