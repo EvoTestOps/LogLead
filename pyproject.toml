@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LogLead"
-version = "0.0.2"
+version = "1.0.0-alpha"
 authors = [
     {name = "Mika Mäntylä", email="mika.mantyla@helsinki.fi"},
     {name = "Jesse Nyyssölä", email = "jesse.nyyssola@helsinki.fi"},
