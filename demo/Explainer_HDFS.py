@@ -10,27 +10,22 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 sys.path.append('..')
 import loglead.loaders.hdfs as load
-import loglead.enhancer as er
-import loglead.anomaly_detection as ad
+from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
+from loglead import AnomalyDetector
 import polars as pl
 import random
-
-#our teams imports
-import pickle
-import numpy as np
-import shap
-import time
-import resource
-import matplotlib.pyplot as plt
 import loglead.explainer as ex
 
-#Location of our sample data
-sample_data="../samples"
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+# Location of our sample data
+sample_data = os.path.join(script_dir, 'samples')
 
 #_________________________________________________________________________________
 #Part 2 load data from sample file
 #Load HDFS from sample data
-df = pl.read_parquet(f"{sample_data}/hdfs_events_2percent.parquet")
+df = pl.read_parquet(os.path.join(sample_data, "hdfs_events_2percent.parquet"))
 df_seqs = pl.read_parquet(f"{sample_data}/hdfs_seqs_2percent.parquet")
 print(f"Read HDFS 2% sample. Numbers of events is: {len(df)} and number of sequences is {len(df_seqs)}")
 ano_count = df_seqs["anomaly"].sum()
@@ -40,7 +35,7 @@ print(f"Anomaly count {ano_count}. Anomaly percentage in Sequences {ano_count/le
 #_________________________________________________________________________________
 #Part 3 add enhanced reprisentations 
 #print(f"\nStarting enhancing all log events:")
-enhancer = er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 
 # For nicer printing a function to format series of elements as a list-like string
 def format_as_list(series):
@@ -62,7 +57,7 @@ df = enhancer.words()
 seqs_row_index = random.randint(0, len(df_seqs) - 1)
 seq_id = df_seqs['seq_id'][seqs_row_index]
 print(f"Sequence level dataframe without aggregated info: {df_seqs.filter(pl.col('seq_id') == seq_id)}")
-seq_enhancer = er.SequenceEnhancer(df = df, df_seq = df_seqs) 
+seq_enhancer = SequenceEnhancer(df = df, df_seq = df_seqs) 
 
 # event_col can be changed
 df_seqs = seq_enhancer.events(event_col="e_message_normalized") 
@@ -74,7 +69,7 @@ del df
 #_________________________________________________________________________________________
 #Part 5 Do some anomaly detection
 
-sad = ad.AnomalyDetection()
+sad = AnomalyDetector()
 sad.test_train_split (seq_enhancer.df_seq, test_frac=0.90)
 sad.numeric_cols = None
 
@@ -155,7 +150,7 @@ print(testvals.shape)
 X_test, labels_test = sad.test_data
 
 # Initialize NNExplainer
-nn_explainer = ex.NNExplainer(df=df_seq, X=X_test, id_col="seq_id", pred_col="pred_normal")
+nn_explainer = ex.NNExplainer(df=df_seq, X=X_test, id_col="seq_id", pred_col="pred_ano")
 
 # Plot the logs with their predictions in 2D scatter plot, might take a while
 nn_explainer.plot_features_in_two_dimensions(ground_truth_col="anomaly")

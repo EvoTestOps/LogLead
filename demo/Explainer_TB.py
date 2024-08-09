@@ -11,15 +11,17 @@ os.chdir(script_dir)
 sys.path.append('..')
 import loglead.loaders.supercomputers as tbload
 #supercomputers.py
-import loglead.enhancer as er
-import loglead.anomaly_detection as ad
+from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
+from loglead import AnomalyDetector
 import polars as pl
 import random
-
 import loglead.explainer as ex
 
-#Location of our sample data
-sample_data="../samples"
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+# Location of our sample data
+sample_data = os.path.join(script_dir, 'samples')
 
 
 #_________________________________________________________________________________
@@ -30,16 +32,15 @@ print(f"Read TB 0.125% sample. Numbers of events: {len(df)}")
 ano_count = df["anomaly"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count/len(df)*100:.2f}%")
 
-# Due to limitations in RAM we use only some of the data 
-# Can be removed
+# Due to limitations in RAM we use only some of the data
+# If you have extensive adjust accordingly 
 df = df.head(100000)
-#exit()
 
 
 #_________________________________________________________________________________
 #Part 3 add enhanced reprisentations 
 print(f"\nStarting enhancing all log events:")
-enhancer = er.EventLogEnhancer(df)
+enhancer = EventLogEnhancer(df)
 
 # For nicer printing a function to format series of elements as a list-like string
 def format_as_list(series):
@@ -53,7 +54,7 @@ df = enhancer.words()
 
 #_________________________________________________________________________________________
 #Part 5 we do some anomaly detection. No part 4 here as TB is not labeled on sequence level. See HDFS_samples.py
-sad = ad.AnomalyDetection()
+sad = AnomalyDetector()
 #Using 10% for training 90% for testing
 sad.test_train_split (df, test_frac=0.90)
 
@@ -129,7 +130,7 @@ df_seq = df_seq.with_columns(pl.Series(name="id", values=[i for i in range(df_se
 X_test, labels_test = sad.test_data
 
 # Initialize NNExplainer
-nn_explainer = ex.NNExplainer(df=df_seq, X=X_test, id_col="id", pred_col="pred_normal")
+nn_explainer = ex.NNExplainer(df=df_seq, X=X_test, id_col="id", pred_col="pred_ano")
 
 # Plot the logs with their predictions in 2D scatter plot, might take a while
 nn_explainer.plot_features_in_two_dimensions(ground_truth_col="anomaly")

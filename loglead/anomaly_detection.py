@@ -108,7 +108,7 @@ class AnomalyDetector:
             # We are predicting because vectorizer_class is instance of the previously created vectorizer. 
             elif isinstance(vectorizer_class, object):
                   vectorizer = vectorizer_class
-                  X = self.vectorizer.transform(events)
+                  X = vectorizer.transform(events)
 
         # Extract lists of embeddings
         if  self.emb_list_col:

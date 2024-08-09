@@ -18,7 +18,7 @@ datasets:
   Hadoop:
     filename: "/hadoop/"
     filename_pattern: "*.log"
-    labels_file_name: "/hadoop/abnormal_label_accurate.txt"
+    labels_file_name: "/hadoop/abnormal_label.txt"
     loader: "HadoopLoader"
   Nezha-TrainTicket:
     filename: "/nezha/"
@@ -31,12 +31,12 @@ datasets:
   Bgl:
     filename: "/bgl/BGL.log"
     loader: "BGLLoader"
-  Pro:
-    filename: "/profilence/*.txt"
-    loader: "ProLoader"
+  # Pro:
+  #   filename: "/profilence/*.txt"
+  #   loader: "ProLoader"
   Hdfs:
     filename: "/hdfs/HDFS.log"
-    labels_file_name: "/hdfs/anomaly_label.csv"
+    labels_file_name: "/hdfs/preprocessed/anomaly_label.csv"
     loader: "HDFSLoader"
 # Laptop does not have sufficient memory for supercomputers    
 #  Tb:

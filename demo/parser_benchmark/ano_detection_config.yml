@@ -8,7 +8,7 @@ datasets: #Each dataset will be a single latex table in the output
   Hadoop:
     filename: "/hadoop/"
     filename_pattern: "*.log"
-    labels_file_name: "/hadoop/abnormal_label_accurate.txt"
+    labels_file_name: "/hadoop/abnormal_label.txt"
     loader: "HadoopLoader"
     proportion: 1/1 #How much of the data is used. 
     proportion_redraws: 1 #How many times we want to redraws the data. If proportion 1/1 then set this to 1. 
@@ -23,23 +23,23 @@ datasets: #Each dataset will be a single latex table in the output
     normalize: True #Do we apply enhacer "standard" regular expression normalization.  
   # Hdfs:
   #   filename: "/hdfs/HDFS.log"
-  #   labels_file_name: "/hdfs/anomaly_label.csv"
+  #   labels_file_name: "/hdfs/preprocessed/anomaly_label.csv"
   #   loader: "HDFSLoader"
   #   proportion: 1/100
-  #   proportion_redraws: 100
+  #   proportion_redraws: 3
   #   test_fraction: 0.9
   #   chronological_order : False 
-  #   train_test_repeats: 10
+  #   train_test_repeats: 3
   #   predict: seq
   #   normalize: False
-    # Bgl:
+  # Bgl:
   #   filename: "/bgl/BGL.log"
   #   loader: "BGLLoader"
   #   proportion: 1/100 
-  #   proportion_redraws: 5 
+  #   proportion_redraws: 2 
   #   test_fraction: 0.95 
   #   chronological_order : True 
-  #   train_test_repeats: 1  
+  #   train_test_repeats: 2  
   #   predict: event 
   #   normalize: False 
 #  Pro:

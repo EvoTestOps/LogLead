@@ -45,10 +45,15 @@ dependencies = [
 "psutil",
 "jinja2",
 "matplotlib",
-"requests",
-"tqdm",
-"GitPython",
-"py7zr"]
+"requests", #tests 
+"tqdm", #tests
+"GitPython", #tests
+"py7zr", #tests 
+"shap>=0.42.1", #explainer 
+"umap-learn>=0.5.6", #explainer
+"plotly>=5.19.0", #explainer
+"nbformat>=4.2.0" #explainer 
+]
 
 [project.urls]
 Homepage = "https://github.com/EvoTestOps/LogLead"
