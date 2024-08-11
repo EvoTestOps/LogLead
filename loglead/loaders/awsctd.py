@@ -18,45 +18,57 @@ class AWSCTDLoader(BaseLoader):
     def __init__(self, filename, df=None, df_seq=None):
         super().__init__(filename, df, df_seq)
         self._mandatory_columns = ["m_message"]
-
+    
     def load(self):
-        m_messages = []
-        seq_ids = []
-        labels = []
+        queries = []
+        # Walk through the directory and find all CSV files
+        for subdir, _, _ in os.walk(self.filename):
+            for file in glob(os.path.join(subdir, '*.csv')):
+                seq_id_base = os.path.basename(subdir) + '/' + os.path.basename(file).replace('.csv', '')
+                
+                q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator='\n', new_columns=['m_message'])
 
-        logfiles = [y for x in os.walk(self.filename) for y in glob(os.path.join(x[0], '*.csv'))]
-        for logfile in logfiles:
-            with open(logfile) as logsource:
-                logfile_parts = logfile.strip('\n').split('/')
-                line_nr = 1
-                for line in logsource:
-                    line_parts = line.strip('\n').split(',')
-                    label = line_parts[-1]
-                    if label == "Clean":
-                        label = "Normal"
-                    # Use filename + incrementing id per sequence
-                    seq_id = logfile_parts[-2] + '/' + logfile_parts[-1].replace('.csv', '') + '_' + str(line_nr)
+                q = q.with_columns(
+                    pl.lit(seq_id_base).alias('seq_id')  # Use the directory and file name as seq_id
+                )
+                queries.append(q)
 
-                    for event_id in line_parts[:-1]:
-                        # Append data to lists
-                        m_messages.append(event_id)
-                        seq_ids.append(seq_id)
-                        labels.append(label)
-
-                    line_nr += 1
-
-        self.df = pl.DataFrame({
-            'm_message': m_messages,
-            'seq_id': seq_ids,
-            'label': labels
-        })
+        # Collect and concatenate all queries if any
+        if queries:
+            self.df_seq = pl.concat(pl.collect_all(queries))
+            self.df = self.df_seq # Saving this here just in case it's mandatory somewhere, but the actual df is created in preprocessing
+        else:
+            print("No valid data files processed.")
 
     def preprocess(self):
-        # Here the sequence based dataframe is created
-        self.df_seq = self.df.with_columns(
-            (pl.col('label') != "Normal").alias('is_anomaly')
-        ).groupby('seq_id').agg([
-            pl.col('m_message'),  # Aggregates all 'event_type' into a list
-            pl.any('is_anomaly').alias('anomaly'),  # Checks if there's any label not equal to 'Normal'
-            (~pl.any('is_anomaly')).alias('normal')  # Adds the opposite of 'anomaly' as 'normal'
-        ])
+        if self.df_seq is not None:
+            # Split 'm_message' into an array of items
+            self.df_seq = self.df_seq.with_columns(
+                pl.col('m_message').str.split(",")
+            )
+
+            self.df_seq = self.df_seq.with_columns(
+                pl.col('m_message').apply(lambda x: x[-1] if len(x) > 0 else None, return_dtype=pl.String).alias('label')
+            )
+            self.df_seq = self.df_seq.with_columns(
+                pl.col('m_message').apply(lambda x: x[:-1] if len(x) > 1 else None, return_dtype=pl.List(pl.String))
+            )
+            self.df_seq = self.df_seq.with_columns(
+                pl.col('label').apply(lambda label: "Normal" if label == "Clean" else label, return_dtype=pl.String).alias('label')
+            )
+
+            # Explode the 'split_message' while retaining 'seq_id' and 'label' for each exploded item
+            self.df = self.df_seq.explode('m_message')
+
+            # Create a 'normal' column that is True where label is 'Normal', otherwise False
+            self.df_seq = self.df_seq.with_columns(
+                (pl.col('label') == "Normal").alias('normal'),
+            )
+            self.df_seq = self.df_seq.with_columns(
+                (~pl.any('normal')).alias('anomaly')
+            )
+
+        else:
+            print("DataFrame is empty, no data to process.")
+
+

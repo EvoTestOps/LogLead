@@ -95,7 +95,7 @@ datasets:
     url: https://github.com/DjPasco/AWSCTD/raw/master/CSV.7z
     folder: AWSCTD
     download: true
-    load: false
+    load: true
     enhance: false 
     anomaly_detection: true
     expected_length: 174847810
