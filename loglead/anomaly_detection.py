@@ -43,6 +43,7 @@ class AnomalyDetector:
         self.print_scores=print_scores
         self.train_vocabulary = None #TODO Is this used anywhere?
         self.auc_roc = auc_roc
+        self.filter_anos = False
 
     def test_train_split(self, df, test_frac=0.9, shuffle=True, vectorizer_class=CountVectorizer):
         # Shuffle the DataFrame
@@ -83,11 +84,19 @@ class AnomalyDetector:
     @property #TODO used?
     def voc(self):
         return self.train_vocabulary
-     
+
+    #To enable pickling
+    def identity_function(self,x):
+        return x
+
     # did some changes so the vectorizer does not get overwritten by anos 
-    def _prepare_data(self, df_seq, vectorizer_class):
+    def _prepare_data(self, df_seq, vectorizer_class=CountVectorizer):
         X = None
-        labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
+        if self.label_col in df_seq.columns:
+            labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
+        else:
+            labels = [] 
+            print ("WARNING! data has no labels. Only unsupervised methods will work.")
         vectorizer = None
 
         # Extract events
@@ -102,7 +111,7 @@ class AnomalyDetector:
                 if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
                     vectorizer = vectorizer_class() 
                 elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
-                    vectorizer = vectorizer_class(analyzer=lambda x: x)
+                    vectorizer = vectorizer_class(analyzer=self.identity_function)
                 X = vectorizer.fit_transform(events)
                 self.train_vocabulary = vectorizer.vocabulary_ #Needed?
             # We are predicting because vectorizer_class is instance of the previously created vectorizer. 

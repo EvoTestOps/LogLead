@@ -13,3 +13,7 @@ private_data/
 dist/
 build/
 LogLead.egg-info
+*.label
+*.log
+*.joblib
+*.xlsx

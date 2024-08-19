@@ -19,11 +19,7 @@ class BaseLoader:
         self.df_seq = df_seq  # Sequence level dataframe
 
     def load(self):
-        print(f"WARNING! You are using dummy loader. This results in dataframe with single column only titled: m_message"
-              f"Consider implementing dataset specific loader")
-        self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0, 
-                              separator=self._csv_separator, ignore_errors=True)
-        self.df = self.df.rename({"column_1": "m_message"})
+        raise NotImplementedError
         
     def preprocess(self):
         raise NotImplementedError

@@ -8,6 +8,7 @@ from .hdfs import HDFSLoader
 from .nezha import NezhaLoader
 from .pro import ProLoader
 from .supercomputers import ThuSpiLibLoader
+from .raw import RawLoader
 
 __all__ = ['ADFALoader', 'AWSCTDLoader', 'BGLLoader', 'GELFLoader', 'HadoopLoader', 'HDFSLoader', 'NezhaLoader',
-           'ProLoader', 'ThuSpiLibLoader', 'BaseLoader']
+           'ProLoader', 'ThuSpiLibLoader', 'BaseLoader', 'RawLoader']
