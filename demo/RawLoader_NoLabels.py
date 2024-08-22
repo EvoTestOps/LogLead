@@ -10,6 +10,11 @@
 import os
 import polars as pl
 import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import jaccard_score
+import numpy as np
+import zlib
 from loglead.loaders import *
 from loglead import AnomalyDetector, OOV_detector
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
@@ -23,7 +28,14 @@ if not full_data:
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
-def create_unlabeled_data(data: str, reduce_df_ratio: float = 0.1, test_ratio: float = 0.03, drop_columns: list = ["normal", "m_timestamp", "anomaly"]):
+def write_to_str(df: pl.DataFrame, name: str):
+    quote_char = "\a"
+    csv_string = df.write_csv(separator=" ", quote_char=quote_char, include_header=False)
+    csv_string = csv_string.replace(quote_char, '')   # Remove the placeholder quote_char
+    with open(name, 'w') as f:
+        f.write(csv_string)
+
+def create_unlabeled_BGL(data: str, reduce_df_ratio: float = 0.1, test_ratio: float = 0.03, drop_columns: list = ["normal", "m_timestamp", "anomaly"]):
     """
     Function to create an unlabeled dataset from a BGL data file.
     You may skip this if you have your own data. 
@@ -66,20 +78,50 @@ def create_unlabeled_data(data: str, reduce_df_ratio: float = 0.1, test_ratio: f
     train_df_no_labels, train_df_label = split_dataframe(train_df, "label", drop_columns)
     test_df_no_labels, test_df_label = split_dataframe(test_df, "label", drop_columns)
     
-    # Write data to files
-    def write_to_str(df: pl.DataFrame, name: str):
-        quote_char = "\a"
-        csv_string = df.write_csv(separator=" ", quote_char=quote_char, include_header=False)
-        csv_string = csv_string.replace(quote_char, '')   # Remove the placeholder quote_char
-        with open(name, 'w') as f:
-            f.write(csv_string)
-
     write_to_str(train_df_no_labels, "train.log")
     write_to_str(train_df_label, "train.label")
     write_to_str(test_df_no_labels, "test.log")
     write_to_str(test_df_label, "test.label")
 
-def load_and_enhance (file: str):
+
+def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float = 0.5):
+    loader = loader = HDFSLoader(filename=os.path.join(full_data,"hdfs", "HDFS.log"),
+                                labels_file_name=os.path.join(full_data,"hdfs", "preprocessed/anomaly_label.csv"))
+    df = loader.execute()
+        
+    # Reduce dataframe.  
+    df_redu = loader.reduce_dataframes(frac=reduce_df_ratio)
+    df_redu = df_redu.sort('m_timestamp')
+    df_redu_seq = loader.df_seq#We operate on sequences
+
+    # Determine test size and split data
+    test_size = int(test_ratio * df_redu_seq.shape[0])
+    train_df = df_redu_seq.head(-test_size)
+    test_df = df_redu_seq.tail(test_size)
+
+    def write_seqs_to_files(df_redu_seq, output_dir):
+        for row in df_redu_seq.iter_rows(named=True):
+            seq_id = row["seq_id"]
+            df_redu_file = df_redu.filter(pl.col("seq_id") == seq_id)
+            df_redu_file = df_redu_file.drop("seq_id", "m_timestamp")
+            start = "A_" if row["anomaly"] else "N_" 
+            file_path = os.path.join(output_dir, f"{start}{seq_id}.log")
+            write_to_str(df_redu_file, file_path)
+
+    # Create a directory to store the files
+    output_train_dir = "HDFS_train"
+    os.makedirs(output_train_dir, exist_ok=True)
+    write_seqs_to_files(train_df, output_train_dir)
+
+    output_test_dir = "HDFS_test"
+    os.makedirs(output_test_dir, exist_ok=True)
+    write_seqs_to_files(test_df, output_test_dir)
+
+
+
+
+
+def load_and_enhance (file: str, multi_file = False):
     """
     Loads raw data from a file and enhances it by normalizing and splitting to words.
 
@@ -89,7 +131,7 @@ def load_and_enhance (file: str):
     Returns:
     - pl.DataFrame: The enhanced DataFrame with normalized and processed event log messages.
     """
-    loader = RawLoader(file)
+    loader = RawLoader(file, multi_file)
     df = loader.execute()
     #Normalize data. 
     enhancer = EventLogEnhancer(df)
@@ -97,7 +139,7 @@ def load_and_enhance (file: str):
     df = enhancer.words("e_message_normalized")
     return df
 
-def train_models(df):
+def train_line_models(df):
     """
     Trains multiple anomaly detection models using the provided DataFrame and saves the models and vectorizer.
 
@@ -122,7 +164,7 @@ def train_models(df):
     #sad.train_OOVDetector() #OOV detector does not need training. Vectorizer is enough
     #joblib.dump(sad.model, 'OOV_model.joblib')
 
-def analyse_logs(df):
+def analyse_with_line_models(df):
     """
     Analyzes log data using multiple anomaly detection models and outputs the predictions to a CSV file.
 
@@ -161,9 +203,77 @@ def analyse_logs(df):
     df_anos = df_anos.with_columns(predictions)
     df_anos.drop("e_words").write_csv("test_log_predicted.csv", quote_style="always", separator='\t')
 
+def containment_similarity(v_binary1, v_binary2):
+    """Containment Similarity: Intersection divided by the smaller vector's size"""
+    intersection = np.logical_and(v_binary1, v_binary2).sum()
+    return intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0
 
-create_unlabeled_data(os.path.join(full_data, "bgl/", "BGL.log"))
+
+def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = CountVectorizer):
+    #setup
+    s_train = df_train.select(pl.col(field).str.concat(" ")).item()
+    s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
+    vectorizer =  vectorizer()
+    # Combine both texts to ensure the vectorizer includes all unique words from both
+    combined_texts = [s_train, s_analyze]
+    # Initialize and fit vectorizer on combined texts
+    v_combined = vectorizer.fit_transform(combined_texts)
+    # Split the combined vectorized text back into individual vectors
+    v_train = v_combined[0]
+    v_analyse = v_combined[1]
+    # Calculate the cosine similarity
+    cosine_sim = float(cosine_similarity(v_train, v_analyse)[0][0])
+    # Jaccard
+    v_binary1 = (v_train > 0).astype(int)
+    v_binary2 = (v_analyse > 0).astype(int)
+    #print (v_binary1)
+    j1 = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
+    #containment
+    intersection = v_binary1.multiply(v_binary2).sum()
+    containment = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
+
+    #compression distance
+    len1 = len(zlib.compress(s_train.encode()))
+    len2 = len(zlib.compress(s_analyze.encode()))
+    combined_len = len(zlib.compress((s_train + s_analyze).encode()))
+    compression =  combined_len / (len1 + len2)
+
+    return cosine_sim, j1, compression, containment
+
+def measure_distance_random_files(df_train, df_analyze, field="e_message_normalized", sample_size=10):
+    # Select unique file names and sample 10 from each DataFrame
+    unique_train = df_train.select(pl.col("file_name")).unique().sample(sample_size)
+    unique_analyze = df_analyze.select(pl.col("file_name")).unique().sample(sample_size)
+    
+    # Loop through the samples and calculate metrics
+    for i in range(sample_size):
+        df1 = df_train.filter(pl.col("file_name") == unique_train[i, 0])
+        df2 = df_analyze.filter(pl.col("file_name") == unique_analyze[i, 0])
+        
+        # Calculate the distances
+        cos, jaccard, compression, containment = measure_distance(df1, df2, field=field)
+        
+        # Print the file names and metrics
+        print(f"{unique_train[i, 0]} - {unique_analyze[i, 0]}, "
+              f"Cosine: {cos:.4f}, Jaccard: {jaccard:.4f}, Compression: {compression:.4f}, Containment: {containment:.4f}")
+
+
+
+#BGL
+create_unlabeled_BGL(os.path.join(full_data, "bgl/", "BGL.log"))
 df_train = load_and_enhance("train.log") 
-train_models(df_train)
-df_analyse = load_and_enhance("test.log")
-analyse_logs(df_analyse)
+train_line_models(df_train)
+df_analyze = load_and_enhance("test.log")
+analyse_with_line_models(df_analyze)
+measure_distance(df_train, df_analyze, field="e_message_normalized")
+measure_distance(df_train, df_analyze, field="m_message")
+
+#HDFS
+create_seq_in_file_HDFS()
+df_train = load_and_enhance("HDFS_train/*.log", multi_file=True)
+train_line_models(df_train)
+df_analyze = load_and_enhance("HDFS_test/*.log", multi_file=True)
+analyse_with_line_models(df_analyze)
+measure_distance_random_files(df_train, df_analyze, field="e_message_normalized")
+measure_distance_random_files(df_train, df_analyze, field="m_message")
+

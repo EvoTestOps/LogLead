@@ -210,8 +210,8 @@ class AnomalyDetector:
         self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
                          contamination=contamination, novelty=True)
     
-    def train_KMeans(self):
-        self.train_model(KMeans, n_init="auto", n_clusters=2)
+    def train_KMeans(self, n_clusters=2):
+        self.train_model(KMeans, n_init="auto", n_clusters=n_clusters)
 
     def train_OneClassSVM(self):
         self.train_model(OneClassSVM, max_iter=1000)
