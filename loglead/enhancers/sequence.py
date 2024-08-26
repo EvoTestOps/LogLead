@@ -28,7 +28,7 @@ class SequenceEnhancer:
 
     def seq_len(self):
         # Count the number of rows for each seq_id
-        df_temp = self.df.group_by('seq_id').agg(pl.count().alias('seq_len'))
+        df_temp = self.df.group_by('seq_id').agg(pl.len().alias('seq_len'))
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         # Add an alias  that is compatible with the token len naming.
@@ -60,7 +60,7 @@ class SequenceEnhancer:
         # Calculate the sequence duration for each seq_id as the difference between max and min timestamps
         df_temp = self.df.group_by('seq_id').agg(
             (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).alias('duration'),
-            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.seconds().alias('duration_sec')
+            (pl.col('m_timestamp').max() - pl.col('m_timestamp').min()).dt.total_seconds().alias('duration_sec')
         )
         # Join this result with df_sequences on seq_id
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')

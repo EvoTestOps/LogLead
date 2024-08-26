@@ -37,8 +37,8 @@ class ThuSpiLibLoader(BaseLoader):
         component_and_pid = component_and_pid.alias("fields")
         component_and_pid = component_and_pid.to_frame()
         component_and_pid = component_and_pid.unnest("fields")
-        component_and_pid = component_and_pid.with_columns(pl.col("component").str.rstrip(":"))
-        component_and_pid = component_and_pid.with_columns(pl.col("pid").str.rstrip("]:"))
+        component_and_pid = component_and_pid.with_columns(pl.col("component").str.strip_chars_end(":"))
+        component_and_pid = component_and_pid.with_columns(pl.col("pid").str.strip_chars_end("]:"))
         self.df = pl.concat([self.df, component_and_pid], how="horizontal")
         self.df = self.df.drop("component_pid")
         self.df = self.df.select(["label", "timestamp", "date", "userid", "month", 

@@ -33,7 +33,7 @@ classifiers = [
 
 requires-python = ">=3.9"
 dependencies = [
-"polars[numpy, pandas, pyarrow]==0.20.21",
+"polars[numpy, pandas, pyarrow]>=1.5",
 "scipy>=1.10.1",
 'regex>=2023.10.3',
 'drain3>=0.9.11',

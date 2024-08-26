@@ -61,7 +61,7 @@ class ADFALoader(BaseLoader):
         # Here the sequence based dataframe is created
         self.df_seq = self.df.with_columns(
             (pl.col('label') != "Normal").alias('is_anomaly')
-        ).groupby('seq_id').agg([
+        ).group_by('seq_id').agg([
             pl.col('m_message'),  # Aggregates all 'm_message' into a list
             pl.any('is_anomaly').alias('anomaly'),  # Checks if there's any label not equal to 'Normal'
             (~pl.any('is_anomaly')).alias('normal')  # Adds the opposite of 'anomaly' as 'normal'

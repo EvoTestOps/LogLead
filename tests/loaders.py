@@ -37,7 +37,7 @@ def create_correct_loader(dataset_name, data, system=""):
     if dataset_name == "hdfs":
         loader = HDFSLoader(filename=default_path,
                             labels_file_name=os.path.join(full_data_path,dataset_name, data['labels_file']))
-    elif dataset_name == "tb":  # Must have gbs for TB
+    elif dataset_name == "thunderbird":  # Must have gbs for TB
         if memory > memory_limit_TB:
             loader = ThuSpiLibLoader(filename=default_path)
         else:
@@ -71,6 +71,8 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
+    else:
+        print(f"ERROR did not find dataset: {dataset_name}")
         
     return loader
 

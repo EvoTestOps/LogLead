@@ -48,13 +48,13 @@ class AWSCTDLoader(BaseLoader):
             )
 
             self.df_seq = self.df_seq.with_columns(
-                pl.col('m_message').apply(lambda x: x[-1] if len(x) > 0 else None, return_dtype=pl.String).alias('label')
+                pl.col('m_message').map_elements(lambda x: x[-1] if len(x) > 0 else None, return_dtype=pl.String).alias('label')
             )
             self.df_seq = self.df_seq.with_columns(
-                pl.col('m_message').apply(lambda x: x[:-1] if len(x) > 1 else None, return_dtype=pl.List(pl.String))
+                pl.col('m_message').map_elements(lambda x: x[:-1] if len(x) > 1 else None, return_dtype=pl.List(pl.String))
             )
             self.df_seq = self.df_seq.with_columns(
-                pl.col('label').apply(lambda label: "Normal" if label == "Clean" else label, return_dtype=pl.String).alias('label')
+                pl.col('label').map_elements(lambda label: "Normal" if label == "Clean" else label, return_dtype=pl.String).alias('label')
             )
 
             # Explode the 'split_message' while retaining 'seq_id' and 'label' for each exploded item

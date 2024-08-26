@@ -187,7 +187,7 @@ class NezhaLoader(BaseLoader):
         file_pattern = os.path.join(folder_path, "*.csv")
         for file in glob.glob(file_pattern):
             try:
-                q = pl.scan_csv(file, has_header=True, separator=",", row_count_name="row_nr_per_file")
+                q = pl.scan_csv(file, has_header=True, separator=",", row_index_name="row_nr_per_file")
                 q = q.with_columns(
                     pl.lit(date_str).alias('date_folder'),  # Folder is date info
                     pl.lit(os.path.basename(file)).alias('file_name'),  # File name storage
@@ -202,7 +202,7 @@ class NezhaLoader(BaseLoader):
         for file in glob.glob(file_pattern):
             try:
                 q = pl.scan_csv(file, has_header=True, infer_schema_length=0, separator=",", 
-                                row_count_name="row_nr_per_file", truncate_ragged_lines=True)
+                                row_index_name="row_nr_per_file", truncate_ragged_lines=True)
                 
                 q = q.with_columns(
                     pl.lit(date_str).alias('date_folder'),  # Folder is date info
@@ -227,8 +227,8 @@ class NezhaLoader(BaseLoader):
         self.parse_timestamps()
         self.process_metrics()
         self.add_labels_to_metrics()
-        self.df = self.df.with_row_count()
-        self.df_trace = self.df_trace.with_row_count()
+        self.df = self.df.with_row_index("row_nr", )
+        self.df_trace = self.df_trace.with_row_index("row_nr", )
         self.df = self.add_labels_to_df(self.df)
         self.df_trace = self.add_labels_to_df(self.df_trace)
         
@@ -248,7 +248,7 @@ class NezhaLoader(BaseLoader):
             (pl.col("m_timestamp") + pl.duration(minutes=3)).alias("m_timestamp+3"),
             (pl.col("m_timestamp") + pl.duration(minutes=4)).alias("m_timestamp+4"),
         )
-        self.df_metric_default = self.df_metric_default.with_row_count()
+        self.df_metric_default = self.df_metric_default.with_row_index("row_nr", )
         column_names = [
             "CpuUsage(m)", "CpuUsageRate(%)", "MemoryUsage(Mi)", "MemoryUsageRate(%)",
             "SyscallRead","SyscallWrite","NetworkReceiveBytes", "NetworkTransmitBytes",
@@ -261,7 +261,7 @@ class NezhaLoader(BaseLoader):
             self.df_metric_default = self.df_metric_default.cast({col:pl.Float64})
 
     def _extract_log_message(self):
-        self.df = self.df.with_row_count("row_key")#Used for matching later
+        self.df = self.df.with_row_index("row_key")#Used for matching later
         #Splitting criteria. We have valid json and invalid flag
         if self.system == "WebShop":
         
@@ -388,7 +388,6 @@ class NezhaLoader(BaseLoader):
         #df_t3 = df_t3.drop(["message", "redu1", "redu2", "message_part", "SpanID", "normal_json"])
         df_t3 = df_t3.select(["row_key", "severity", "m_message"])
         self.df =self.df.join(df_t3, "row_key", "left")
-        self.df = self.df.drop(["normal_json"])
 
     #Epoch is corrupted using human readable format
     # https://github.com/IntelligentDDS/Nezha/issues/8
@@ -534,7 +533,7 @@ class NezhaLoader(BaseLoader):
         #Also system type 
         df_seq = df_for_agg.select(pl.col("seq_id")).unique()  
         df_temp = df_for_agg.group_by('seq_id').agg(
-        (pl.col("anomaly").sum()/ pl.count()).alias("ano_count")) 
+        (pl.col("anomaly").sum()/ pl.len()).alias("ano_count")) 
         # Join this result with df_sequences on seq_id
         df_seq = df_seq.join(df_temp, on='seq_id')
         return df_seq
