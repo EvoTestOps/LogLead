@@ -233,7 +233,7 @@ def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = Co
     v_binary1 = (v_train > 0).astype(int)
     v_binary2 = (v_analyse > 0).astype(int)
     #print (v_binary1)
-    j1 = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
+    jaccard = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
     #containment (smaller is subset of larger)
     intersection = v_binary1.multiply(v_binary2).sum()
     containment = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
@@ -244,9 +244,9 @@ def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = Co
     combined_len = len(zlib.compress((s_train + s_analyze).encode()))
     compression =  combined_len / (len1 + len2)
     if print_values: 
-        print(f"Distance of column {field} is Cosine: {cosine_sim}, Jaccard: {j1}, Compression: {compression}, Containment: {containment} ")
+        print(f"Distance of column {field} is Cosine: {cosine_sim}, Jaccard: {jaccard}, Compression: {compression}, Containment: {containment} ")
 
-    return cosine_sim, j1, compression, containment
+    return cosine_sim, jaccard, compression, containment
 
 def measure_distance_random_files(df_train, df_analyze, field="e_message_normalized", sample_size=10):
     # Select unique file names and sample 10 from each DataFrame

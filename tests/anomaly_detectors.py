@@ -51,7 +51,7 @@ def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
             sad.test_train_split(df, test_frac=test_frac) 
             sad.evaluate_all_ads(disabled_methods=disabled_methods)
         else:
-            print (f"Skipped column {col}. Missing, no anomaly label or too low number (<10) of normal ({df_seq['normal'].sum()}) or anomaly ({df_seq['anomaly'].sum()}) instances")    
+            print (f"Skipped column {col}. Missing, no anomaly label or too low number (<10) of normal ({df['normal'].sum()}) or anomaly ({df['anomaly'].sum()}) instances")    
 
 
     # Because this requires all the determined columns, it inherently only runs with sequenced dfs
@@ -80,7 +80,7 @@ for dataset in datasets:
         run_anomaly_detectors(df_seq, cols_event, numeric_cols, test_frac=0.2)
     else:
         df = pl.read_parquet(primary_file)
-        print(f"Running event anomaly detectors with {seq_file}")
+        print(f"Running event anomaly detectors with {primary_file}")
         run_anomaly_detectors(df, cols_event, numeric_cols, test_frac=0.5)
 
 print("Anomaly detectors test complete.")
