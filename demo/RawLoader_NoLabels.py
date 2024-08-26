@@ -82,6 +82,7 @@ def create_unlabeled_BGL(data: str, reduce_df_ratio: float = 0.1, test_ratio: fl
     write_to_str(train_df_label, "train.label")
     write_to_str(test_df_no_labels, "test.log")
     write_to_str(test_df_label, "test.label")
+    print (f"Unlabeled BGL data subsets created to files: train.log and test.log. Labels are in files: train.label and test.label.")
 
 
 def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float = 0.5):
@@ -116,6 +117,8 @@ def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float =
     output_test_dir = "HDFS_test"
     os.makedirs(output_test_dir, exist_ok=True)
     write_seqs_to_files(test_df, output_test_dir)
+    print (f"HDFS data with one sequence at one file created to folders: {output_train_dir} and {output_test_dir}.")
+    print (f"Anomaly files start with filename: A_ . Normal files start with filename: N_")
 
 
 
@@ -161,6 +164,7 @@ def train_line_models(df):
     joblib.dump(sad.model, 'IF_model.joblib')
     sad.train_RarityModel(filter_anos=False)
     joblib.dump(sad.model, 'RM_model.joblib')
+    print (f"Log line anomaly detectors created. Isolation Forrest in: IF_model.joblib, KMeans in: kmeans.joblib, RarityModel in RM_model.joblib")
     #sad.train_OOVDetector() #OOV detector does not need training. Vectorizer is enough
     #joblib.dump(sad.model, 'OOV_model.joblib')
 
@@ -203,13 +207,15 @@ def analyse_with_line_models(df):
     df_anos = df_anos.with_columns(predictions)
     df_anos.drop("e_words").write_csv("test_log_predicted.csv", quote_style="always", separator='\t')
 
+    print (f"Log line anomaly detectors executed. Scored logfile is in file: test_log_predicted.csv with columns separated with \\t")
+
 def containment_similarity(v_binary1, v_binary2):
     """Containment Similarity: Intersection divided by the smaller vector's size"""
     intersection = np.logical_and(v_binary1, v_binary2).sum()
     return intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0
 
 
-def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = CountVectorizer):
+def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = CountVectorizer, print_values=True):
     #setup
     s_train = df_train.select(pl.col(field).str.concat(" ")).item()
     s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
@@ -228,7 +234,7 @@ def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = Co
     v_binary2 = (v_analyse > 0).astype(int)
     #print (v_binary1)
     j1 = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
-    #containment
+    #containment (smaller is subset of larger)
     intersection = v_binary1.multiply(v_binary2).sum()
     containment = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
 
@@ -237,6 +243,8 @@ def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = Co
     len2 = len(zlib.compress(s_analyze.encode()))
     combined_len = len(zlib.compress((s_train + s_analyze).encode()))
     compression =  combined_len / (len1 + len2)
+    if print_values: 
+        print(f"Distance of column {field} is Cosine: {cosine_sim}, Jaccard: {j1}, Compression: {compression}, Containment: {containment} ")
 
     return cosine_sim, j1, compression, containment
 
@@ -246,12 +254,13 @@ def measure_distance_random_files(df_train, df_analyze, field="e_message_normali
     unique_analyze = df_analyze.select(pl.col("file_name")).unique().sample(sample_size)
     
     # Loop through the samples and calculate metrics
+    print (f"File distances of random file pairs: ")
     for i in range(sample_size):
         df1 = df_train.filter(pl.col("file_name") == unique_train[i, 0])
         df2 = df_analyze.filter(pl.col("file_name") == unique_analyze[i, 0])
         
         # Calculate the distances
-        cos, jaccard, compression, containment = measure_distance(df1, df2, field=field)
+        cos, jaccard, compression, containment = measure_distance(df1, df2, field=field, print_values=False)
         
         # Print the file names and metrics
         print(f"{unique_train[i, 0]} - {unique_analyze[i, 0]}, "

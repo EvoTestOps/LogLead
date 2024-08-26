@@ -19,7 +19,7 @@ class OOV_detector:
         # Give array of 0s if the needed length column is lacking in the df
         if self.len_col not in self.test_df.columns:
             print("Column not found for OOVD")
-            return np.zeros(self.test_df.select(pl.count()).item())
+            return np.zeros(self.test_df.select(pl.len()).item())
         else:
             msglen = self.test_df[self.len_col]
             test_word_count_np = np.array(X_test.tocsr().sum(axis=1)).squeeze()

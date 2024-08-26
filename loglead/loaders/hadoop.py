@@ -40,7 +40,7 @@ class HadoopLoader(BaseLoader):
             for file in glob.glob(file_pattern):
                 try:
                     q = pl.scan_csv(file, has_header=False, infer_schema_length=0,
-                                    separator=self._csv_separator, row_count_name="row_nr_per_file")
+                                    separator=self._csv_separator, row_index_name="row_nr_per_file")
                     q = q.with_columns(
                         pl.lit(seq_id).alias('seq_id'), #Folder is seq_id
                         pl.lit(os.path.basename(file)).alias('seq_id_sub') #File is seq_id_sub
@@ -65,11 +65,11 @@ class HadoopLoader(BaseLoader):
 
 
         # Generate groups by taking a cumulative sum over the flag. This will group multi-line entries together.
-        self.df = self.df.with_columns(pl.col("flag").cumsum().alias("group"))
+        self.df = self.df.with_columns(pl.col("flag").cum_sum().alias("group"))
         # Calculate number of lines in each group
 
         # Merge the entries in each group
-        df_grouped = self.df.groupby("group").agg(
+        df_grouped = self.df.group_by("group").agg(
             pl.col("column_1").str.concat("\n").alias("column_1"),
             pl.col("seq_id").first().alias("seq_id"),
             pl.col("seq_id_sub").first().alias("seq_id_sub"),
@@ -143,4 +143,3 @@ class HadoopLoader(BaseLoader):
             pl.col("m_timestamp").str.strptime(pl.Datetime, "%Y-%m-%d%H:%M:%S,%3f", strict=False)
         )
         self.df = self.df.with_columns(parsed_times)
-  

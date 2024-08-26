@@ -44,7 +44,7 @@ class EventLogEnhancer:
         if "e_words" not in self.df.columns:
             self.df = self.df.with_columns(pl.col(column).str.split(by=" ").alias("e_words"))
             self.df = self.df.with_columns(
-                e_words_len = pl.col("e_words").list.lengths(),
+                e_words_len = pl.col("e_words").list.len(),
             )
         else:
             print("e_words already found")
@@ -58,7 +58,7 @@ class EventLogEnhancer:
                 pl.col(column).str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
             )
             self.df = self.df.with_columns(
-                e_alphanumerics_len = pl.col("e_alphanumerics").list.lengths(),
+                e_alphanumerics_len = pl.col("e_alphanumerics").list.len(),
             )
         return self.df
 
@@ -75,7 +75,7 @@ class EventLogEnhancer:
                     lambda mes: self._create_cngram(message=mes, ngram=3), return_dtype=pl.List(pl.Utf8)).alias("e_trigrams")
             )
             self.df = self.df.with_columns(
-                e_trigrams_len = pl.col("e_trigrams").list.lengths()
+                e_trigrams_len = pl.col("e_trigrams").list.len()
             )
         return self.df
 
@@ -159,7 +159,8 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
-    #New parser not yet released to public. Coming early 2024
+    #See https://pypi.org/project/tipping/
+    #and https://arxiv.org/abs/2408.00645 
     def parse_tip(self, field = "e_message_normalized", reparse=False, templates=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_tip_id" not in self.df.columns:
@@ -168,7 +169,7 @@ class EventLogEnhancer:
             import tipping as tip #See https://pypi.org/project/tipping/
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
-            self.df = self.df.with_row_count()
+            self.df = self.df.with_row_index("row_nr", )
             tipping_clusters, tipping_masks, tipping_templates = tip.parse(self.df[field], return_templates=templates, return_masks=False)
             if templates:
                 df_new = pl.DataFrame(
@@ -205,7 +206,7 @@ class EventLogEnhancer:
                 self.df = self.df.drop("e_event_iplom_id")
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
-            self.df = self.df.with_row_count()
+            self.df = self.df.with_row_index("row_nr", )
             from loglead.parsers import IPLoMParser
             #TODO Storing each parser in self might eat a lot of memeory
             iplom_parser = IPLoMParser(messages=self.df[field], CT=CT, PST=PST, lowerBound=lower_bound)#FST not implemented
@@ -233,7 +234,7 @@ class EventLogEnhancer:
                 self.df = self.df.drop("e_event_pliplom_id")
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
-            self.df = self.df.with_row_count()
+            self.df = self.df.with_row_index("row_nr", )
             from loglead.parsers import PL_IPLoMParser
             pliplom_parser = PL_IPLoMParser(self.df, CT=CT, FST=FST, PST=PST, lower_bound=lower_bound, single_outlier_event=single_outlier_event)
             df_new = pliplom_parser.parse()
@@ -254,7 +255,7 @@ class EventLogEnhancer:
             lenma_tm = LenmaTemplateManager(threshold=0.9)
             if "row_nr" in self.df.columns:
                 self.df = self.df.drop("row_nr")
-            self.df = self.df.with_row_count()
+            self.df = self.df.with_row_index("row_nr", )
             self.df = self.df.with_columns(
                 lenma_obj=pl.struct(["e_words", "row_nr"])
                 .map_elements(lambda x:lenma_tm.infer_template(x["e_words"], x["row_nr"]), return_dtype=pl.Object))
@@ -327,7 +328,7 @@ class EventLogEnhancer:
         self._handle_prerequisites(["m_message"])
         if "e_chars_len" not in self.df.columns:
             self.df = self.df.with_columns(
-                e_chars_len=pl.col(column).str.n_chars(),
+                e_chars_len=pl.col(column).str.len_chars(),
                 e_lines_len=pl.col(column).str.count_matches(r"(\n|\r|\r\n)"),
                 e_event_id_len = 1 #Messages are always one event. Added to simplify code later on. 
  
@@ -387,7 +388,7 @@ class EventLogEnhancer:
         # In my tests cumsum needs a column in the table
         self.df = self.df.with_columns(condition.cast(pl.Int32).alias('count_support'))
         self.df = self.df.with_columns(
-            pl.col('count_support').cumsum().alias(column_name)
+            pl.col('count_support').cum_sum().alias(column_name)
         )
         self.df = self.df.drop('count_support')
 
@@ -416,7 +417,7 @@ class EventLogEnhancer:
         # In my tests cumsum needs a column in the table
         self.df = self.df.with_columns(condition.cast(pl.Int32).alias('count_support'))
         self.df = self.df.with_columns(
-            pl.col('count_support').cumsum().alias(column_name)
+            pl.col('count_support').cum_sum().alias(column_name)
         )
         self.df = self.df.drop('count_support')
 

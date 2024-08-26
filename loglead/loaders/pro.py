@@ -13,12 +13,10 @@ class ProLoader(BaseLoader):
     def load(self):
         queries = []
         for file in glob.glob(self.filename):
-            try:         
+            if os.path.getsize(file) > 0: #some files can be empty
                 q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator)
                 q = q.with_columns((pl.lit(os.path.basename(file))).alias('seq_id'))
                 queries.append(q)
-            except pl.exceptions.NoDataError:  # some CSV files can be empty.
-                continue
         dataframes = pl.collect_all(queries)
         self.df = pl.concat(dataframes)
 

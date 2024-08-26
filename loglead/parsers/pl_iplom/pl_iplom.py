@@ -213,7 +213,7 @@ class PL_IPLoMParser:
         df_aggre_s1 = df_aggre_s1.join(df_temp, on='e_words_len')
         # There is alternivate to count length from reduced cluster directly. 
         #self.df_iplom = self.df_iplom.get_column("events").list.len()
-        df_temp = self.df.group_by('e_words_len').agg(pl.count().alias('part_len'))
+        df_temp = self.df.group_by('e_words_len').agg(pl.len().alias('part_len'))
         df_aggre_s1 = df_aggre_s1.join(df_temp, on='e_words_len')
         logger.debug(f"s1 end found {df_aggre_s1.shape[0]} len clusters")
         #Create dataframes for each partition
