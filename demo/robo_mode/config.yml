@@ -1,66 +1,103 @@
+# Config file for Hadoop data. Download it from:
+# https://zenodo.org/records/8196385/files/Hadoop.zip?download=1 
+
+# Specify input data and output folders
+input_data_folder: "/home/mmantyla/Datasets/hadoop"
+output_folder: "output_hadoop"
+
+preprocessing_steps:
+  - name: "remove_run_name_from_file_names"
+
 steps:
-  # Compare two runs (folders) and report file similarity without looking file contents
+  # Similarity based comparisons
+  # Level 1
   similarity_run_file:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       comparison_runs: "ALL"
 
+  # Level 2
   similarity_run_content:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       comparison_runs:
-        - "1_33_1413"
-        - "2_33_1404"
-        - "2_MSI_33_64"
+        - "application_1445062781478_0012"
+        - "application_1445062781478_0013"
+        - "application_1445062781478_0014"
       normalize_content: False
 
+  #Level 3
   similarity_file_content:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       comparison_runs:
-        - "1_33_1413"
-        - "2_33_1404"
+        - "application_1445062781478_0012"
+        - "application_1445062781478_0013"
+        - "application_1445062781478_0014"
       normalize_content: True
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       comparison_runs:
-        - "1_33_1413"
-        - "2_33_1404"
+        - "application_1445062781478_0012"
+        - "application_1445062781478_0013"
+        - "application_1445062781478_0014"
       normalize_content: False
   
+  #Level 4
   similarity_line_content:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       target_files:
-      - "win/eventlog/security.log"
-      - "win/registry/reg_services.log"
+      - "container_01_000001.log"
+      - "container_01_000002.log"
+      - "container_01_000003.log"
       comparison_runs:
-      - "1_33_1413"
-      - "2_33_1404"
+        - "application_1445062781478_0012"
+        - "application_1445062781478_0013"
+        - "application_1445062781478_0014"
       normalize_content: True
 
-  #Build an anomaly detection model based on comparisons runs (folders). Use it to evalute target_run 
+  # Anomaly detection based models
+  # Level 1
   anomaly_run_file: 
     - target_run: 3 #for anomaly_run_file we can also specify a number for target_run
       comparison_runs: 10
-
+      detectors:
+        - IsolationForest
+        - KMeans
+        - RarityModel
+  # Level 2
   anomaly_run_content:
     - target_run: 3
       comparison_runs: 10 #for anomaly_run_file we can also specify a number for target_run
-      normalize_content: False
+      normalize_content: True
+      detectors:
+        - IsolationForest
+        - KMeans
+        - RarityModel
 
+  # Level 3
   anomaly_file_content:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       target_files:
-        - "win/eventlog/security.log"
-        - "firewall/wfp_filters.log"
-        - "win/registry/reg_services.log"
+      - "container_01_000001.log"
+      - "container_01_000002.log"
+      - "container_01_000003.log"
       comparison_runs: 10
       normalize_content: True
+      detectors:
+        - IsolationForest
+        - KMeans
+        - RarityModel
 
+  # Level 4
   anomaly_line_content:
-    - target_run: "1_33_1409"
+    - target_run: "application_1445062781478_0011"
       target_files:
-        - "win/eventlog/security.log"
-        - "firewall/wfp_filters.log"
-        - "win/registry/reg_services.log"
+      - "container_01_000001.log"
+      - "container_01_000002.log"
+      - "container_01_000003.log"
       comparison_runs: "ALL"
       normalize_content: False
+#      detectors:
+#        - IsolationForest
+#        - KMeans
+#        - RarityModel
 
 
 

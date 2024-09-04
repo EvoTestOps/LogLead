@@ -1,5 +1,6 @@
 import polars as pl
 import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer
 
 __all__ = ['OOV_detector']
 
@@ -18,7 +19,7 @@ class OOV_detector:
     def predict(self, X_test):
         # Give array of 0s if the needed length column is lacking in the df
         if self.len_col not in self.test_df.columns:
-            print("Column not found for OOVD")
+            print(f"Column not found for OOVD: {self.len_col}. Columns: {self.test_df.columns}")
             return np.zeros(self.test_df.select(pl.len()).item())
         else:
             msglen = self.test_df[self.len_col]
@@ -27,7 +28,7 @@ class OOV_detector:
             self.scores = np.array(msglen - test_word_count_series)
             self.is_ano = (self.scores > self.threshold).astype(int)
             return self.is_ano
-    
+
     def custom_plot(self, labels, x_axis_scale=1.0):
         # Double the font size
         # mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})

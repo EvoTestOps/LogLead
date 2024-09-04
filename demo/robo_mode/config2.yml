@@ -1,0 +1,71 @@
+# Specify input data and output folders
+input_data_folder: "/home/mmantyla/Datasets/comp_ws/all_data_10_percent"
+output_folder: "output_comp_ws_10"
+
+
+steps:
+  # Compare two runs (folders) and report file similarity without looking file contents
+  similarity_run_file:
+    - target_run: "1_33_1409"
+      comparison_runs: "ALL"
+
+  similarity_run_content:
+    - target_run: "1_33_1409"
+      comparison_runs:
+        - "1_33_1413"
+        - "2_33_1404"
+        - "2_MSI_33_64"
+      normalize_content: False
+
+  similarity_file_content:
+    - target_run: "1_33_1409"
+      comparison_runs:
+        - "1_33_1413"
+        - "2_33_1404"
+      normalize_content: True
+    - target_run: "1_33_1409"
+      comparison_runs:
+        - "1_33_1413"
+        - "2_33_1404"
+      normalize_content: False
+  
+  similarity_line_content:
+    - target_run: "1_33_1409"
+      target_files:
+      - "win/eventlog/security.log"
+      - "win/registry/reg_services.log"
+      comparison_runs:
+      - "1_33_1413"
+      - "2_33_1404"
+      normalize_content: True
+
+  #Build an anomaly detection model based on comparisons runs (folders). Use it to evalute target_run 
+  anomaly_run_file: 
+    - target_run: 3 #for anomaly_run_file we can also specify a number for target_run
+      comparison_runs: 10
+
+  anomaly_run_content:
+    - target_run: 3
+      comparison_runs: 10 #for anomaly_run_file we can also specify a number for target_run
+      normalize_content: False
+
+  anomaly_file_content:
+    - target_run: "1_33_1409"
+      target_files:
+        - "win/eventlog/security.log"
+        - "firewall/wfp_filters.log"
+        - "win/registry/reg_services.log"
+      comparison_runs: 10
+      normalize_content: True
+
+  anomaly_line_content:
+    - target_run: "1_33_1409"
+      target_files:
+        - "win/eventlog/security.log"
+        - "firewall/wfp_filters.log"
+        - "win/registry/reg_services.log"
+      comparison_runs: "ALL"
+      normalize_content: False
+
+
+
