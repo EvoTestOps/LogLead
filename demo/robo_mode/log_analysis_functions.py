@@ -5,11 +5,6 @@ import datetime
 from loglead.loaders import RawLoader
 from loglead import LogSimilarity, AnomalyDetector
 
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
-full_data = os.getenv("LOG_DATA_PATH")
-if not full_data:
-    print("WARNING!: LOG_DATA_PATH is not set. This will most likely fail")
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
