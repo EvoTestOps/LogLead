@@ -1,11 +1,20 @@
 # LogLead
-LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations.
-
+LogLead was originally designed to efficiently benchmark log anomaly detection algorithms and log representations for research. Currently, it also features a [Robo-mode](https://github.com/EvoTestOps/LogLead/tree/main/demo/robo_mode) for industrial use that does not require labeled data or data-specific adaptations.
 <img src="images/Log%20processing.svg">
 
-Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+## Installing LogLead
+An official Pip package is in the works. In the meantime, follow these steps:
+```
+- conda create --name <your_env>
+- conda activate <your_env>
+- conda install pip
+- pip install build
+- git clone https://github.com/EvoTestOps/LogLead.git
+- cd LogLead
+- python -m build
+- pip install .
+```
 
-A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 <!--
 ## Installing LogLead
 
@@ -24,7 +33,10 @@ If you want to use them, make a `conda` environment using the [environment](envi
 -->
 
 ## Demos
-In the following demonstrations, you'll notice a significant aspect of LogLead's design efficiency: code reusability. Both demos, while analyzing different datasets, share a substantial amount of their underlying code. This not only showcases LogLead's versatility in handling various log formats but also its ability to streamline the analysis process through reusable code components.
+
+### Robo-mode
+- **Script**: [Robo-mode](https://github.com/EvoTestOps/LogLead/tree/main/demo/robo_mode)
+- **Dataset**: Any data with multiple folders (runs) where the folder contents have matching file names that enable comparison between folders. The Hadoop dataset from [Zenodo](https://zenodo.org/records/8196385/files/Hadoop.zip?download=1)  can be used if you do not have your own data. No labels are required!
 
 ### Thunderbird Supercomputer Log Demo
 - **Script**: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py)
@@ -57,6 +69,10 @@ The enhancement strategies are tested with 5 different machine learning algorith
 | Average | 0.9640 | 0.9503 | 0.9494 | 0.9593 | 0.8500 |         |
 
 ## Functional overview
+LogLead features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+
+A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
+
 LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars](https://www.pola.rs/) dataframes as its notably faster than Pandas.
 
 <img src="images/LogLead_Dataflow_Diagram.png" width="40%">
