@@ -33,13 +33,13 @@ import warnings
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
 
-__all__ = ['AnomalyDetector', 'LogSimilarity']
+__all__ = ['AnomalyDetector', 'LogDistance']
 
 
-class LogSimilarity:
+class LogDistance:
     def __init__(self, df_train, df_analyze, field="m_message", vectorizer=CountVectorizer):
         """
-        Initialize the LogSimilarity class with data for similarity measurements.
+        Initialize the LogDistannce class with data for distance measurements.
 
         Parameters:
         df_train (DataFrame): The training DataFrame containing the text data to be used as the reference.
@@ -52,7 +52,7 @@ class LogSimilarity:
         self.s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
 
         self.size1 = df_train.height
-        self.size2 = df_train.height
+        self.size2 = df_analyze.height
         self.vectorizer = vectorizer()
 
         combined_texts = [self.s_train, self.s_analyze]
@@ -114,19 +114,22 @@ class LogSimilarity:
 
 
     def cosine(self):
-        """Calculate cosine similarity between the training and analysis data."""
+        """Calculate cosine distance between the training and analysis data."""
         if self.v_train is None or self.v_analyze is None:
             return None
-
-        return float(cosine_similarity(self.v_train, self.v_analyze)[0][0])
+        cosine_sim = float(cosine_similarity(self.v_train, self.v_analyze)[0][0])
+        cosine_dist = 1 - cosine_sim
+        return cosine_dist
 
     def jaccard(self):
-        """Calculate Jaccard similarity between the training and analysis data."""
+        """Calculate Jaccard distance between the training and analysis data."""
         if self.v_train is None or self.v_analyze is None:
             return None
         v_binary1 = (self.v_train > 0).astype(int)
         v_binary2 = (self.v_analyze > 0).astype(int)
-        return float(jaccard_score(v_binary1, v_binary2, average="samples"))
+        jaccard_sim = float(jaccard_score(v_binary1, v_binary2, average="samples"))
+        jaccard_dist = 1 - jaccard_sim
+        return jaccard_dist
 
 
     def compression(self):
@@ -137,17 +140,24 @@ class LogSimilarity:
         len1 = len(compressor.compress(self.s_train.encode()))
         len2 = len(compressor.compress(self.s_analyze.encode()))
         combined_len = len(compressor.compress((self.s_train + self.s_analyze).encode()))
-        compression = combined_len / (len1 + len2)
-        return (1 - compression) * 2
+        compression = (combined_len - min(len1, len2)) / max(len1, len2)
+        return compression
 
     def containment(self):
-        """Calculate containment measure between the training and analysis data."""
+        """Calculate containment distance between the training and analysis data."""
         if self.v_train is None or self.v_analyze is None:
             return None
         v_binary1 = (self.v_train > 0).astype(int)
         v_binary2 = (self.v_analyze > 0).astype(int)
         intersection = v_binary1.multiply(v_binary2).sum()
-        return float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
+
+        # Calculate containment measure
+        containment_measure = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
+        
+        # Calculate containment distance
+        containment_distance = 1 - containment_measure
+        return containment_distance
+
 
     def measure_all_distances(self, print_values=True):
         """Calculate all distance measures and print them if specified."""

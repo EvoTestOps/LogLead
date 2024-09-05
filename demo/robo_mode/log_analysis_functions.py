@@ -3,7 +3,7 @@ import polars as pl
 import inspect
 import datetime
 from loglead.loaders import RawLoader
-from loglead import LogSimilarity, AnomalyDetector
+from loglead import LogDistance, AnomalyDetector
 
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -100,7 +100,7 @@ def check_multiple_target_runs(df, base_runs):
             raise ValueError(f"Comparison run names {invalid_runs} not found in the dataframe. Please provide valid run names.")
     return base_runs
 
-def similarity_run_file(df, target_run, comparison_runs="ALL"):
+def distance_run_file(df, target_run, comparison_runs="ALL"):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -133,19 +133,19 @@ def similarity_run_file(df, target_run, comparison_runs="ALL"):
         intersection_count = file_names_run1.filter(pl.col("file_name").is_in(file_names_run2.get_column("file_name"))).height
         # Find the union of file names between run1 and run2
         union_count = pl.concat([file_names_run1, file_names_run2]).unique().height
-        jaccard_count = intersection_count / union_count
-        overlap = intersection_count / min(file_names_run1.height, file_names_run1.height)
+        jaccard_dist = 1 - (intersection_count / union_count)
+        overlap_dist = 1 - (intersection_count / min(file_names_run1.height, file_names_run1.height))
 
         # Append results to the list
         results.append({
             "target_run": target_run,
             "comparison_run": other_run,
-            "only_in_target": only_in_run1_count,
-            "only_in_comparison": only_in_run2_count,
+            "files only in target": only_in_run1_count,
+            "files only in comparison": only_in_run2_count,
             "union": union_count,
             "intersection": intersection_count,
-            "jaccard": jaccard_count,
-            "overlap": overlap
+            "jaccard distance": jaccard_dist,
+            "overlap distance": overlap_dist
         })
         # Print a dot to indicate progress
         print(".", end="", flush=True)
@@ -153,9 +153,9 @@ def similarity_run_file(df, target_run, comparison_runs="ALL"):
     print()  # Newline after progress dots
     # Create a Polars DataFrame from the results
     results_df = pl.DataFrame(results)
-    write_dataframe_to_csv(results_df, analysis="sim", level=1, target_run=target_run, comparison_run="Many")
+    write_dataframe_to_csv(results_df, analysis="dis", level=1, target_run=target_run, comparison_run="Many")
 
-def similarity_run_content(df, target_run, comparison_runs="ALL", normalize_content=False):
+def distance_run_content(df, target_run, comparison_runs="ALL", normalize_content=False):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -180,13 +180,13 @@ def similarity_run_content(df, target_run, comparison_runs="ALL", normalize_cont
         run2 = df.filter(pl.col("run") == other_run)
         
         # Initialize LogSimilarity class for each pair of runs
-        similarity = LogSimilarity(run1, run2, field=field)
+        distance = LogDistance(run1, run2, field=field)
 
         # Measure distances between the base run and the current run
-        cosine = similarity.cosine()
-        jaccard = similarity.jaccard()
-        compression = similarity.compression()
-        containment = similarity.containment()
+        cosine = distance.cosine()
+        jaccard = distance.jaccard()
+        compression = distance.compression()
+        containment = distance.containment()
 
         # Append results to the list
         results.append({
@@ -202,9 +202,9 @@ def similarity_run_content(df, target_run, comparison_runs="ALL", normalize_cont
 
     print()  # Newline after progress dots
     results_df = pl.DataFrame(results)
-    write_dataframe_to_csv(results_df, analysis="sim", level=2, target_run=target_run, comparison_run="Many", norm=normalize_content)
+    write_dataframe_to_csv(results_df, analysis="dis", level=2, target_run=target_run, comparison_run="Many", norm=normalize_content)
 
-def similarity_file_content(df, target_run, comparison_runs="ALL", normalize_content=False):
+def distance_file_content(df, target_run, comparison_runs="ALL", normalize_content=False):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -241,12 +241,12 @@ def similarity_file_content(df, target_run, comparison_runs="ALL", normalize_con
 
             # Calculate the distances
             # Initialize LogSimilarity class for each pair of runs
-            similarity = LogSimilarity(run1_file, run2_file, field=field)
+            distance = LogDistance(run1_file, run2_file, field=field)
             # Measure distances between the base run and the current run
-            cosine = similarity.cosine()
-            jaccard = similarity.jaccard()
-            compression = similarity.compression()
-            containment = similarity.containment()
+            cosine = distance.cosine()
+            jaccard = distance.jaccard()
+            compression = distance.compression()
+            containment = distance.containment()
             #Too slow
             #same, changed, deleted, added = similarity.diff_lines() 
             
@@ -259,8 +259,8 @@ def similarity_file_content(df, target_run, comparison_runs="ALL", normalize_con
                 'jaccard': jaccard,
                 'compression': compression,
                 'containment': containment,
-                'target_size': similarity.size1,
-                'comparison_lines': similarity.size2, 
+                'target_size': distance.size1,
+                'comparison_lines': distance.size2, 
             }
             results.append(result)
             # Print a dot to indicate progress
@@ -269,9 +269,9 @@ def similarity_file_content(df, target_run, comparison_runs="ALL", normalize_con
 
     # Create a Polars DataFrame from the results
     results_df = pl.DataFrame(results)
-    write_dataframe_to_csv(results_df, analysis="sim", level=3, target_run=target_run, comparison_run="Many", norm=normalize_content)
+    write_dataframe_to_csv(results_df, analysis="dis", level=3, target_run=target_run, comparison_run="Many", norm=normalize_content)
 
-def similarity_line_content(df, target_run, comparison_runs="ALL", target_files="ALL", normalize_content=False):
+def distance_line_content(df, target_run, comparison_runs="ALL", target_files="ALL", normalize_content=False):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -298,10 +298,10 @@ def similarity_line_content(df, target_run, comparison_runs="ALL", target_files=
             sanitized_file_name = file_name.replace('/', '_').replace('\\', '_')
             df_other_run_file = df_other_runs.filter(pl.col("run") == other_run) #Filter one run
             df_other_run_file = df_other_run_file.filter(pl.col("file_name") == file_name) #Filter one file
-            similarity = LogSimilarity(df_run1_file, df_other_run_file, field=field)
-            diff = similarity.diff_lines()
+            distance = LogDistance(df_run1_file, df_other_run_file, field=field)
+            diff = distance.diff_lines()
             
-            write_dataframe_to_csv(diff, analysis="sim", level=4, target_run=target_run, comparison_run=other_run, norm=normalize_content, file=sanitized_file_name)
+            write_dataframe_to_csv(diff, analysis="dis", level=4, target_run=target_run, comparison_run=other_run, norm=normalize_content, file=sanitized_file_name)
             print(".", end="", flush=True) #Progress on screen
     print()  # Newline after progress dots
 
@@ -550,7 +550,7 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
 
     Parameters:
     - df: The Polars DataFrame to write.
-    - analysis: A string indicating the type of analysis ('sim' for similarity, 'ano' for another type).
+    - analysis: A string indicating the type of analysis ('dis' for distance, 'ano' for another type).
     - level: An integer representing the level (default is 0).
     - target_run: A string representing the target run.
     - comparison_run: A string representing the comparison run.

@@ -4,8 +4,8 @@ import warnings
 from dotenv import load_dotenv, find_dotenv
 from loglead.enhancers import EventLogEnhancer
 from log_analysis_functions import (
-    set_output_folder, read_folders, similarity_run_file, similarity_run_content,
-    similarity_file_content, similarity_line_content, anomaly_file_content, anomaly_line_content,
+    set_output_folder, read_folders, distance_run_file, distance_run_content,
+    distance_file_content, distance_line_content, anomaly_file_content, anomaly_line_content,
     anomaly_run, masking_patterns_myllari
 )
 from data_specific_preprocessing import preprocess_files
@@ -49,19 +49,19 @@ def main(config_path):
     # Define a mapping of step types to their respective functions and additional parameters
     step_functions = {
         'similarity_run_file': {
-            'func': similarity_run_file,
+            'func': distance_run_file,
             'params': ['target_run', 'comparison_runs']
         },
         'similarity_run_content': {
-            'func': similarity_run_content,
+            'func': distance_run_content,
             'params': ['target_run', 'comparison_runs', 'normalize_content']
         },
         'similarity_file_content': {
-            'func': similarity_file_content,
+            'func': distance_file_content,
             'params': ['target_run', 'comparison_runs', 'normalize_content']
         },
         'similarity_line_content': {
-            'func': similarity_line_content,
+            'func': distance_line_content,
             'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
         },
         'anomaly_run_file': {

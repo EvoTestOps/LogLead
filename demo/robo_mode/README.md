@@ -11,10 +11,10 @@ Robo-mode assumes your folders represent a collection of software logs of intere
 In robo-mode, two types of analysis are available:
 
 1. **Measure the distance between two logs or sets of logs** using:
-   - Jaccard similarity
-   - Cosine similarity
-   - Containment similarity
-   - Compression similarity
+   - Jaccard distance
+   - Cosine distance
+   - Containment distance
+   - Compression distance
 
 2. **Build an anomaly detection model** from a set of logs and use it to predict anomalies in a log using:
    - KMeans
