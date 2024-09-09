@@ -78,6 +78,33 @@ class EventLogEnhancer:
                 e_trigrams_len = pl.col("e_trigrams").list.len()
             )
         return self.df
+    
+    def trigrams_unarranged(self, column="m_message"):
+        """
+        This one runs fast three char splits with extract_all at 3 different positions
+        which results in same trigrams as above. They are not arranged, but this is 
+        much faster. These use the same "e_trigrams" column name.
+        """
+        def extract_trigrams(text_column: str, start_pos: int) -> pl.Expr:
+            return (
+                pl.col(text_column)
+                .str.slice(start_pos)
+                .str.extract_all(r'.{3}')
+            )
+        self._handle_prerequisites([column])
+        if "e_trigrams" not in self.df.columns:
+            trigrams_pos0 = extract_trigrams(column, 0)
+            trigrams_pos1 = extract_trigrams(column, 1)
+            trigrams_pos2 = extract_trigrams(column, 2)
+            self.df = self.df.with_columns([
+                (pl.concat_list([trigrams_pos0, trigrams_pos1, trigrams_pos2])
+                 .alias("e_trigrams"))  # combine lists
+            ])
+            self.df = self.df.with_columns(
+                e_trigrams_len=pl.col("e_trigrams").list.len()
+            )
+
+        return self.df
 
     @staticmethod
     def _create_cngram(message, ngram=3):

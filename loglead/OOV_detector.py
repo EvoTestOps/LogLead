@@ -1,14 +1,15 @@
 import polars as pl
 import numpy as np
-from sklearn.feature_extraction.text import CountVectorizer
+
 
 __all__ = ['OOV_detector']
 
 
 class OOV_detector:
-    def __init__(self, len_col, test_df, threshold=1):
+    def __init__(self, len_col, item_list_col, test_df, threshold=1):
         self.len_col = len_col
         self.test_df = test_df
+        self.item_list_col = item_list_col
         self.scores = 0
         self.threshold = threshold
             
@@ -17,18 +18,21 @@ class OOV_detector:
         return
     
     def predict(self, X_test):
-        # Give array of 0s if the needed length column is lacking in the df
         if self.len_col not in self.test_df.columns:
-            print(f"Column not found for OOVD: {self.len_col}. Columns: {self.test_df.columns}")
-            return np.zeros(self.test_df.select(pl.len()).item())
+            # Length column not found, reconstructing and counting from the vectorizer.
+            from sklearn.feature_extraction.text import CountVectorizer
+            column_data = self.test_df.select(pl.col(self.item_list_col)).to_series().to_list()
+            vectorizer = CountVectorizer()
+            X = vectorizer.fit_transform(column_data)
+            msglen = np.array(X.tocsr().sum(axis=1)).squeeze()
         else:
             msglen = self.test_df[self.len_col]
-            test_word_count_np = np.array(X_test.tocsr().sum(axis=1)).squeeze()
-            test_word_count_series = pl.Series(test_word_count_np)
-            self.scores = np.array(msglen - test_word_count_series)
-            self.is_ano = (self.scores > self.threshold).astype(int)
-            return self.is_ano
-
+        test_word_count_np = np.array(X_test.tocsr().sum(axis=1)).squeeze()
+        test_word_count_series = pl.Series(test_word_count_np)
+        self.scores = np.array(msglen - test_word_count_series)
+        self.is_ano = (self.scores > self.threshold).astype(int)
+        return self.is_ano
+    
     def custom_plot(self, labels, x_axis_scale=1.0):
         # Double the font size
         # mpl.rcParams.update({'font.size': mpl.rcParams['font.size']*1.5})

@@ -437,8 +437,8 @@ class AnomalyDetector:
         self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
                          contamination=contamination, novelty=True)
     
-    def train_KMeans(self, n_clusters=2):
-        self.train_model(KMeans, n_init="auto", n_clusters=n_clusters)
+    def train_KMeans(self, n_clusters=2, filter_anos = False):
+        self.train_model(KMeans, filter_anos=filter_anos, n_init="auto", n_clusters=n_clusters)
 
     def train_OneClassSVM(self):
         self.train_model(OneClassSVM, max_iter=1000)
@@ -460,7 +460,7 @@ class AnomalyDetector:
                 len_col = "e_event_id_len" #item list col has the parser name when using events, but length doesn't
             else:
                 len_col = self.item_list_col+"_len"
-        self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, test_df=self.test_df, threshold=threshold)
+        self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, item_list_col=self.item_list_col, test_df=self.test_df, threshold=threshold)
         
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
@@ -489,7 +489,7 @@ class AnomalyDetector:
             method(**params)
             self.predict()
 
-    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True):
+    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True, f1optimize=True):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)
@@ -531,18 +531,42 @@ class AnomalyDetector:
             for i in range(min(10, len(sorted_idx))):  # Print top 10 or fewer
                 print(f"{all_features[sorted_idx[i]]}: {feature_importance[sorted_idx[i]]:.4f}")
                 
-        #AUC-ROC analysis for selected unsupervised models
-        if auc_roc:      
-            titlestr = type(self.model).__name__ + " ROC"
+        #AUC-ROC and optimal F1 search for selected unsupervised models
+        if auc_roc or f1optimize:   
+            from skopt import gp_minimize
+            from skopt.space import Real
+            from skopt.utils import use_named_args
+            def bayesian_optimization(true_labels, anomaly_scores, max_iterations=20):
+                t_start = time.time()
+                space = [Real(min(anomaly_scores), max(anomaly_scores), name='threshold')]
+                
+                @use_named_args(space)
+                def objective(**params):
+                    threshold = params['threshold']
+                    predicted_labels = (anomaly_scores >= threshold).astype(int)
+                    return -f1_score(true_labels, predicted_labels)
+
+                # Suppress the specific UserWarning about objective re-evaluation
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    res_gp = gp_minimize(objective, space, n_calls=max_iterations, random_state=0)
+                print(f"F1 optimization time taken {(time.time() - t_start):.4f}")
+                return res_gp.x[0], -res_gp.fun
+            
+            titlestr = type(self.model).__name__ + " ROC" # for plot (if it's on)
             X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
-            if isinstance(self.model, IsolationForest):
+            if isinstance(self.model, (IsolationForest)):
                 y_pred = 1 - model.score_samples(X_test_to_use) #lower = anomalous
-                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, y_pred)[1]:.4f}")
             if isinstance(self.model, KMeans):
                 y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
-                print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
+                if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, y_pred)[1]:.4f}")
             if isinstance(self.model, (RarityModel, OOV_detector)):
-                print(f"AUCROC: {self._auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
+                if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
+                if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, model.scores)[1]:.4f}")
+
 
     @staticmethod
     def _auc_roc_analysis(labels, preds, titlestr ="ROC", plot=False):
