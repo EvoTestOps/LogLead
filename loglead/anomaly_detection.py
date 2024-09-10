@@ -489,7 +489,7 @@ class AnomalyDetector:
             method(**params)
             self.predict()
 
-    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True, f1optimize=True):
+    def _print_evaluation_scores(self, y_test, y_pred, y_pred_proba, model, f_importance=False, auc_roc=True, f1optimize=False):
         print(f"Results from model: {type(model).__name__}")
         # Evaluate the model's performance
         accuracy = accuracy_score(y_test, y_pred)

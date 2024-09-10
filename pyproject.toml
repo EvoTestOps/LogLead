@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LogLead"
-version = "1.0.0-alpha"
+version = "1.0.0-beta"
 authors = [
     {name = "Mika Mäntylä", email="mika.mantyla@helsinki.fi"},
     {name = "Jesse Nyyssölä", email = "jesse.nyyssola@helsinki.fi"},
@@ -52,7 +52,8 @@ dependencies = [
 "shap>=0.42.1", #explainer 
 "umap-learn>=0.5.6", #explainer
 "plotly>=5.19.0", #explainer
-"nbformat>=4.2.0" #explainer 
+"nbformat>=4.2.0", #explainer
+"scikit-optimize>=0.10.1" #f1-score optimzer
 ]
 
 [project.urls]
