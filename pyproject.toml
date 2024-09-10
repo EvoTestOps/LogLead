@@ -53,7 +53,8 @@ dependencies = [
 "umap-learn>=0.5.6", #explainer
 "plotly>=5.19.0", #explainer
 "nbformat>=4.2.0", #explainer
-"xlsxwriter" #Robo mode 
+"xlsxwriter", #Robo mode 
+"scikit-optimize>=0.10.1" #f1-score optimzer
 ]
 
 [project.urls]
