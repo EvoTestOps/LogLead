@@ -4,6 +4,10 @@ import inspect
 import datetime
 from loglead.loaders import RawLoader
 from loglead import LogDistance, AnomalyDetector
+import umap
+import plotly.express as px
+from sklearn.feature_extraction.text import CountVectorizer
+from loglead.enhancers import EventLogEnhancer
 
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -99,6 +103,172 @@ def check_multiple_target_runs(df, base_runs):
             invalid_runs = [run for run in base_runs if run not in unique_runs]
             raise ValueError(f"Comparison run names {invalid_runs} not found in the dataframe. Please provide valid run names.")
     return base_runs
+
+
+def plot_run_file(df: pl.DataFrame, target_run: str, comparison_runs="ALL",  random_seed=None):
+    """
+    Create a UMAP plot based on a document-term matrix of file names and save it as an interactive HTML file.
+    
+    Parameters:
+    - df: Polars DataFrame containing the data with a 'run' column and 'file_name' column.
+    - target_run: Name of the target run to highlight.
+    - comparison_runs: List of comparison run names to include in the plot.
+    - random_state: If True, UMAP is randomized; if a number, it's used as the seed for reproducibility.
+    
+    The function will create a document-term matrix from the file names for each run.
+    """
+
+    # Start measuring time
+    _, comparison_run_names = prepare_runs(df, target_run, comparison_runs)
+    print(
+        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
+        + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
+    )
+
+
+    # Filter out target run and comparison runs from the DataFrame
+    runs_to_include = [target_run] + comparison_run_names
+    filtered_df = df.filter(pl.col("run").is_in(runs_to_include))
+    
+    # Group file names by 'run' into lists, then concatenate into a single string per run
+    # run_file_groups = (
+    #     filtered_df.group_by("run")
+    #     .agg(pl.col("file_name").str.concat(delimiter=" "))
+    # )
+    run_file_groups = (
+        filtered_df.group_by("run")
+        .agg(pl.col("file_name"))
+    )
+
+    # Convert to a list of file name strings where each string represents the concatenated file names for a run
+    column_data = run_file_groups.select(pl.col("file_name"))
+    documents = column_data.to_series().to_list()
+    run_labels = run_file_groups["run"].to_list()
+    # Create a Document-Term Matrix (DTM) using CountVectorizer
+    vectorizer = CountVectorizer(tokenizer=lambda x: x, preprocessor=None, token_pattern=None, lowercase=False)
+    dtm = vectorizer.fit_transform(documents)
+    
+    # Determine UMAP random state behavior based on the random_state parameter
+
+    if isinstance(random_seed, int):
+        umap_random_state = random_seed  # Use the provided integer as the seed
+    else:
+        umap_random_state = None
+
+    # Perform UMAP dimensionality reduction on the DTM
+    reducer = umap.UMAP(random_state=umap_random_state)
+    embeddings_2d = reducer.fit_transform(dtm.toarray())
+    
+    # Create a Polars DataFrame for plotting
+    plot_df = pl.DataFrame({
+        "UMAP1": embeddings_2d[:, 0],
+        "UMAP2": embeddings_2d[:, 1],
+        "run": run_labels
+    })
+    
+    # Convert Polars DataFrame to dictionary format for Plotly plotting
+    plot_dict = plot_df.to_dict(as_series=False)
+
+    # Define a color map where target_run is red and all others are blue
+    color_discrete_map = {target_run: 'red'}
+    color_discrete_map.update({run: 'blue' for run in comparison_run_names})
+
+    # Create the interactive UMAP plot using Plotly
+    fig = px.scatter(
+        plot_dict, 
+        x="UMAP1", 
+        y="UMAP2", 
+        color="run", 
+        color_discrete_map=color_discrete_map,  # Set custom colors
+        hover_data={"run": True, "UMAP1": False, "UMAP2": False},  # Only show the run, hide UMAP coordinates
+        title=f"File distances - Target run: {target_run} in red"
+    )
+
+    # Hide the legend
+    fig.update_layout(showlegend=False)
+
+    write_dataframe_to_csv(fig, analysis="plot", level=1, target_run=target_run, comparison_run="Many")
+
+
+
+
+def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", target_files="ALL", random_seed=None):
+    """
+    Create a UMAP plot based on a document-term matrix of file names and save it as an interactive HTML file.
+    
+    Parameters:
+    - df: Polars DataFrame containing the data with a 'run' column and 'file_name' column.
+    - target_run: Name of the target run to highlight.
+    - comparison_runs: List of comparison run names to include in the plot.
+    - random_state: If True, UMAP is randomized; if a number, it's used as the seed for reproducibility.
+    
+    The function will create a document-term matrix from the file names for each run.
+    """
+
+    # Start measuring time
+    df_run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs)
+    print(
+        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}', target file {target_files} and {len(comparison_run_names)} comparison runs"
+        + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
+    )
+
+    # Filter out target run and comparison runs from the DataFrame
+    runs_to_include = [target_run] + comparison_run_names
+    filtered_df = df.filter(pl.col("run").is_in(runs_to_include))
+    target_files = prepare_files(df_run1, target_files)
+
+    enhancer = EventLogEnhancer (filtered_df)
+    filtered_df = enhancer.words("m_message")
+
+    for file in target_files:
+        filtered_df_file = filtered_df.filter(pl.col("file_name") == file)
+        #df_run1.filter(pl.col("file_name") == file_name)
+        run_file_groups = filtered_df_file.select("run", "e_words").explode("e_words").group_by("run").agg(pl.col("e_words"))
+
+        # Convert to a list of file name strings where each string represents the concatenated file names for a run
+        column_data = run_file_groups.select(pl.col("e_words"))
+        documents = column_data.to_series().to_list()
+        run_labels = run_file_groups["run"].to_list()
+        # Create a Document-Term Matrix (DTM) using 
+        vectorizer = CountVectorizer(tokenizer=lambda x: x, preprocessor=None, token_pattern=None, lowercase=False)
+        dtm = vectorizer.fit_transform(documents)
+        
+        if isinstance(random_seed, int):
+            reducer = umap.UMAP(random_state=random_seed)
+        else:
+            reducer = umap.UMAP()
+
+        # Perform UMAP dimensionality reduction on the DTM
+        embeddings_2d = reducer.fit_transform(dtm.toarray())
+        
+        # Create a Polars DataFrame for plotting
+        plot_df = pl.DataFrame({
+            "UMAP1": embeddings_2d[:, 0],
+            "UMAP2": embeddings_2d[:, 1],
+            "run": run_labels
+        })
+        
+        # Convert Polars DataFrame to dictionary format for Plotly plotting
+        plot_dict = plot_df.to_dict(as_series=False)
+
+        # Define a color map where target_run is red and all others are blue
+        color_discrete_map = {target_run: 'red'}
+        color_discrete_map.update({run: 'blue' for run in comparison_run_names})
+
+        # Create the interactive UMAP plot using Plotly
+        fig = px.scatter(
+            plot_dict, 
+            x="UMAP1", 
+            y="UMAP2", 
+            color="run", 
+            color_discrete_map=color_discrete_map,  # Set custom colors
+            hover_data={"run": True, "UMAP1": False, "UMAP2": False},  # Only show the run, hide UMAP coordinates
+            title=f"Content distances - File: {file}, Target run: {target_run} in red"
+        )
+
+        fig.update_layout(showlegend=False)
+        write_dataframe_to_csv(fig, analysis="plot", level=3, target_run=target_run, comparison_run="Many", file=file)
+
 
 def distance_run_file(df, target_run, comparison_runs="ALL"):
     """
@@ -204,7 +374,7 @@ def distance_run_content(df, target_run, comparison_runs="ALL", normalize_conten
     results_df = pl.DataFrame(results)
     write_dataframe_to_csv(results_df, analysis="dis", level=2, target_run=target_run, comparison_run="Many", norm=normalize_content)
 
-def distance_file_content(df, target_run, comparison_runs="ALL", normalize_content=False):
+def distance_file_content(df, target_run, comparison_runs="ALL", target_files=False, normalize_content=False):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -220,6 +390,8 @@ def distance_file_content(df, target_run, comparison_runs="ALL", normalize_conte
 
     run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
     results = []
+    if target_files:
+        target_files = prepare_files(run1, target_files)
 
     print(
         f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
@@ -233,8 +405,14 @@ def distance_file_content(df, target_run, comparison_runs="ALL", normalize_conte
         matching_file_names = file_names_run1.filter(pl.col("file_name").is_in(file_names_run2.get_column("file_name")))
         matching_file_names_list = matching_file_names.get_column("file_name").to_list()
 
-        print(f"Comparing against {other_run} with {len(matching_file_names_list)} matching files")
-
+        if target_files:
+            matching_file_names_list = list(set(target_files).intersection(set(matching_file_names_list)))
+        if len(matching_file_names_list) == 0:
+            continue
+        print(
+            f"Comparing against '{other_run}' with {len(matching_file_names_list)} matching files"
+            + (f":  {matching_file_names_list}" if len(matching_file_names_list) < 6 else "")
+            )
         for file_name in matching_file_names_list:
             run1_file = run1.filter(pl.col("file_name") == file_name)
             run2_file = run2.filter(pl.col("file_name") == file_name)
@@ -295,13 +473,12 @@ def distance_line_content(df, target_run, comparison_runs="ALL", target_files="A
     for other_run in comparison_run_names:
         for file_name in target_files:
             df_run1_file =  df_run1.filter(pl.col("file_name") == file_name)
-            sanitized_file_name = file_name.replace('/', '_').replace('\\', '_')
             df_other_run_file = df_other_runs.filter(pl.col("run") == other_run) #Filter one run
             df_other_run_file = df_other_run_file.filter(pl.col("file_name") == file_name) #Filter one file
             distance = LogDistance(df_run1_file, df_other_run_file, field=field)
             diff = distance.diff_lines()
             
-            write_dataframe_to_csv(diff, analysis="dis", level=4, target_run=target_run, comparison_run=other_run, norm=normalize_content, file=sanitized_file_name)
+            write_dataframe_to_csv(diff, analysis="dis", level=4, target_run=target_run, comparison_run=other_run, norm=normalize_content, file=file_name)
             print(".", end="", flush=True) #Progress on screen
     print()  # Newline after progress dots
 
@@ -376,7 +553,6 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
     print(f"Predicting {len(target_files)} files: {target_files}")
     # Loop over each file first
     for file_name in target_files:
-        sanitized_file_name = file_name.replace('/', '_').replace('\\', '_')
         df_run1_files =  df_run1.filter(pl.col("file_name") == file_name)
         df_other_runs_files = df_other_runs.filter(pl.col("file_name") == file_name)
         if df_other_runs_files.height == 0:
@@ -387,7 +563,7 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
 
         df_anos = df_anos.with_row_index("line_number")
         #write_dataframe_to_csv(df_anos, output_csv)
-        write_dataframe_to_csv(df_anos, analysis="ano", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content, file=sanitized_file_name)
+        write_dataframe_to_csv(df_anos, analysis="ano", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content, file=file_name)
         print(".", end="", flush=True) #Progress on screen
     print()  # Newline after progress dots
 
@@ -584,13 +760,16 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
     
     # Append the additional file identifier if provided
     if file:
-        output_csv += f"_{file}"
+        sanitized_file_name = file.replace('/', '_').replace('\\', '_')
+        output_csv += f"_{sanitized_file_name}"
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     output_csv += f"_{timestamp}"
     # Finalize the file name with the CSV extension
-    output_csv += ".xlsx"
-    
+    if isinstance(df, pl.DataFrame):
+        output_csv += ".xlsx"
+    else:
+        output_csv += ".html"
     # Combine script_dir and output_folder to get the full directory path
     global output_folder
     output_directory = os.path.join(script_dir, output_folder)
@@ -600,7 +779,10 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
     
     # Construct the full path for the CSV file
     output_path = os.path.join(output_directory, output_csv)
-    df.write_excel(output_path)
+    if isinstance(df, pl.DataFrame):
+        df.write_excel(output_path)
+    else:
+        df.write_html(output_path)
     #print(f"Results saved to {output_path}")
     
 masking_patterns_myllari = [

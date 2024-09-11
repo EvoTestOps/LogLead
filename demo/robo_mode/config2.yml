@@ -39,6 +39,19 @@ steps:
       - "2_33_1404"
       normalize_content: True
 
+  plot_run_file:
+    - target_run: "1_33_1409"
+      comparison_runs: "ALL"
+      random_seed: 43
+
+  plot_file_content:
+    - target_run: "1_33_1409"
+      comparison_runs: "ALL"
+      target_files:
+       - "win/eventlog/security.log"
+       - "firewall/wfp_filters.log"
+       - "win/registry/reg_services.log"
+
   #Build an anomaly detection model based on comparisons runs (folders). Use it to evalute target_run 
   anomaly_run_file: 
     - target_run: 3 #for anomaly_run_file we can also specify a number for target_run

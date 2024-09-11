@@ -15,6 +15,18 @@ steps:
     - target_run: "application_1445062781478_0011"
       comparison_runs: "ALL"
 
+  plot_run_file:
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+
+  plot_file_content:
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      random_seed: 43
+      target_files:
+      - "container_01_000001.log"
+      - "container_01_000002.log"
+      
   # Level 2
   similarity_run_content:
     - target_run: "application_1445062781478_0011"

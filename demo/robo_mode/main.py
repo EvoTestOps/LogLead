@@ -5,7 +5,9 @@ from dotenv import load_dotenv, find_dotenv
 from loglead.enhancers import EventLogEnhancer
 from log_analysis_functions import (
     set_output_folder, read_folders, distance_run_file, distance_run_content,
-    distance_file_content, distance_line_content, anomaly_file_content, anomaly_line_content,
+    distance_file_content, distance_line_content,
+    plot_run_file, plot_file_content, 
+    anomaly_file_content, anomaly_line_content,
     anomaly_run, masking_patterns_myllari
 )
 from data_specific_preprocessing import preprocess_files
@@ -58,11 +60,19 @@ def main(config_path):
         },
         'similarity_file_content': {
             'func': distance_file_content,
-            'params': ['target_run', 'comparison_runs', 'normalize_content']
+            'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
         },
         'similarity_line_content': {
             'func': distance_line_content,
             'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
+        },
+        'plot_run_file': {
+            'func': plot_run_file,
+            'params': ['target_run', 'comparison_runs', 'random_seed']
+        },
+        'plot_file_content': {
+            'func': plot_file_content,
+            'params': ['target_run', 'comparison_runs', 'target_files','random_seed']
         },
         'anomaly_run_file': {
             'func': anomaly_run,
@@ -89,7 +99,7 @@ def main(config_path):
         configs = steps.get(step_type, [])
         func = config_data['func']
         params = config_data['params']
-        #fixed_args = config_data.get('fixed_args', {})
+        fixed_args = config_data.get('fixed_args', {})
 
         for config in configs:
             # Default values. comparison_runs=ALL others False
@@ -97,7 +107,7 @@ def main(config_path):
             # If 'detectors' is missing, and if so, assign the default value ["KMeans"]
             if 'detectors' in params and 'detectors' not in config:
                 kwargs['detectors'] = ["KMeans"]
-            #kwargs.update(fixed_args)
+            kwargs.update(fixed_args)
             kwargs['df'] = df  # Common argument across all function calls
 
             # Call the function with the prepared keyword arguments
