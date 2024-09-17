@@ -7,7 +7,7 @@ import logging
 
 import polars as pl
 
-from loglead.loaders.base import BaseLoader
+from .base import BaseLoader
 
 logger = logging.getLogger(__name__)
 __all__ = ['NezhaLoader']
