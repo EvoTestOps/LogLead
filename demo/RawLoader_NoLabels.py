@@ -124,7 +124,7 @@ def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float =
 
 
 
-def load_and_enhance (file: str, multi_file = False):
+def load_and_enhance (file: str, pattern = None):
     """
     Loads raw data from a file and enhances it by normalizing and splitting to words.
 
@@ -134,7 +134,7 @@ def load_and_enhance (file: str, multi_file = False):
     Returns:
     - pl.DataFrame: The enhanced DataFrame with normalized and processed event log messages.
     """
-    loader = RawLoader(file, multi_file)
+    loader = RawLoader(file, filename_pattern=pattern)
     df = loader.execute()
     #Normalize data. 
     enhancer = EventLogEnhancer(df)
@@ -279,9 +279,9 @@ measure_distance(df_train, df_analyze, field="m_message")
 
 #HDFS
 create_seq_in_file_HDFS()
-df_train = load_and_enhance("HDFS_train/*.log", multi_file=True)
+df_train = load_and_enhance("HDFS_train", pattern="*.log")
 train_line_models(df_train)
-df_analyze = load_and_enhance("HDFS_test/*.log", multi_file=True)
+df_analyze = load_and_enhance("HDFS_test", pattern="*.log")
 analyse_with_line_models(df_analyze)
 measure_distance_random_files(df_train, df_analyze, field="e_message_normalized")
 measure_distance_random_files(df_train, df_analyze, field="m_message")
