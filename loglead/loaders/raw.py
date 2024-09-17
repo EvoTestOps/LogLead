@@ -18,9 +18,9 @@ class RawLoader(BaseLoader):
         super().__init__(filename)
            
     def load(self):
+        force_schema = {'column_1': pl.String} # We should not need this infer_schem = False should be enough. However, it is not.
         if  self.filename_pattern: #self.nested
             queries = []
-            force_schema = {'column_1': pl.String} # We should not need this infer_schem = False should be enough. However, it is not.
             for subdir, _, _ in os.walk(self.filename):
                 #seq_id = os.path.basename(subdir)
                 file_pattern = os.path.join(subdir, self.filename_pattern)
@@ -39,7 +39,7 @@ class RawLoader(BaseLoader):
 
         else:
             self.df = pl.read_csv(self.filename, has_header=False, schema = force_schema, infer_schema=False, quote_char=None,
-                                separator=self._csv_separator, encoding="utf8-lossy", ignore_errors = True)
+                                separator=self._csv_separator, encoding="utf8-lossy",  truncate_ragged_lines=True)
             
         self.df = self.df.rename({"column_1": "m_message"})
 
