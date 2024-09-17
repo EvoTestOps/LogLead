@@ -14,9 +14,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import jaccard_score
 import numpy as np
-import zlib
+
 from loglead.loaders import *
-from loglead import AnomalyDetector, OOV_detector
+from loglead import AnomalyDetector, OOV_detector, measure_distance
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -124,7 +124,7 @@ def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float =
 
 
 
-def load_and_enhance (file: str, multi_file = False):
+def load_and_enhance (file: str, pattern = None):
     """
     Loads raw data from a file and enhances it by normalizing and splitting to words.
 
@@ -134,7 +134,7 @@ def load_and_enhance (file: str, multi_file = False):
     Returns:
     - pl.DataFrame: The enhanced DataFrame with normalized and processed event log messages.
     """
-    loader = RawLoader(file, multi_file)
+    loader = RawLoader(file, filename_pattern=pattern)
     df = loader.execute()
     #Normalize data. 
     enhancer = EventLogEnhancer(df)
@@ -215,38 +215,6 @@ def containment_similarity(v_binary1, v_binary2):
     return intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0
 
 
-def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = CountVectorizer, print_values=True):
-    #setup
-    s_train = df_train.select(pl.col(field).str.concat(" ")).item()
-    s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
-    vectorizer =  vectorizer()
-    # Combine both texts to ensure the vectorizer includes all unique words from both
-    combined_texts = [s_train, s_analyze]
-    # Initialize and fit vectorizer on combined texts
-    v_combined = vectorizer.fit_transform(combined_texts)
-    # Split the combined vectorized text back into individual vectors
-    v_train = v_combined[0]
-    v_analyse = v_combined[1]
-    # Calculate the cosine similarity
-    cosine_sim = float(cosine_similarity(v_train, v_analyse)[0][0])
-    # Jaccard
-    v_binary1 = (v_train > 0).astype(int)
-    v_binary2 = (v_analyse > 0).astype(int)
-    #print (v_binary1)
-    jaccard = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
-    #containment (smaller is subset of larger)
-    intersection = v_binary1.multiply(v_binary2).sum()
-    containment = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
-
-    #compression distance
-    len1 = len(zlib.compress(s_train.encode()))
-    len2 = len(zlib.compress(s_analyze.encode()))
-    combined_len = len(zlib.compress((s_train + s_analyze).encode()))
-    compression =  combined_len / (len1 + len2)
-    if print_values: 
-        print(f"Distance of column {field} is Cosine: {cosine_sim}, Jaccard: {jaccard}, Compression: {compression}, Containment: {containment} ")
-
-    return cosine_sim, jaccard, compression, containment
 
 def measure_distance_random_files(df_train, df_analyze, field="e_message_normalized", sample_size=10):
     # Select unique file names and sample 10 from each DataFrame
@@ -279,9 +247,9 @@ measure_distance(df_train, df_analyze, field="m_message")
 
 #HDFS
 create_seq_in_file_HDFS()
-df_train = load_and_enhance("HDFS_train/*.log", multi_file=True)
+df_train = load_and_enhance("HDFS_train", pattern="*.log")
 train_line_models(df_train)
-df_analyze = load_and_enhance("HDFS_test/*.log", multi_file=True)
+df_analyze = load_and_enhance("HDFS_test", pattern="*.log")
 analyse_with_line_models(df_analyze)
 measure_distance_random_files(df_train, df_analyze, field="e_message_normalized")
 measure_distance_random_files(df_train, df_analyze, field="m_message")

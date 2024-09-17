@@ -24,11 +24,232 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import roc_auc_score
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import jaccard_score
+import zlib
+import difflib
+import warnings
 
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
 
-__all__ = ['AnomalyDetector']
+__all__ = ['AnomalyDetector', 'LogDistance']
+
+
+class LogDistance:
+    def __init__(self, df_train, df_analyze, field="m_message", vectorizer=CountVectorizer):
+        """
+        Initialize the LogDistannce class with data for distance measurements.
+
+        Parameters:
+        df_train (DataFrame): The training DataFrame containing the text data to be used as the reference.
+        df_analyze (DataFrame): The analysis DataFrame containing the text data to be compared with the reference.
+        field (str): The column name in both DataFrames that contains the text data to analyze. Defaults to "m_message".
+        vectorizer (type): The vectorization method to use for converting text data into numerical vectors. 
+                           It should be a scikit-learn vectorizer class. Defaults to CountVectorizer.
+        """
+        self.s_train = df_train.select(pl.col(field).str.concat(" ")).item()
+        self.s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
+
+        self.size1 = df_train.height
+        self.size2 = df_analyze.height
+        self.vectorizer = vectorizer()
+
+        combined_texts = [self.s_train, self.s_analyze]
+        try:
+            self.v_combined = self.vectorizer.fit_transform(combined_texts)
+        except ValueError as e:
+            if "empty vocabulary" in str(e):
+                #print(f"Empty vocabulary for field {field}. Skipping calculation.")
+                self.v_train = None
+                self.v_analyze = None
+            else:
+                raise
+        else:
+            self.v_train = self.v_combined[0]
+            self.v_analyze = self.v_combined[1]
+        
+        #For diffing. Process only if diffing is called
+        self.df_train = df_train
+        self.df_analyze = df_analyze
+        self.field = field
+
+    def diff_lines(self):
+        """
+        Calculate the differences between the training and analysis data and return
+        the result as a Polars DataFrame.
+
+        Returns:
+        pl.DataFrame: A DataFrame containing the line number, difference indicator,
+        original line content, and modified line content.
+        """
+        # Add line numbers to both DataFrames
+        df_train = self.df_train.with_row_count(name="line_number")
+        df_analyze = self.df_analyze.with_row_count(name="line_number")
+
+        # Extract content as lists for comparison
+        lines_train = df_train.select(pl.col(self.field)).to_series().to_list()
+        lines_analyze = df_analyze.select(pl.col(self.field)).to_series().to_list()
+
+        # Use difflib to compute the differences
+        d = difflib.Differ()
+        diff = list(d.compare(lines_train, lines_analyze))
+
+        # Create a DataFrame with a single column containing the diff output
+        df_diff = pl.DataFrame({"diff_output": diff})
+
+        # Split the 'diff_output' column into 'difference' and 'content'
+        df_diff = df_diff.with_columns([
+            pl.col("diff_output").str.slice(0, 1).alias("difference"),  # First character as difference indicator
+            pl.col("diff_output").str.slice(2).alias("content")         # Content starting from the third character
+        ])
+
+        # Add line numbers for display purposes
+        df_diff = df_diff.with_row_count(name="line_number")
+
+        # Drop the intermediate 'diff_output' column
+        df_diff = df_diff.drop("diff_output")
+        return df_diff
+
+
+
+    def cosine(self):
+        """Calculate cosine distance between the training and analysis data."""
+        if self.v_train is None or self.v_analyze is None:
+            return None
+        cosine_sim = float(cosine_similarity(self.v_train, self.v_analyze)[0][0])
+        cosine_dist = 1 - cosine_sim
+        return cosine_dist
+
+    def jaccard(self):
+        """Calculate Jaccard distance between the training and analysis data."""
+        if self.v_train is None or self.v_analyze is None:
+            return None
+        v_binary1 = (self.v_train > 0).astype(int)
+        v_binary2 = (self.v_analyze > 0).astype(int)
+        jaccard_sim = float(jaccard_score(v_binary1, v_binary2, average="samples"))
+        jaccard_dist = 1 - jaccard_sim
+        return jaccard_dist
+
+
+    def compression(self):
+        """Calculate compression distance between the training and analysis data."""
+        import bz2 as compressor
+        if self.v_train is None or self.v_analyze is None:
+            return None
+        len1 = len(compressor.compress(self.s_train.encode()))
+        len2 = len(compressor.compress(self.s_analyze.encode()))
+        combined_len = len(compressor.compress((self.s_train + self.s_analyze).encode()))
+        compression = (combined_len - min(len1, len2)) / max(len1, len2)
+        return compression
+
+    def containment(self):
+        """Calculate containment distance between the training and analysis data."""
+        if self.v_train is None or self.v_analyze is None:
+            return None
+        v_binary1 = (self.v_train > 0).astype(int)
+        v_binary2 = (self.v_analyze > 0).astype(int)
+        intersection = v_binary1.multiply(v_binary2).sum()
+
+        # Calculate containment measure
+        containment_measure = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
+        
+        # Calculate containment distance
+        containment_distance = 1 - containment_measure
+        return containment_distance
+
+
+    def measure_all_distances(self, print_values=True):
+        """Calculate all distance measures and print them if specified."""
+        cosine_sim = self.cosine()
+        jaccard = self.jaccard()
+        compression = self.compression()
+        containment = self.containment()
+        if print_values:
+            print(f"Distance of column is Cosine: {cosine_sim}, Jaccard: {jaccard}, Compression: {compression}, Containment: {containment}")
+
+        return cosine_sim, jaccard, compression, containment, self.size1, self.size2
+
+
+
+def measure_distance (df_train, df_analyze, field = "m_message", vectorizer = CountVectorizer, print_values=True):
+    """
+    Measures various similarity metrics between text data in two DataFrames for a specified field.
+
+    This function calculates four different distance or similarity metrics between text data found in 
+    a specific column of two separate DataFrames:
+    - Cosine Similarity
+    - Jaccard Similarity
+    - Compression Similarity
+    - Containment
+
+    These metrics are useful for text analysis tasks such as document similarity, duplicate detection, 
+    or clustering.
+
+    Parameters:
+    df_train (DataFrame): The training DataFrame containing the text data to be used as the reference.
+    df_analyze (DataFrame): The analysis DataFrame containing the text data to be compared with the reference.
+    field (str): The column name in both DataFrames that contains the text data to analyze. Defaults to "m_message".
+    vectorizer (type): The vectorization method to use for converting text data into numerical vectors. 
+                       It should be a scikit-learn vectorizer class. Defaults to CountVectorizer.
+    print_values (bool): If True, prints the computed distance metrics. Defaults to True.
+
+    Returns:
+    tuple: A tuple containing the calculated metrics in the following order:
+        - cosine_sim (float): The cosine similarity between the text data of the two DataFrames.
+        - jaccard (float): The Jaccard similarity score based on the presence of words in the text data.
+        - compression (float): The compression distance, indicating how similar the two texts are in terms of
+                               compressibility when combined versus separately.
+        - containment (float): The containment metric, representing the proportion of the smaller text's word set 
+                               that is contained in the larger text's word set.
+    """
+    #setup
+    s_train = df_train.select(pl.col(field).str.concat(" ")).item()
+    s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
+    size1 = len(s_train)
+    size2 = len(s_analyze)
+    vectorizer =  vectorizer()
+    # Combine both texts to ensure the vectorizer includes all unique words from both
+    combined_texts = [s_train, s_analyze]
+    # Initialize and fit vectorizer on combined texts
+    #v_combined = vectorizer.fit_transform(combined_texts)
+    #---------------------------------------------------------------
+    try:
+        # Initialize and fit vectorizer on combined texts
+        v_combined = vectorizer.fit_transform(combined_texts)
+    except ValueError as e:
+        if "empty vocabulary" in str(e):
+            print(f"Empty vocabulary for field {field}. Skipping calculation.")
+            return None, None, None, None, size1, size2
+        else:
+            raise  # Raise the exception if it's not related to empty vocabulary
+    #-----------------------------------------------------------------    
+    # Split the combined vectorized text back into individual vectors
+    v_train = v_combined[0]
+    v_analyse = v_combined[1]
+    # Calculate the cosine similarity
+    cosine_sim = float(cosine_similarity(v_train, v_analyse)[0][0])
+    # Jaccard
+    v_binary1 = (v_train > 0).astype(int)
+    v_binary2 = (v_analyse > 0).astype(int)
+    #print (v_binary1)
+    print (v_binary1)
+    print (v_binary2)
+    jaccard = float(jaccard_score(v_binary1, v_binary2,  average="samples"))
+    #containment (smaller is subset of larger)
+    intersection = v_binary1.multiply(v_binary2).sum()
+    containment = float(intersection / min(v_binary1.sum(), v_binary2.sum()) if min(v_binary1.sum(), v_binary2.sum()) > 0 else 0)
+
+    #compression distance
+    len1 = len(zlib.compress(s_train.encode()))
+    len2 = len(zlib.compress(s_analyze.encode()))
+    combined_len = len(zlib.compress((s_train + s_analyze).encode()))
+    compression =  combined_len / (len1 + len2)
+    compression = (1 - compression)*2  
+    if print_values: 
+        print(f"Distance of column {field} is Cosine: {cosine_sim}, Jaccard: {jaccard}, Compression: {compression}, Containment: {containment} ")
+
+    return cosine_sim, jaccard, compression, containment, size1, size2
 
 
 class AnomalyDetector:
@@ -66,10 +287,14 @@ class AnomalyDetector:
         #Prepare all data for running
         self.X_train, self.labels_train, self.vectorizer  = self._prepare_data(self.train_df, vectorizer_class)
         self.X_test, self.labels_test, _ = self._prepare_data(self.test_df, self.vectorizer)
-        #No anomalies dataset is used for some unsupervised algos. 
-        self.X_train_no_anos, _, self.vectorizer_no_anos = self._prepare_data(self.train_df.filter(pl.col(self.label_col).not_()),
+        #No anomalies dataset is used for some unsupervised algos.
+        if self.label_col in self.train_df.columns:
+            self.X_train_no_anos, _, self.vectorizer_no_anos = self._prepare_data(self.train_df.filter(pl.col(self.label_col).not_()),
                                                      vectorizer_class)
-        self.X_test_no_anos, self.labels_test_no_anos, _ = self._prepare_data(self.test_df, self.vectorizer_no_anos)
+            self.X_test_no_anos, self.labels_test_no_anos, _ = self._prepare_data(self.test_df, self.vectorizer_no_anos)
+        else: #As we have no labels there is no difference in anos vs no_anos case
+            self.X_train_no_anos, self.vectorizer_no_anos = self.X_train, self.vectorizer
+            self.X_test_no_anos, self.labels_test_no_anos, = self.X_test, self.labels_test
      
     # added a way to get the test data
     @property
@@ -95,8 +320,10 @@ class AnomalyDetector:
         if self.label_col in df_seq.columns:
             labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
         else:
-            labels = [] 
-            print ("WARNING! data has no labels. Only unsupervised methods will work.")
+            labels = []
+            warnings.warn("WARNING! data has no labels. Only unsupervised methods will work.",
+                            category=UserWarning
+                            ) 
         vectorizer = None
 
         # Extract events
