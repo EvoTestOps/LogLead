@@ -33,9 +33,17 @@ def remove_run_name_from_file_names(df):
     This renaming ensures that log file names match across all runs after preprocessing.
     """
     # Extract the <Common_part> by removing the 'application' prefix from 'run'
-    df = df.with_columns([
-        pl.col("run").str.strip_prefix("application").alias("common_part")
-    ])
+    #OLD WAY
+#    df = df.with_columns([
+#        pl.col("run").str.strip_prefix("application").alias("common_part")
+#    ])
+    # Remove all chars before number. My_run_123_2 has common part 123_2
+    df = df.with_columns(
+        pl.col("run").str.replace_all(r"^[^\d]+", "").alias("common_part")
+    )
+
+    print (df)
+
     print(f"Running hadoop preprocessing remove_run_name_from_file_names")
     
     # Dynamic replacement not yet supported in polars
@@ -51,6 +59,7 @@ def remove_run_name_from_file_names(df):
             pl.col("file_name").str.replace(part, "").alias("file_name")
         ])
     
+    print (df)
     df = df.drop("common_part")
 
     return df

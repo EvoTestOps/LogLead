@@ -40,7 +40,7 @@ def read_folders(folder, filename_pattern= "*.log"):
     print (f"Loaded {unique_runs} runs (folders) with {df.height} rows from folder {folder}")
     return df, unique_runs
 
-def prepare_runs(df, target_run, comparison_runs="ALL"):
+def _prepare_runs(df, target_run, comparison_runs="ALL"):
     """
     Prepares and validates the base and comparison runs from the dataframe.
 
@@ -78,6 +78,8 @@ def prepare_runs(df, target_run, comparison_runs="ALL"):
         # Exclude the base run and select the specified number of runs
         comparison_runs = [run for run in unique_runs if run != target_run][:comparison_runs]
     else:
+        # Remove the target run if it's present in the comparison runs
+        comparison_runs = [run for run in comparison_runs if run != target_run]
         # Assume comparison_runs is a list and validate all provided comparison runs
         if not all(run in unique_runs for run in comparison_runs):
             invalid_runs = [run for run in comparison_runs if run not in unique_runs]
@@ -85,7 +87,7 @@ def prepare_runs(df, target_run, comparison_runs="ALL"):
     
     return run1, comparison_runs
 
-def check_multiple_target_runs(df, base_runs):
+def _check_multiple_target_runs(df, base_runs):
 
     unique_runs = df.select("run").unique().sort("run").to_series().to_list()
 
@@ -104,8 +106,7 @@ def check_multiple_target_runs(df, base_runs):
             raise ValueError(f"Comparison run names {invalid_runs} not found in the dataframe. Please provide valid run names.")
     return base_runs
 
-
-def plot_run_file(df: pl.DataFrame, target_run: str, comparison_runs="ALL",  random_seed=None):
+def plot_run(df: pl.DataFrame, target_run: str, comparison_runs="ALL", file=True, random_seed=None, group_by_indices=None, normalize_content=False):
     """
     Create a UMAP plot based on a document-term matrix of file names and save it as an interactive HTML file.
     
@@ -113,43 +114,69 @@ def plot_run_file(df: pl.DataFrame, target_run: str, comparison_runs="ALL",  ran
     - df: Polars DataFrame containing the data with a 'run' column and 'file_name' column.
     - target_run: Name of the target run to highlight.
     - comparison_runs: List of comparison run names to include in the plot.
-    - random_state: If True, UMAP is randomized; if a number, it's used as the seed for reproducibility.
-    
-    The function will create a document-term matrix from the file names for each run.
+    - file: Flag to indicate do use file names (True) or file contents (False)
+    - random_seed: Random seed for reproducibility.
+    - group_by_indices: List of integers indicating which parts of the 'run' string to group by.
     """
+    # Apply the grouping by indices if specified
+    if group_by_indices:
+        df = group_runs_by_indices(df, group_by_indices)
 
     # Start measuring time
-    _, comparison_run_names = prepare_runs(df, target_run, comparison_runs)
+    _, comparison_run_names = _prepare_runs(df, target_run, comparison_runs)
     print(
-        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
+        f"Executing {inspect.currentframe().f_code.co_name} with {'file' if file else 'content'} norm={normalize_content} target run '{target_run}' and {len(comparison_run_names)} comparison runs"
         + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
     )
-
 
     # Filter out target run and comparison runs from the DataFrame
     runs_to_include = [target_run] + comparison_run_names
     filtered_df = df.filter(pl.col("run").is_in(runs_to_include))
-    
     # Group file names by 'run' into lists, then concatenate into a single string per run
-    # run_file_groups = (
-    #     filtered_df.group_by("run")
-    #     .agg(pl.col("file_name").str.concat(delimiter=" "))
-    # )
-    run_file_groups = (
-        filtered_df.group_by("run")
-        .agg(pl.col("file_name"))
-    )
+    analysis_field = "file_name"
+    if file: 
+        if group_by_indices:
+            run_file_groups = (
+                filtered_df.group_by("run")
+                .agg(pl.col("file_name").unique(), pl.col("group").first())
+            )
+        else: 
+            run_file_groups = (
+                filtered_df.group_by("run")
+                .agg(pl.col("file_name").unique())
+            )
+    else:
+        field = "e_message_normalized" if normalize_content else "m_message"
+        enhancer = EventLogEnhancer (filtered_df)
+        filtered_df = enhancer.words(field)
+        if group_by_indices:
+            run_file_groups = filtered_df.select("run", "e_words", "group").explode("e_words").group_by("run").agg(pl.col("e_words"), pl.col("group").first())
+        else:
+            run_file_groups = filtered_df.select("run", "e_words").explode("e_words").group_by("run").agg(pl.col("e_words"))
+        analysis_field = "e_words"
+       
 
     # Convert to a list of file name strings where each string represents the concatenated file names for a run
-    column_data = run_file_groups.select(pl.col("file_name"))
+    column_data = run_file_groups.select(pl.col(analysis_field))
     documents = column_data.to_series().to_list()
     run_labels = run_file_groups["run"].to_list()
+
+    # If no grouping is specified, use the same color for all runs
+    if group_by_indices:
+        group_labels = run_file_groups.select(pl.col("group")).to_series().to_list()
+        unique_groups = sorted(set(group_labels))
+        color_discrete_map = {group: f'rgba({(i*50)%255}, {(i*100)%255}, {(i*150)%255}, 1)' for i, group in enumerate(unique_groups)}
+    else:
+        # If no grouping, use a single color for all runs
+        group_labels = ['all'] * len(run_labels)
+        color_discrete_map = {'all': 'blue'}
+
     # Create a Document-Term Matrix (DTM) using CountVectorizer
     vectorizer = CountVectorizer(tokenizer=lambda x: x, preprocessor=None, token_pattern=None, lowercase=False)
     dtm = vectorizer.fit_transform(documents)
     
-    # Determine UMAP random state behavior based on the random_state parameter
 
+    # Determine UMAP random state behavior based on the random_seed parameter
     if isinstance(random_seed, int):
         umap_random_state = random_seed  # Use the provided integer as the seed
     else:
@@ -163,36 +190,70 @@ def plot_run_file(df: pl.DataFrame, target_run: str, comparison_runs="ALL",  ran
     plot_df = pl.DataFrame({
         "UMAP1": embeddings_2d[:, 0],
         "UMAP2": embeddings_2d[:, 1],
-        "run": run_labels
+        "run": run_labels,
+        "group": group_labels  # Add group labels for coloring
     })
     
     # Convert Polars DataFrame to dictionary format for Plotly plotting
     plot_dict = plot_df.to_dict(as_series=False)
 
-    # Define a color map where target_run is red and all others are blue
-    color_discrete_map = {target_run: 'red'}
-    color_discrete_map.update({run: 'blue' for run in comparison_run_names})
+    # Define marker symbols: '+' for target run, and 'circle' for others
+    marker_symbols = ['circle' if run != target_run else 'cross' for run in run_labels]
 
     # Create the interactive UMAP plot using Plotly
     fig = px.scatter(
         plot_dict, 
         x="UMAP1", 
         y="UMAP2", 
-        color="run", 
-        color_discrete_map=color_discrete_map,  # Set custom colors
+        color="group",  # Color based on groups or a single color
+        symbol=marker_symbols,  # Set custom marker symbols
+        color_discrete_map=color_discrete_map,  # Set custom colors based on groups or a single color
         hover_data={"run": True, "UMAP1": False, "UMAP2": False},  # Only show the run, hide UMAP coordinates
-        title=f"File distances - Target run: {target_run} in red"
+        title=f"Run ({'file' if file else 'content'}) distances - Target run: {target_run} with diamond"
     )
 
-    # Hide the legend
-    fig.update_layout(showlegend=False)
+    # Update the layout to show the legend
+    fig.update_layout(showlegend=True)
 
-    write_dataframe_to_csv(fig, analysis="plot", level=1, target_run=target_run, comparison_run="Many")
+    # Save the figure to CSV (or other formats)
+    write_dataframe_to_csv(fig, analysis="plot", level=1 if file else 2, norm=normalize_content, target_run=target_run, comparison_run="Many")
 
 
 
 
-def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", target_files="ALL", random_seed=None):
+def group_runs_by_indices(df: pl.DataFrame, group_by_indices: list[int]) -> pl.DataFrame:
+    """
+    Groups the 'run' column based on specified indices.
+
+    Parameters:
+    - df: Polars DataFrame containing the 'run' column.
+    - group_by_indices: List of integer indices specifying which parts to group by.
+
+    Returns:
+    - Polars DataFrame with an added 'group' column.
+    """
+
+    #S1: Split run string to multiple parts 1_33_44 becomes [1, 33, 44]
+    df = df.with_columns(
+        pl.col("run").str.split("_").alias("run_parts")
+    )
+    #S2:  Loop over and select the parts we want to keep for groups to a new df
+    df_new = None
+    for item in group_by_indices:
+        if df_new is None:
+            df_new = df.select(pl.col("run_parts").list.get(item).alias(f"part_{item}"))
+        else:
+            df_new = df_new.with_columns(df.select(pl.col("run_parts").list.get(item).alias(f"part_{item}")))
+    #S3: New df contains only correct columns we merge 
+    df_new = df_new.with_columns(pl.concat_str(pl.col("*"), separator="_",).alias("group"),)
+    #S4: Lose the extra columns
+    df_new = df_new.select(pl.col("group"))
+    df = df.drop("run_parts")
+    #S5 add the group column to df
+    df = df.with_columns(df_new)
+    return df
+
+def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", target_files="ALL", random_seed=None,group_by_indices=None, normalize_content=False):
     """
     Create a UMAP plot based on a document-term matrix of file names and save it as an interactive HTML file.
     
@@ -204,11 +265,14 @@ def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", 
     
     The function will create a document-term matrix from the file names for each run.
     """
+    field = "e_message_normalized" if normalize_content else "m_message"
+    # Apply the grouping by indices if specified
+    if group_by_indices:
+        df = group_runs_by_indices(df, group_by_indices)
 
-    # Start measuring time
-    df_run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs)
+    df_run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs)
     print(
-        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}', target file {target_files} and {len(comparison_run_names)} comparison runs"
+        f"Executing {inspect.currentframe().f_code.co_name} in column {field} with target run '{target_run}', target file {target_files} and {len(comparison_run_names)} comparison runs"
         + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
     )
 
@@ -218,21 +282,46 @@ def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", 
     target_files = prepare_files(df_run1, target_files)
 
     enhancer = EventLogEnhancer (filtered_df)
-    filtered_df = enhancer.words("m_message")
+    filtered_df = enhancer.words(field)
 
     for file in target_files:
         filtered_df_file = filtered_df.filter(pl.col("file_name") == file)
         #df_run1.filter(pl.col("file_name") == file_name)
-        run_file_groups = filtered_df_file.select("run", "e_words").explode("e_words").group_by("run").agg(pl.col("e_words"))
+        if group_by_indices:
+            run_file_groups = filtered_df_file.select("run", "e_words", "group").explode("e_words").group_by("run").agg(pl.col("e_words"), pl.col("group").first())
+        else:
+            run_file_groups = filtered_df_file.select("run", "e_words").explode("e_words").group_by("run").agg(pl.col("e_words"))
 
         # Convert to a list of file name strings where each string represents the concatenated file names for a run
         column_data = run_file_groups.select(pl.col("e_words"))
         documents = column_data.to_series().to_list()
         run_labels = run_file_groups["run"].to_list()
+
+        # If no grouping is specified, use the same color for all runs
+        if group_by_indices:
+            group_labels = run_file_groups.select(pl.col("group")).to_series().to_list()
+            unique_groups = sorted(set(group_labels))
+            color_discrete_map = {group: f'rgba({(i*50)%255}, {(i*100)%255}, {(i*150)%255}, 1)' for i, group in enumerate(unique_groups)}
+        else:
+            # If no grouping, use a single color for all runs
+            group_labels = ['all'] * len(run_labels)
+            color_discrete_map = {'all': 'blue'}
+
         # Create a Document-Term Matrix (DTM) using 
         vectorizer = CountVectorizer(tokenizer=lambda x: x, preprocessor=None, token_pattern=None, lowercase=False)
         dtm = vectorizer.fit_transform(documents)
         
+            #DEBUG
+        # Inspect the shape of the DTM
+        print(f"DTM shape: {dtm.shape}")
+        # Convert DTM to a dense array to view its contents
+        #dense_dtm = dtm.toarray()
+        #print(f"DTM contents (first 5 rows):\n{dense_dtm[:5]}")
+        # Get feature names (terms)
+        feature_names = vectorizer.get_feature_names_out()
+        print(f"Feature names (terms): {feature_names[:100]}")  # Show first 10 terms for brevity
+    #---------------------------------------------------------------
+
         if isinstance(random_seed, int):
             reducer = umap.UMAP(random_state=random_seed)
         else:
@@ -245,29 +334,31 @@ def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", 
         plot_df = pl.DataFrame({
             "UMAP1": embeddings_2d[:, 0],
             "UMAP2": embeddings_2d[:, 1],
-            "run": run_labels
+            "run": run_labels,
+            "group": group_labels  # Add group labels for coloring
         })
         
         # Convert Polars DataFrame to dictionary format for Plotly plotting
         plot_dict = plot_df.to_dict(as_series=False)
 
-        # Define a color map where target_run is red and all others are blue
-        color_discrete_map = {target_run: 'red'}
-        color_discrete_map.update({run: 'blue' for run in comparison_run_names})
+        # Define marker symbols: '+' for target run, and 'circle' for others
+        marker_symbols = ['circle' if run != target_run else 'cross' for run in run_labels]
 
         # Create the interactive UMAP plot using Plotly
         fig = px.scatter(
             plot_dict, 
             x="UMAP1", 
             y="UMAP2", 
-            color="run", 
-            color_discrete_map=color_discrete_map,  # Set custom colors
+            color="group",  # Color based on groups or a single color
+            symbol=marker_symbols,  # Set custom marker symbols
+            color_discrete_map=color_discrete_map,  # Set custom colors based on groups or a single color
             hover_data={"run": True, "UMAP1": False, "UMAP2": False},  # Only show the run, hide UMAP coordinates
-            title=f"Content distances - File: {file}, Target run: {target_run} in red"
+            title=f"{file} distances - Target run: {target_run} with diamond"
         )
-
-        fig.update_layout(showlegend=False)
-        write_dataframe_to_csv(fig, analysis="plot", level=3, target_run=target_run, comparison_run="Many", file=file)
+        
+        fig.update_layout(showlegend=True)
+        write_dataframe_to_csv(fig, analysis="plot", level=3, target_run=target_run, comparison_run="Many", file=file, norm=normalize_content)
+        write_dataframe_to_csv(plot_df, analysis="umap", level=3, target_run=target_run, comparison_run="Many", file=file, norm=normalize_content)
 
 
 def distance_run_file(df, target_run, comparison_runs="ALL"):
@@ -282,7 +373,7 @@ def distance_run_file(df, target_run, comparison_runs="ALL"):
     - comparison_runs: Optional list of run names to compare against. If None, compares against all other runs.
     """
     # Extract unique runs 
-    run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
+    run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     results = []
     print(
         f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
@@ -339,7 +430,7 @@ def distance_run_content(df, target_run, comparison_runs="ALL", normalize_conten
     field = "e_message_normalized" if normalize_content else "m_message"
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     # Extract unique runs 
-    run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
+    run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     results = []
     print(
         f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
@@ -388,7 +479,7 @@ def distance_file_content(df, target_run, comparison_runs="ALL", target_files=Fa
     # Extract unique runs
     field = "e_message_normalized" if normalize_content else "m_message"
 
-    run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
+    run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     results = []
     if target_files:
         target_files = prepare_files(run1, target_files)
@@ -437,7 +528,7 @@ def distance_file_content(df, target_run, comparison_runs="ALL", target_files=Fa
                 'jaccard': jaccard,
                 'compression': compression,
                 'containment': containment,
-                'target_size': distance.size1,
+                'target_lines': distance.size1,
                 'comparison_lines': distance.size2, 
             }
             results.append(result)
@@ -462,7 +553,7 @@ def distance_line_content(df, target_run, comparison_runs="ALL", target_files="A
     """    
     field = "e_message_normalized" if normalize_content else "m_message"
     # Extract unique runs and files
-    df_run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
+    df_run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     target_files = prepare_files(df_run1, target_files)
     df_other_runs = df.filter(pl.col("run").is_in(comparison_run_names))
     print(
@@ -523,9 +614,18 @@ def prepare_files(df_run1, files="ALL"):
             raise ValueError(f"Number of files must be between 1 and {len(available_files)}.")
         # Select the specified number of files
         files = available_files[:files]
+    elif isinstance(files, str) and "*" in files:
+        # Convert the glob-like pattern to a regex and filter available files
+        import re
+        pattern = re.compile(files.replace(".", r"\.").replace("*", ".*"))
+        matched_files = [file for file in available_files if pattern.match(file)]
+        if not matched_files:
+            raise ValueError(f"No files matched the pattern: {files}")
+        files = matched_files
     
     else:
-        raise ValueError("Invalid type for 'files'. It must be 'ALL', a list, or an integer.")
+        raise ValueError(f"Invalid type for 'files': {files}. It must be 'ALL', a list, an integer, or a pattern.")
+
     
     return files
 
@@ -543,7 +643,7 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
     # Extract unique runs
     field = "e_message_normalized" if normalize_content else "m_message"
  
-    df_run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
+    df_run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     print(
         f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
         + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
@@ -559,13 +659,46 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
             print(f"Found no files matching files in comparisons runs for file: {file_name}")
             continue
 
-        df_anos = run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=detectors, drop_input=False)
-
+        df_anos = _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=detectors, drop_input=False)
+        #Add moving averages. 
+        df_anos_100 = _calculate_moving_average_all_numeric(df_anos, 10)
+        df_anos_1000 = _calculate_moving_average_all_numeric(df_anos, 100)
+        df_anos = df_anos.with_columns(df_anos_100)
+        df_anos = df_anos.with_columns(df_anos_1000)
         df_anos = df_anos.with_row_index("line_number")
         #write_dataframe_to_csv(df_anos, output_csv)
         write_dataframe_to_csv(df_anos, analysis="ano", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content, file=file_name)
         print(".", end="", flush=True) #Progress on screen
     print()  # Newline after progress dots
+
+def _calculate_moving_average_all_numeric(df: pl.DataFrame, window_size: int) -> pl.DataFrame:
+    """
+    Internal function to calculate the moving average for all numeric columns in a Polars DataFrame.
+
+    Args:
+        df (pl.DataFrame): The Polars DataFrame containing the data.
+        window_size (int): The size of the window over which to calculate the moving average.
+
+    Returns:
+        pl.DataFrame: A new DataFrame with only the moving averages for each numeric column.
+    """
+    # Get all numeric columns
+    numeric_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in (pl.Float64, pl.Float32, pl.Int64, pl.Int32)]
+
+    if not numeric_cols:
+        raise ValueError("No numeric columns found in the DataFrame")
+
+    # Create a new DataFrame with the moving averages
+    moving_avg_df = pl.DataFrame()
+
+    # Add moving average for each numeric column to the new DataFrame
+    for column in numeric_cols:
+        moving_avg_column = f"moving_avg_{window_size}_{column}"
+        moving_avg_df = moving_avg_df.hstack(
+            df.select(pl.col(column).rolling_mean(window_size).alias(moving_avg_column))
+        )
+
+    return moving_avg_df
 
 def anomaly_file_content(df, target_run, comparison_runs="ALL", target_files="ALL", detectors=["KMeans"], normalize_content=False):
     """
@@ -580,36 +713,41 @@ def anomaly_file_content(df, target_run, comparison_runs="ALL", target_files="AL
     """
     field = "e_message_normalized" if normalize_content else "m_message"
 
-    # Extract unique runs 
-    df_run1, comparison_run_names = prepare_runs(df, target_run, comparison_runs) 
-    # Generate output CSV file name based on base run
-    print(
-        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
-        + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
-    )
-    target_files = prepare_files(df_run1, target_files)
-    print(f"Predicting {len(target_files)} files: {target_files}")
-    df_other_runs = df.filter(pl.col("run").is_in(comparison_run_names))
-    df_anos_merge = pl.DataFrame()
+    target_run_names = _check_multiple_target_runs(df, target_run)
+    # Extract unique runs
+    df_anos_merge = pl.DataFrame() 
+    for target_run in target_run_names:
+        df_run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
+        # Generate output CSV file name based on base run
+        print(
+            f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
+            + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
+        )
+        target_files = prepare_files(df_run1, target_files)
+        print(f"Predicting {len(target_files)} files: {target_files}")
+        df_other_runs = df.filter(pl.col("run").is_in(comparison_run_names))
+        #df_anos_merge = pl.DataFrame()
 
-    for file_name in target_files:
-        
-        df_run1_files =  df_run1.filter(pl.col("file_name") == file_name)
-        df_run1_files = df_run1_files.group_by('file_name').agg(pl.col(field).alias(field))
+        for file_name in target_files:
+            
+            df_run1_files =  df_run1.filter(pl.col("file_name") == file_name)
+            df_run1_files = df_run1_files.group_by('file_name').agg(pl.col(field).alias(field))
 
-        df_other_runs_files = df_other_runs.filter(pl.col("file_name") == file_name)
-        df_other_runs_files = df_other_runs.group_by('file_name').agg(pl.col(field).alias(field))
+            df_other_runs_files = df_other_runs.filter(pl.col("file_name") == file_name)
+            df_other_runs_files = df_other_runs.group_by('file_name').agg(pl.col(field).alias(field))
 
-        if df_other_runs_files.height == 0:
-            print(f"Found no files matching files in comparisons runs for file: {file_name}")
-            continue
+            if df_other_runs_files.height == 0:
+                print(f"Found no files matching files in comparisons runs for file: {file_name}")
+                continue
 
-        df_anos = run_anomaly_detection(df_run1_files,df_other_runs_files,detectors=detectors, field= field)
+            df_anos = _run_anomaly_detection(df_run1_files,df_other_runs_files,detectors=detectors, field= field)
 
-        df_anos = df_anos.with_columns(pl.lit(file_name).alias("file_name"))
-        df_anos_merge = df_anos_merge.vstack(df_anos)
-        print(".", end="", flush=True) #Progress on screen
-    print()  # Newline after progress dots
+            df_anos = df_anos.with_columns(pl.lit(file_name).alias("file_name"))
+            df_anos = df_anos.with_columns(pl.lit(target_run).alias("target_run"))
+            df_anos = df_anos.with_columns(pl.lit(" ".join(comparison_run_names)).alias("comparison_runs"))
+            df_anos_merge = df_anos_merge.vstack(df_anos)
+            print(".", end="", flush=True) #Progress on screen
+        print()  # Newline after progress dots
     write_dataframe_to_csv(df_anos_merge, analysis="ano", level=3, target_run=target_run, comparison_run="Many", norm=normalize_content)
 
 def anomaly_run(df, target_run, comparison_runs="ALL", file = False, detectors=["KMeans"], normalize_content=False):
@@ -620,6 +758,7 @@ def anomaly_run(df, target_run, comparison_runs="ALL", file = False, detectors=[
     - df: Polars DataFrame containing the data with a 'run' column.
     - base_run_name: Name of the run to analyze.
     - comparison_runs: Optional list of run names to compare against. If ALL, compares against all other runs.
+    - file: Flag to indicate do use file names (True) or file contents (False)
     """
     if file: 
         field = "file_name"
@@ -628,17 +767,17 @@ def anomaly_run(df, target_run, comparison_runs="ALL", file = False, detectors=[
     else:
         field = "m_message"
     df_anos_merge = pl.DataFrame()
-    target_run_names = check_multiple_target_runs(df, target_run)
+    target_run_names = _check_multiple_target_runs(df, target_run)
     
     print(f"Executing {inspect.currentframe().f_code.co_name} with {'file' if file else 'content'} anomalies of {len(target_run_names)} target runs with {comparison_runs} comparison runs")
     print(f"Target runs: {target_run_names}")
     print(f"Comparison runs: {comparison_runs}")
     for target_run_name in target_run_names:
-        df_run1, comparison_run_names = prepare_runs(df, target_run_name, comparison_runs)
+        df_run1, comparison_run_names = _prepare_runs(df, target_run_name, comparison_runs)
         
         df_run1 = df_run1.group_by("run").agg(pl.col(field).alias(field))
         df_other_runs = df.filter(pl.col("run").is_in(comparison_run_names)).group_by("run").agg(pl.col(field).alias(field))
-        df_anos = run_anomaly_detection(df_run1, df_other_runs, detectors=detectors, field= field)
+        df_anos = _run_anomaly_detection(df_run1, df_other_runs, detectors=detectors, field= field)
         comparison_runs_out = " ".join(comparison_run_names)
         df_anos = df_anos.with_columns(pl.lit(comparison_runs_out).alias("comparison_runs"))
         df_anos_merge = df_anos_merge.vstack(df_anos)
@@ -647,7 +786,7 @@ def anomaly_run(df, target_run, comparison_runs="ALL", file = False, detectors=[
     write_dataframe_to_csv(df_anos_merge, analysis="ano", level=1 if file else 2, target_run="Many", comparison_run="Many", norm=normalize_content)
 
 
-def run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=["KMeans", "RarityModel"], drop_input=True):
+def _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=["KMeans", "RarityModel"], drop_input=True):
     """
     Run anomaly detection using specified models.
     
@@ -735,15 +874,7 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
     - quote_style: The quote style for writing the CSV file (default is 'always').
     """
 
-    # Specific substring to remove from the end of run names
-    suffix_to_remove = ""
-    
-    # Remove specific suffix from run names if present
-    if comparison_run.endswith(suffix_to_remove):
-        comparison_run = comparison_run[:-len(suffix_to_remove)]
-    if target_run.endswith(suffix_to_remove):
-        target_run = target_run[:-len(suffix_to_remove)]
-    
+   
     # Start constructing the output file name with the analysis type
     output_csv = analysis
     
@@ -808,3 +939,29 @@ masking_patterns_myllari = [
     ("${start}<LARGEINT>${end}", r"(?P<start>[^0-9]|^)\d{4,}(?P<end>[^0-9]|$)")
     # Additional patterns can be added here in the same format
 ]
+
+masking_patterns_myllari2 = [
+    ("${start}<QUOTED_ALPHANUMERIC>${end}", r"(?P<start>[^A-Za-z0-9-_]|^)'[a-zA-Z0-9-_]{16,}'(?P<end>[^A-Za-z0-9-_]|$)"),
+    ("${start}<DATE>${end}", r"(?P<start>[^0-9/]|^)\d{2}/\d{2}/\d{4}(?P<end>[^0-9/]|$)"),
+    ("${start}<DATE>${end}", r"(?P<start>[^0-9-]|^)\d{4}-\d{2}-\d{2}(?P<end>[^0-9-]|$)"),
+    ("${start}<DATE_XX>${end}", r"(?P<start>[^A-Za-z0-9_]|^)DATE_\d{2}(?P<end>[^A-Za-z0-9_]|$)"),
+    ("${start}<DATE>${end}", r"(?P<start>[^A-Za-z]|^)\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b(?P<end>[^A-Za-z]|$)"),
+    ("${start}<TIME>${end}", r"(?P<start>[^0-9:.]|^)\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?P<end>[^0-9:.]|$)"),
+    ("${start}<TIME>${end}", r"(?P<start>[^0-9:]|^)\d{2}:\d{2}(?P<end>[^0-9:]|$)"),
+    ("${start}<DATETIME>${end}", r"(?P<start>[^0-9.]|^)\d{1,2}\.\d{1,2}\.\d{4} \d{1,2}\.\d{1,2}\.\d{2}(?P<end>[^0-9.]|$)"),
+    ("${start}<VERSION>${end}", r"(?P<start>[^0-9.]|^)\d{1,5}(?:\.\d{1,3}){1,4}(?P<end>[^0-9.]|$)"),
+    ("${start}<URL>${end}", r"(?P<start>[^A-Za-z0-9:/]|^)(https?://[^\s]+)(?P<end>[^A-Za-z0-9:/]|$)"),
+    ("${start}<DATE>${end}", r"(?P<start>[^A-Za-z]|^)\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{2}| \d) \d{4}\b(?P<end>[^A-Za-z]|$)"),
+    ("${start}<TXID>${end}", r"(?P<start>[^0-9A-Fa-f-]|^)\d{4}-[0-9A-Fa-f]{16}(?P<end>[^0-9A-Fa-f-]|$)"),
+    ("${start}<FILEPATH>${end}", r"(?P<start>[^A-Za-z0-9:\\]|^)[A-Za-z]:\\(?:[^\\\n]+\\)*[^\\\n]+(?P<end>[^A-Za-z0-9:\\]|$)"),
+    ("${start}<APIKEY>${end}", r"(?P<start>[^A-Za-z0-9\"]|^)\"x-apikey\":\s\"[^\"]+\"(?P<end>[^A-Za-z0-9\"]|$)"),
+    ("${start}<TIMEMS>${end}", r"(?P<start>[^0-9ms]|^)\b\d+\s+ms\b(?P<end>[^0-9ms]|$)"),
+    ("${start}<SECONDS>${end}", r"(?P<start>[^0-9s-]|^)-?\d{1,4}s(?P<end>[^0-9s-]|$)"),
+    ("${start}<HEXBLOCKS>${end}", r"(?P<start>[^0-9A-Fa-f-]|^)(?:[0-9A-Fa-f]{4,}-)+[0-9A-Fa-f]{4,}(?P<end>[^0-9A-Fa-f-]|$)"),
+    ("${start}<HEX>${end}", r"(?P<start>[^0-9A-Fa-f]|^)0x[0-9A-Fa-f]+(?P<end>[^0-9A-Fa-f]|$)"),
+    ("${start}<HEX>${end}", r"(?P<start>[^0-9A-Fa-f]|^)([0-9A-Fa-f]{6,})(?P<end>[^0-9A-Fa-f]|$)"),
+    ("${start}<LARGEINT>${end}", r"(?P<start>[^0-9]|^)\d{4,}(?P<end>[^0-9]|$)"),
+    ("${start}<IP>${end}", r"(?P<start>[^A-Za-z0-9]|^)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?P<end>[^A-Za-z0-9]|$)"),
+    ("${start}<NUM>${end}", r"(?P<start>[^A-Za-z0-9]|^)([\-\+]?[1-9]\d+)(?P<end>[^A-Za-z0-9]|$)")
+]
+

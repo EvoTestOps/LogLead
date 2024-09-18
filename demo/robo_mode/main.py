@@ -6,9 +6,9 @@ from loglead.enhancers import EventLogEnhancer
 from log_analysis_functions import (
     set_output_folder, read_folders, distance_run_file, distance_run_content,
     distance_file_content, distance_line_content,
-    plot_run_file, plot_file_content, 
+    plot_run, plot_file_content, 
     anomaly_file_content, anomaly_line_content,
-    anomaly_run, masking_patterns_myllari
+    anomaly_run, masking_patterns_myllari, masking_patterns_myllari2
 )
 from data_specific_preprocessing import preprocess_files
 
@@ -40,8 +40,10 @@ def main(config_path):
     # Normalize data
     enhancer = EventLogEnhancer(df)
     print("Normalizing data")
-    df = enhancer.normalize(regexs=masking_patterns_myllari)
-    df = enhancer.words()
+    #Differt options for normalization. Should be in a config
+    #df = enhancer.normalize(regexs=masking_patterns_myllari)
+    #df = enhancer.normalize()
+    df = enhancer.normalize(regexs=masking_patterns_myllari2)
 
     # Data-specific preprocessing
     df = preprocess_files(df, config.get('preprocessing_steps', []))
@@ -67,12 +69,18 @@ def main(config_path):
             'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
         },
         'plot_run_file': {
-            'func': plot_run_file,
-            'params': ['target_run', 'comparison_runs', 'random_seed']
+            'func': plot_run,
+            'params': ['target_run', 'comparison_runs', 'random_seed', 'group_by_indices'],
+            'fixed_args': {'file': True}
+        },
+        'plot_run_content': {
+            'func': plot_run,
+            'params': ['target_run', 'comparison_runs', 'random_seed', 'group_by_indices', 'normalize_content'],
+            'fixed_args': {'file': False}
         },
         'plot_file_content': {
             'func': plot_file_content,
-            'params': ['target_run', 'comparison_runs', 'target_files','random_seed']
+            'params': ['target_run', 'comparison_runs', 'target_files','random_seed', 'group_by_indices', 'normalize_content']  
         },
         'anomaly_run_file': {
             'func': anomaly_run,

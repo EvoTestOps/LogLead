@@ -16,7 +16,7 @@ from sklearn.metrics import jaccard_score
 import numpy as np
 
 from loglead.loaders import *
-from loglead import AnomalyDetector, OOV_detector, measure_distance
+from loglead import AnomalyDetector, OOV_detector, LogDistance
 from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -228,12 +228,28 @@ def measure_distance_random_files(df_train, df_analyze, field="e_message_normali
         df2 = df_analyze.filter(pl.col("file_name") == unique_analyze[i, 0])
         
         # Calculate the distances
-        cos, jaccard, compression, containment = measure_distance(df1, df2, field=field, print_values=False)
+        distance = LogDistance(df1, df2, field=field)
+        # Measure distances between the base run and the current run
+        cosine = distance.cosine()
+        jaccard = distance.jaccard()
+        compression = distance.compression()
+        containment = distance.containment()
         
         # Print the file names and metrics
         print(f"{unique_train[i, 0]} - {unique_analyze[i, 0]}, "
-              f"Cosine: {cos:.4f}, Jaccard: {jaccard:.4f}, Compression: {compression:.4f}, Containment: {containment:.4f}")
+              f"Cosine: {cosine:.4f}, Jaccard: {jaccard:.4f}, Compression: {compression:.4f}, Containment: {containment:.4f}")
 
+def measure_distance(df1, df2, field):
+        # Calculate the distances
+    distance = LogDistance(df1, df2, field=field)
+    # Measure distances between the base run and the current run
+    cosine = distance.cosine()
+    jaccard = distance.jaccard()
+    compression = distance.compression()
+    containment = distance.containment()
+    
+    # Print the file names and metrics
+    print(f"Cosine: {cosine:.4f}, Jaccard: {jaccard:.4f}, Compression: {compression:.4f}, Containment: {containment:.4f}")
 
 
 #BGL
@@ -253,4 +269,3 @@ df_analyze = load_and_enhance("HDFS_test", pattern="*.log")
 analyse_with_line_models(df_analyze)
 measure_distance_random_files(df_train, df_analyze, field="e_message_normalized")
 measure_distance_random_files(df_train, df_analyze, field="m_message")
-
