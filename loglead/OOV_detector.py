@@ -17,13 +17,22 @@ class OOV_detector:
         # The "training set" to compare against comes inherently from test data's sparse matrix
         return
     
+
+    #To enable pickling
+    def identity_function(self,x):
+        return x
+    
     def predict(self, X_test):
         if self.len_col not in self.test_df.columns:
             # Length column not found, reconstructing and counting from the vectorizer.
             from sklearn.feature_extraction.text import CountVectorizer
-            column_data = self.test_df.select(pl.col(self.item_list_col)).to_series().to_list()
-            vectorizer = CountVectorizer()
-            X = vectorizer.fit_transform(column_data)
+            column_data = self.test_df.select(pl.col(self.item_list_col))             
+            events = column_data.to_series().to_list()
+            if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
+                vectorizer = CountVectorizer() 
+            elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
+                vectorizer = CountVectorizer(analyzer=self.identity_function)
+            X = vectorizer.fit_transform(events)
             msglen = np.array(X.tocsr().sum(axis=1)).squeeze()
         else:
             msglen = self.test_df[self.len_col]
