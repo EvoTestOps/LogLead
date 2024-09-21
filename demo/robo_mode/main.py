@@ -6,11 +6,12 @@ from loglead.enhancers import EventLogEnhancer
 from log_analysis_functions import (
     set_output_folder, read_folders, distance_run_file, distance_run_content,
     distance_file_content, distance_line_content,
-    plot_run, plot_file_content, 
+    plot_run, plot_file_content,
     anomaly_file_content, anomaly_line_content,
     anomaly_run, masking_patterns_myllari, masking_patterns_myllari2
 )
 from data_specific_preprocessing import preprocess_files
+import inspect
 
 def load_config(config_path):
     """Load configuration file."""
@@ -40,86 +41,61 @@ def main(config_path):
     # Normalize data
     enhancer = EventLogEnhancer(df)
     print("Normalizing data")
-    #Differt options for normalization. Should be in a config
-    #df = enhancer.normalize(regexs=masking_patterns_myllari)
-    #df = enhancer.normalize()
+    # Different options for normalization. Should be in a config
+    # df = enhancer.normalize(regexs=masking_patterns_myllari)
+    # df = enhancer.normalize()
     df = enhancer.normalize(regexs=masking_patterns_myllari2)
+    print("Parsing event templates")
+    df = enhancer.parse_tip()
 
     # Data-specific preprocessing
     df = preprocess_files(df, config.get('preprocessing_steps', []))
 
     steps = config.get('steps', {})
 
-    # Define a mapping of step types to their respective functions and additional parameters
-    step_functions = {
-        'similarity_run_file': {
-            'func': distance_run_file,
-            'params': ['target_run', 'comparison_runs']
-        },
-        'similarity_run_content': {
-            'func': distance_run_content,
-            'params': ['target_run', 'comparison_runs', 'normalize_content']
-        },
-        'similarity_file_content': {
-            'func': distance_file_content,
-            'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
-        },
-        'similarity_line_content': {
-            'func': distance_line_content,
-            'params': ['target_run', 'comparison_runs', 'target_files', 'normalize_content']
-        },
-        'plot_run_file': {
-            'func': plot_run,
-            'params': ['target_run', 'comparison_runs', 'random_seed', 'group_by_indices'],
-            'fixed_args': {'file': True}
-        },
-        'plot_run_content': {
-            'func': plot_run,
-            'params': ['target_run', 'comparison_runs', 'random_seed', 'group_by_indices', 'normalize_content'],
-            'fixed_args': {'file': False}
-        },
-        'plot_file_content': {
-            'func': plot_file_content,
-            'params': ['target_run', 'comparison_runs', 'target_files','random_seed', 'group_by_indices', 'normalize_content']  
-        },
-        'anomaly_run_file': {
-            'func': anomaly_run,
-            'params': ['target_run', 'comparison_runs', 'detectors'],
-            'fixed_args': {'file': True}
-        },
-        'anomaly_run_content': {
-            'func': anomaly_run,
-            'params': ['target_run', 'comparison_runs', 'detectors',  'normalize_content'],
-            'fixed_args': {'file': False}
-        },
-        'anomaly_file_content': {
-            'func': anomaly_file_content,
-            'params': ['target_run', 'comparison_runs', 'target_files','detectors', 'normalize_content']
-        },
-        'anomaly_line_content': {
-            'func': anomaly_line_content,
-            'params': ['target_run', 'comparison_runs', 'target_files','detectors', 'normalize_content']
-        },
+    # Map step types that need to be handled differently
+    special_cases = {
+        'plot_run_file': {'func_name': 'plot_run', 'fixed_args': {'file': True, 'content_format':'File'}},
+        'plot_run_content': {'func_name': 'plot_run', 'fixed_args': {'file': False}},
+        'anomaly_run_file': {'func_name': 'anomaly_run', 'fixed_args': {'file': True}},
+        'anomaly_run_content': {'func_name': 'anomaly_run', 'fixed_args': {'file': False}},
     }
 
-    # Iterate over each step type in the config
-    for step_type, config_data in step_functions.items():
-        configs = steps.get(step_type, [])
-        func = config_data['func']
-        params = config_data['params']
-        fixed_args = config_data.get('fixed_args', {})
+    # Import the module where functions are defined
+    import log_analysis_functions
 
-        for config in configs:
-            # Default values. comparison_runs=ALL others False
-            kwargs = {param: config.get(param, 'ALL' if 'comparison_runs' in param else False) for param in params}
-            # If 'detectors' is missing, and if so, assign the default value ["KMeans"]
-            if 'detectors' in params and 'detectors' not in config:
-                kwargs['detectors'] = ["KMeans"]
+    for step_type, configs in steps.items():
+        for config_item in configs:
+            # Determine function to call
+            if step_type in special_cases:
+                func_name = special_cases[step_type]['func_name']
+                fixed_args = special_cases[step_type]['fixed_args']
+            else:
+                func_name = step_type
+                fixed_args = {}
+
+            # Get the function from the module
+            func = getattr(log_analysis_functions, func_name, None)
+
+            if func is None:
+                print(f"Function {func_name} not found")
+                continue
+
+            # Get function parameters
+            func_params = inspect.signature(func).parameters
+
+            # Build kwargs
+            kwargs = {k: v for k, v in config_item.items() if k in func_params}
+
+            # Add fixed args
             kwargs.update(fixed_args)
-            kwargs['df'] = df  # Common argument across all function calls
 
-            # Call the function with the prepared keyword arguments
+            # Add df
+            kwargs['df'] = df
+
+            # Call the function
             func(**kwargs)
+
     print(f"Done! See output in folder: {output_folder}")
 
 
@@ -143,7 +119,7 @@ if __name__ == "__main__":
 
     if ipython_env:
         # Running in IPython/Jupyter
-        config_path ="config.yml"
+        config_path = "config.yml"
     else:
         # Parse command-line arguments
         import argparse

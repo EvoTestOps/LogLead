@@ -67,7 +67,7 @@ class EventLogEnhancer:
     # Trigram flag to be removed after this is fixed.
     # https://github.com/pola-rs/polars/issues/10833
     # https://github.com/pola-rs/polars/issues/10890
-    def trigrams(self, column="m_message"):
+    def trigrams_old(self, column="m_message"):
         self._handle_prerequisites([column])
         if "e_trigrams" not in self.df.columns:
             self.df = self.df.with_columns(
@@ -79,7 +79,7 @@ class EventLogEnhancer:
             )
         return self.df
     
-    def trigrams_unarranged(self, column="m_message"):
+    def trigrams(self, column="m_message"):
         """
         This one runs fast three char splits with extract_all at 3 different positions
         which results in same trigrams as above. They are not arranged, but this is 

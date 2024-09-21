@@ -11,24 +11,12 @@ preprocessing_steps:
 steps:
   # Similarity based comparisons
   # Level 1
-  similarity_run_file:
+  distance_run_file:
     - target_run: "application_1445062781478_0011"
       comparison_runs: "ALL"
-
-  plot_run_file:
-    - target_run: "application_1445062781478_0011"
-      comparison_runs: "ALL"
-
-  plot_file_content:
-    - target_run: "application_1445062781478_0011"
-      comparison_runs: "ALL"
-      random_seed: 43
-      target_files:
-      - "container_01_000001.log"
-      - "container_01_000002.log"
-      
+   
   # Level 2
-  similarity_run_content:
+  distance_run_content:
     - target_run: "application_1445062781478_0011"
       comparison_runs:
         - "application_1445062781478_0012"
@@ -37,7 +25,7 @@ steps:
       normalize_content: False
 
   #Level 3
-  similarity_file_content:
+  distance_file_content:
     - target_run: "application_1445062781478_0011"
       comparison_runs:
         - "application_1445062781478_0012"
@@ -52,12 +40,12 @@ steps:
       normalize_content: False
   
   #Level 4
-  similarity_line_content:
+  distance_line_content:
     - target_run: "application_1445062781478_0011"
       target_files:
-      - "container_01_000001.log"
-      - "container_01_000002.log"
-      - "container_01_000003.log"
+      - "container__01_000001.log"
+      - "container__01_000002.log"
+      - "container__01_000003.log"
       comparison_runs:
         - "application_1445062781478_0012"
         - "application_1445062781478_0013"
@@ -87,9 +75,9 @@ steps:
   anomaly_file_content:
     - target_run: "application_1445062781478_0011"
       target_files:
-      - "container_01_000001.log"
-      - "container_01_000002.log"
-      - "container_01_000003.log"
+      - "container__01_000001.log"
+      - "container__01_000002.log"
+      - "container__01_000003.log"
       comparison_runs: 10
       normalize_content: True
       detectors:
@@ -101,15 +89,59 @@ steps:
   anomaly_line_content:
     - target_run: "application_1445062781478_0011"
       target_files:
-      - "container_01_000001.log"
-      - "container_01_000002.log"
-      - "container_01_000003.log"
+      - "container__01_000001.log"
+      - "container__01_000002.log"
+      - "container__01_000003.log"
       comparison_runs: "ALL"
       normalize_content: False
 #      detectors:
 #        - IsolationForest
 #        - KMeans
 #        - RarityModel
+  #Plotting. 
+  #Level 1
+  plot_run_file:
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      group_by_indices: [0, 1] #use first and second element WordCount and DiskFull
+
+  #Level 1
+  plot_run_content:
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      group_by_indices: [0, 1] 
+      normalize_content: True
+      content_format: "3grams"
+      vectorizer: "Tfidf"
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      group_by_indices: [0, 1] 
+      normalize_content: True
+      content_format: "Words"
+      vectorizer: "Count"
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      group_by_indices: [0, 1] 
+      normalize_content: True
+      content_format: "Parse"
+      vectorizer: "Tfidf"
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      group_by_indices: [0, 1] 
+      normalize_content: True
+      content_format: "Sklearn"
+      vectorizer: "Tfidf"
+    
+  #Level 3 - Same options as Level 2 plotting for vectorizer and content_format
+  plot_file_content:
+    - target_run: "application_1445062781478_0011"
+      comparison_runs: "ALL"
+      target_files:
+      - "container__01_000001.log"
+      group_by_indices: [0, 1]
+      normalize_content: True
+      content_format: "Words"
+      vectorizer: "Tfidf"
 
 
 

@@ -4,12 +4,12 @@ output_folder: "output_comp_ws_10"
 
 
 steps:
-  # Compare two runs (folders) and report file similarity without looking file contents
-  similarity_run_file:
+  # Compare two runs (folders) and report file distance without looking file contents
+  distance_run_file:
     - target_run: "1_33_1409"
       comparison_runs: "ALL"
 
-  similarity_run_content:
+  distance_run_content:
     - target_run: "1_33_1409"
       comparison_runs:
         - "1_33_1413"
@@ -17,7 +17,7 @@ steps:
         - "2_MSI_33_64"
       normalize_content: False
 
-  similarity_file_content:
+  distance_file_content:
     - target_run: "1_33_1409"
       comparison_runs:
         - "1_33_1413"
@@ -29,7 +29,7 @@ steps:
         - "2_33_1404"
       normalize_content: False
   
-  similarity_line_content:
+  distance_line_content:
     - target_run: "1_33_1409"
       target_files:
       - "win/eventlog/security.log"
