@@ -6,6 +6,7 @@ from loglead.loaders import RawLoader
 from loglead import LogDistance, AnomalyDetector
 import umap
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from loglead.enhancers import EventLogEnhancer
@@ -153,9 +154,6 @@ def plot_run(df: pl.DataFrame, target_run: str, comparison_runs="ALL", file=True
     write_dataframe_to_csv(fig1, analysis="plot_umap", level=1 if file else 2, norm=normalize_content, target_run=target_run, comparison_run="Many", content_format=content_format, vectorizer=vectorizer)
     write_dataframe_to_csv(fig2, analysis="plot_simple", level=1 if file else 2, norm=normalize_content, target_run=target_run, comparison_run="Many", content_format=content_format, vectorizer=vectorizer)
 
-
-
-
 def _plot_group_runs_by_indices(df: pl.DataFrame, group_by_indices: list[int]) -> pl.DataFrame:
     """
     Groups the 'run' column based on specified indices.
@@ -211,8 +209,8 @@ def _plot_prepare_content(df, normalize_content, content_format):
     elif content_format == "Sklearn":
         return df, field
     else:
-        print(f"Unrecognized content format: {content_format}")
-        raise ValueError(f"Unrecognized content format: {content_format}")
+        print(f"Unrecognized content format: {content_format}. Valid options: Words, 3grams, Parse, Sklearn, File")
+        raise ValueError(f"Unrecognized content format: {content_format}. Valid options: Words, 3grams, Parse, Sklearn, File")
 
 def _plot_aggregate_run_file_groups(filtered_df_file, field, content_format, group_by_indices):
     """
@@ -405,7 +403,6 @@ def _plot_create_umap_plot(embeddings_2d, run_file_groups, group_by_indices, tar
 
     return fig1, fig2
 
-
 def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", target_files="ALL", random_seed=None, group_by_indices=None, normalize_content=False, content_format="Words", vectorizer="Count"):
     """
     Create a UMAP plot based on a document-term matrix of file names and save it as an interactive HTML file.
@@ -454,10 +451,6 @@ def plot_file_content(df: pl.DataFrame, target_run: str, comparison_runs="ALL", 
         fig1, fig2 = _plot_create_umap_plot(combined_data, run_file_groups, group_by_indices, target_run, file)
         write_dataframe_to_csv(fig1, analysis="plot_umap", level=3, target_run=target_run, comparison_run="Many", file=file, norm=normalize_content, content_format=content_format, vectorizer=vectorizer)
         write_dataframe_to_csv(fig2, analysis="plot_simple", level=3, target_run=target_run, comparison_run="Many", file=file, norm=normalize_content, content_format=content_format, vectorizer=vectorizer)
-
-
-
-
 
 def distance_run_file(df, target_run, comparison_runs="ALL"):
     """
@@ -767,7 +760,7 @@ def _prepare_files(df_run1, files="ALL"):
     
     return files
 
-def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="ALL", detectors=["KMeans"], normalize_content=False):
+def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="ALL", detectors=["KMeans"], normalize_content=False, content_format="Words", vectorizer="Count"):
     """
     Measure distances between one run and specified other runs in the dataframe and save the results as a CSV file.
     
@@ -779,11 +772,11 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
     - comparison_runs: Optional list of run names to compare against. If ALL, compares against all other runs.
     """
     # Extract unique runs
-    field = "e_message_normalized" if normalize_content else "m_message"
- 
+    df, field = _plot_prepare_content(df, normalize_content, content_format=content_format) 
+
     df_run1, comparison_run_names = _prepare_runs(df, target_run, comparison_runs) 
     print(
-        f"Executing {inspect.currentframe().f_code.co_name} with target run '{target_run}' and {len(comparison_run_names)} comparison runs"
+        f"Executing {inspect.currentframe().f_code.co_name} with format:{content_format}, vectorizer:{vectorizer}, target_run:'{target_run}' and {len(comparison_run_names)} comparison runs"
         + (f": {comparison_run_names}" if len(comparison_run_names) < 6 else "")
     )
     target_files = _prepare_files(df_run1, target_files)
@@ -797,15 +790,17 @@ def anomaly_line_content(df, target_run, comparison_runs="ALL", target_files="AL
             print(f"Found no files matching files in comparisons runs for file: {file_name}")
             continue
 
-        df_anos = _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=detectors, drop_input=False)
+        df_anos = _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=detectors, drop_input=False, vectorizer=vectorizer)
         #Add moving averages. 
-        df_anos_100 = _calculate_moving_average_all_numeric(df_anos, 10)
-        df_anos_1000 = _calculate_moving_average_all_numeric(df_anos, 100)
+        df_anos_10 = _calculate_moving_average_all_numeric(df_anos, 10)
+        df_anos_100 = _calculate_moving_average_all_numeric(df_anos, 100)
+        df_anos = df_anos.with_columns(df_anos_10)
         df_anos = df_anos.with_columns(df_anos_100)
-        df_anos = df_anos.with_columns(df_anos_1000)
         df_anos = df_anos.with_row_index("line_number")
-        #write_dataframe_to_csv(df_anos, output_csv)
-        write_dataframe_to_csv(df_anos, analysis="ano", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content, file=file_name)
+        #Write to file and plot
+        write_dataframe_to_csv(df_anos, analysis="ano", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content,content_format=content_format, vectorizer=vectorizer,  file=file_name)
+        fig = _ano_plot_line_scores(df_anos, f"Anomaly scores - Normalized:{normalize_content}, Tokenization:{content_format}, Vectorizer:{vectorizer}")
+        write_dataframe_to_csv(fig, analysis="ano_plot", level=4, target_run=target_run, comparison_run="Many", norm=normalize_content, content_format=content_format, vectorizer=vectorizer, file=file_name)
         print(".", end="", flush=True) #Progress on screen
     print()  # Newline after progress dots
 
@@ -837,6 +832,70 @@ def _calculate_moving_average_all_numeric(df: pl.DataFrame, window_size: int) ->
         )
 
     return moving_avg_df
+
+
+def _ano_plot_line_scores(df, title):
+    # def _normalize_column(series):
+    #     """Min-Max normalize a column to range [0, 1]."""
+    #     min_val = series.min()
+    #     max_val = series.max()
+    #     return (series - min_val) / (max_val - min_val) if max_val > min_val else series
+
+    def _normalize_column(series):
+        """Min-Max normalize a column to range [0, 1], keeping None values as gaps."""
+        # Filter out None values for min/max calculation
+        non_none_series = series.drop_nulls()
+
+        if non_none_series.is_empty():
+            return series  # If the series is empty or only contains None, return as is
+
+        min_val = non_none_series.min()
+        max_val = non_none_series.max()
+
+        # Use Polars' vectorized operations for normalization and keep None values
+        normalized_series = (series - min_val) / (max_val - min_val)
+        return normalized_series
+
+    # Dynamically detect numeric columns for plotting
+    numeric_columns = [
+        col for col, dtype in zip(df.columns, df.dtypes) 
+        if dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]  # Add other numeric types if needed
+    ]
+
+    # Assuming line_number or row_nr represents the index (X-axis)
+    line_numbers = df['line_number'].to_list()
+    m_messages = df['m_message'].to_list()  # Hover text for each point
+    
+    # Normalize the numeric columns
+    df_normalized = df.with_columns([
+        _normalize_column(df[col]).alias(col) for col in numeric_columns if col in df.columns
+    ])
+    
+    # Create a figure
+    fig = go.Figure()
+
+    # Add traces for each normalized numeric column
+    for col in numeric_columns:
+        if col in df_normalized.columns:
+            fig.add_trace(go.Scatter(
+                x=line_numbers,
+                y=df_normalized[col].to_list(),
+                mode='lines',
+                name=col,
+                text=m_messages,  # Set m_message as the hover text
+                hoverinfo='text'  # Show only the text in the tooltip
+            ))
+    
+    # Update layout
+    fig.update_layout(
+        title=title,
+        xaxis_title="Line Number",
+        yaxis_title="Normalized Anomaly Score (0-1)",
+        template="plotly_white",
+    )
+    
+    # Show plot in HTML format
+    return fig
 
 def anomaly_file_content(df, target_run, comparison_runs="ALL", target_files="ALL", detectors=["KMeans"], normalize_content=False):
     """
@@ -924,7 +983,7 @@ def anomaly_run(df, target_run, comparison_runs="ALL", file = False, detectors=[
     write_dataframe_to_csv(df_anos_merge, analysis="ano", level=1 if file else 2, target_run="Many", comparison_run="Many", norm=normalize_content)
 
 
-def _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=["KMeans", "RarityModel"], drop_input=True):
+def _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=["KMeans", "RarityModel"], drop_input=True, vectorizer="Count"):
     """
     Run anomaly detection using specified models.
     
@@ -945,8 +1004,16 @@ def _run_anomaly_detection(df_run1_files,df_other_runs_files, field, detectors=[
     sad.train_df = df_other_runs_files
     sad.test_df = df_run1_files
     
+    # Create the vectorizer (Count or Tfidf)
+    if vectorizer == "Count":
+        vectorizer_class = CountVectorizer
+    elif vectorizer == "Tfidf":
+        vectorizer_class = TfidfVectorizer
+    else:
+        raise ValueError(f"Unsupported vectorizer type: {vectorizer}")
+
     # Prepare the data
-    sad.prepare_train_test_data()
+    sad.prepare_train_test_data(vectorizer_class=vectorizer_class)
     
     # Initialize the output DataFrame
     df_anos = None
@@ -1019,6 +1086,11 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
 
     output_csv += f"_norm_{norm}"
 
+    if content_format:
+        output_csv += f"_{content_format}"
+    if vectorizer:
+        output_csv += f"_{vectorizer}"
+
     # Append the target and comparison run identifiers if they are provided
     if target_run:
         output_csv += f"_{target_run}"
@@ -1033,11 +1105,7 @@ def write_dataframe_to_csv(df, analysis, level=0, target_run="", comparison_run=
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     output_csv += f"_{timestamp}"
     # Finalize the file name with the CSV extension
-    if content_format:
-        output_csv += f"_{content_format}"
 
-    if vectorizer:
-        output_csv += f"_{vectorizer}"
 
     if isinstance(df, pl.DataFrame):
         output_csv += ".xlsx"

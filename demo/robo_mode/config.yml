@@ -61,6 +61,7 @@ steps:
         - IsolationForest
         - KMeans
         - RarityModel
+        - OOVDetector
   # Level 2
   anomaly_run_content:
     - target_run: 3
@@ -70,6 +71,7 @@ steps:
         - IsolationForest
         - KMeans
         - RarityModel
+        - OOVDetector
 
   # Level 3
   anomaly_file_content:
@@ -84,8 +86,9 @@ steps:
         - IsolationForest
         - KMeans
         - RarityModel
+        - OOVDetector
 
-  # Level 4
+  # Level 4 - includes plotting
   anomaly_line_content:
     - target_run: "application_1445062781478_0011"
       target_files:
@@ -93,11 +96,14 @@ steps:
       - "container__01_000002.log"
       - "container__01_000003.log"
       comparison_runs: "ALL"
-      normalize_content: False
-#      detectors:
-#        - IsolationForest
-#        - KMeans
-#        - RarityModel
+      normalize_content: True
+      detectors:
+       - IsolationForest
+       - KMeans
+       - RarityModel
+       - OOVDetector
+      content_format: "Words" #Valid options: 3grams, Parse, Sklearn
+      vectorizer: "Tfidf" #Valid options: Count
   #Plotting. 
   #Level 1
   plot_run_file:
