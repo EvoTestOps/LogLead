@@ -16,7 +16,7 @@ python -m pip install loglead
 ```
 
 NOTE: pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
-If you want to use them, make a `conda` environment using the [environment](environment.yml) file and then install `loglead` there.
+Install them manually (preferably in a conda enviroment).
 
 ### Known issues
 
