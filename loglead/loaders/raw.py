@@ -34,6 +34,11 @@ class RawLoader(BaseLoader):
                         if self.strip_full_data_prefix:
                             q = q.with_columns(pl.col("file_name").str.strip_prefix(self.strip_full_data_prefix))
                         queries.append(q)
+             # Check if any valid queries were collected
+            if not queries:
+                raise ValueError(f"No valid files found matching pattern {self.filename_pattern} in directory {self.filename}. "
+                                 f"Ensure the pattern is correct and the files are large enough to process.")
+
             dataframes = pl.collect_all(queries)
             self.df = pl.concat(dataframes)
 

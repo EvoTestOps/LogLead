@@ -257,6 +257,8 @@ class AnomalyDetector:
                     vectorizer = vectorizer_class() 
                 elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
                     vectorizer = vectorizer_class(analyzer=self.identity_function)
+                else:
+                    raise ValueError(f"Error: Unsupported datatype {dtype}. Supported types are: Utf8, List[Utf8]")
                 X = vectorizer.fit_transform(events)
                 self.train_vocabulary = vectorizer.vocabulary_ #Needed?
             # We are predicting because vectorizer_class is instance of the previously created vectorizer. 
