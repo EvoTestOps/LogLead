@@ -48,8 +48,15 @@ class LogDistance:
         vectorizer (type): The vectorization method to use for converting text data into numerical vectors. 
                            It should be a scikit-learn vectorizer class. Defaults to CountVectorizer.
         """
-        self.s_train = df_train.select(pl.col(field).str.concat(" ")).item()
-        self.s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
+        dtype = df_train.select(pl.col(field)).dtypes[0]   
+        if dtype == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words :
+            self.s_train = df_train.select(pl.col(field).list.join(" ")).select(pl.col(field).str.concat(" ")).item()
+            self.s_analyze = df_analyze.select(pl.col(field).list.join(" ")).select(pl.col(field).str.concat(" ")).item()
+        elif dtype  == pl.datatypes.Utf8: #We get strs -         
+            self.s_train = df_train.select(pl.col(field).str.concat(" ")).item()
+            self.s_analyze = df_analyze.select(pl.col(field).str.concat(" ")).item()
+        else: 
+            raise ValueError(f"Error: Unsupported datatype {dtype} in field {field}. Supported types are: Utf8, List[Utf8]")
 
         self.size1 = df_train.height
         self.size2 = df_analyze.height
@@ -247,15 +254,15 @@ class AnomalyDetector:
         # Extract events
         if self.item_list_col:
             # Extract the column
-            column_data = df_seq.select(pl.col(self.item_list_col))             
-            events = column_data.to_series().to_list()
+            dtype = df_seq.select(pl.col(self.item_list_col)).dtypes[0]              
+            events = df_seq.select(pl.col(self.item_list_col)).to_series().to_list()
             # We are training because vectorizer is a class
 #            if train:
             if isinstance(vectorizer_class, type):
                 # Check the datatype  
-                if column_data.dtypes[0]  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
+                if dtype  == pl.datatypes.Utf8: #We get strs -> Use SKlearn Tokenizer
                     vectorizer = vectorizer_class() 
-                elif column_data.dtypes[0]  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
+                elif dtype  == pl.datatypes.List(pl.datatypes.Utf8): #We get list of str, e.g. words -> Do not use Skelearn Tokinizer 
                     vectorizer = vectorizer_class(analyzer=self.identity_function)
                 else:
                     raise ValueError(f"Error: Unsupported datatype {dtype}. Supported types are: Utf8, List[Utf8]")
