@@ -9,18 +9,33 @@ A key strength of LogLead is its custom loader system, which efficiently isolate
 
 ## Installing LogLead
 
-Simply install with `pip`:
+Install with `pip`:
 
 ```
 python -m pip install loglead
 ```
-
-NOTE: pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
-Install them manually (preferably in a conda enviroment).
-
+Then clone the project, move to demo folder and run some demos
+```
+git clone https://github.com/EvoTestOps/LogLead.git
+cd LogLead/demo
+python HDFS_samples.py
+python TB_samples.py
+```
+To start working with your own data, it is easiest to begin with the [RawLoader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py). To try out RawLoader, run the [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py). For this, you will need the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets. You will also need to edit the [RawLoaderDemo script](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py) or add a ".env" file to your LogLead root so that the demo knows where the data is located on your machine. See [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample) as an example of how the ".env" file should look. After that run the demo
+```
+python RawLoader_NoLabels.py
+```
+Finally, you can try downloading all data with [DownLoadData](https://github.com/EvoTestOps/LogLead/blob/main/tests/download_data.py). [Configuration file](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) controls what gets loaded and also how are they used in testing in case you also run the tests.  
+```
+cd LogLead/tests
+python download_data.py
+```
 ### Known issues
 
 - If `scikit-learn` wheel fails to compile, check that you can `gcc` and `g++` installed.
+- pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
+Install them manually (preferably in a conda enviroment).
+
 
 
 ## Demos
@@ -61,7 +76,7 @@ LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detec
 
 <img src="images/LogLead_Dataflow_Diagram.png" width="40%">
 
-**Loader:** This module reads in the log files and deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages. LogLead has loaders to the following public datasets from 10 different systems: 
+**Loader:** This module reads in the log files and deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages. LogLead has a [raw loader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py) that can load any log file. It also has custom loaders to the following public datasets from 10 different systems. Custom loaders should result in more accurate anomaly detection: 
 * 3: [HDFS_v1](https://github.com/logpai/loghub/tree/master/HDFS#hdfs_v1), [Hadoop](https://github.com/logpai/loghub/tree/master/Hadoop), [BGL](https://github.com/logpai/loghub/tree/master/BGL) thanks to amazing [LogHub team](https://github.com/logpai/loghub). For full data see [Zenodo](https://zenodo.org/records/3227177).
 * 3: [Sprit, Thunderbird and Liberty](https://www.usenix.org/cfdr-data#hpc4) can be found from Usenix site.  
 * 2: [Nezha](https://github.com/IntelligentDDS/Nezha) has data from two systems [TrainTicket](https://github.com/FudanSELab/train-ticket) and [Google Cloud Webshop demo](https://github.com/GoogleCloudPlatform/microservices-demo). It is the first dataset of microservice-based systems. Like other traditional log datasets it has Log data but additionally there are Traces and Metrics.
