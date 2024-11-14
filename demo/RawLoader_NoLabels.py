@@ -1,4 +1,5 @@
 # This script provides a demonstration of how to proceeed when you do not have a specific loader nor labels for your data.
+# See also our project expanding this idea: https://github.com/EvoTestOps/LogDelta
 # The only requirements are two log files:
 # 1. A training log file, typically from a successful run, used to build the anomaly detection models.
 # 2. An analysis log file, often from a failed or problematic run, which will be scored using the models.
@@ -86,6 +87,20 @@ def create_unlabeled_BGL(data: str, reduce_df_ratio: float = 0.1, test_ratio: fl
 
 
 def create_seq_in_file_HDFS(reduce_df_ratio: float = 0.0005, test_ratio: float = 0.5):
+    """
+    This function processes HDFS log data by loading, reducing, and splitting it into
+    training and test sets, then saving each sequence to individual files. 
+
+    Parameters:
+    - reduce_df_ratio (float): The fraction by which to reduce the dataframe size, 
+      useful for handling large datasets. Default is 0.0005.
+    - test_ratio (float): The proportion of the dataset to reserve for testing. Default is 0.5.
+
+    Output:
+    - Saves training sequences to "HDFS_train" directory.
+    - Saves test sequences to "HDFS_test" directory.
+    - Prints confirmation with directory details.
+    """
     loader = loader = HDFSLoader(filename=os.path.join(full_data,"hdfs", "HDFS.log"),
                                 labels_file_name=os.path.join(full_data,"hdfs", "preprocessed/anomaly_label.csv"))
     df = loader.execute()
