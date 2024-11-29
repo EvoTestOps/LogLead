@@ -71,8 +71,10 @@ class RawLoader(BaseLoader):
                         queries.append(q)
              # Check if any valid queries were collected
             if not queries:
-                raise ValueError(f"No valid files found matching pattern {self.filename_pattern} in directory {self.filename}. "
-                                 f"Ensure the pattern is correct and the files are large enough to process.")
+                raise ValueError(f"No valid files found matching pattern {self.filename_pattern} "
+                 f"in directory {os.path.abspath(self.filename)}. "
+                 f"Ensure the pattern is correct and the files are large enough to process.")
+
 
             dataframes = pl.collect_all(queries)
             self.df = pl.concat(dataframes)
