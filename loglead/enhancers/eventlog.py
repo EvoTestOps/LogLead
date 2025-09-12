@@ -78,7 +78,7 @@ class EventLogEnhancer:
                 e_trigrams_len = pl.col("e_trigrams").list.len()
             )
         return self.df
-    
+
     def trigrams(self, column="m_message"):
         """
         This one runs fast three char splits with extract_all at 3 different positions
@@ -113,7 +113,7 @@ class EventLogEnhancer:
         return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
 
     # Enrich with drain parsing results
-    def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False):
+    def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False, persistence=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_drain_id" not in self.df.columns:
             # Drain returns dict
@@ -134,18 +134,56 @@ class EventLogEnhancer:
                 pl.Field("cluster_count", pl.Int64)
             ])
             if drain_masking:
-                from loglead.parsers import DrainTemplateMiner as tm
-                self.df = self.df.with_columns(
-                    message_trimmed=pl.col("m_message").str.split("\n").list.first()
-                )
-                self.df = self.df.with_columns(
-                    drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
+                if persistence:
+                    self.df = self.df.with_columns(
+                        pl.col("m_message").str.split("\n").list.first().alias("message_trimmed")
+                    )
+                    from loglead.parsers import DrainPersistenceTemplateMiner as tm
+                    messages = self.df["message_trimmed"].to_list()
+
+                    drain_results = []
+                    for msg in messages:
+                        template_obj = tm.add_log_message(msg) or {}
+                        drain_results.append({
+                            "change_type": template_obj.get("change_type", ""),
+                            "cluster_id": template_obj.get("cluster_id", -1),
+                            "cluster_size": template_obj.get("cluster_size", 0),
+                            "template_mined": template_obj.get("template_mined", ""),
+                            "cluster_count": template_obj.get("cluster_count", 0)
+                        })
+
+                    self.df = self.df.with_columns(
+                        pl.Series("drain", drain_results, dtype=return_dtype)
+                    )
+                else:
+                    from loglead.parsers import DrainTemplateMiner as tm
+                    self.df = self.df.with_columns(
+                        drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
             else:
                 #if "e_message_normalized" not in self.df.columns:
                 #    self.normalize()
-                from loglead.parsers import DrainTemplateMinerNoMasking as tm
-                self.df = self.df.with_columns(
-                    drain=pl.col(field).map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
+                if persistence:
+                    from loglead.parsers import DrainPersistenceTemplateMinerNoMasking as tm
+                    messages = self.df[field].to_list()
+
+                    drain_results = []
+                    for msg in messages:
+                        template_obj = tm.add_log_message(msg) or {}
+                        drain_results.append({
+                            "change_type": template_obj.get("change_type", ""),
+                            "cluster_id": template_obj.get("cluster_id", -1),
+                            "cluster_size": template_obj.get("cluster_size", 0),
+                            "template_mined": template_obj.get("template_mined", ""),
+                            "cluster_count": template_obj.get("cluster_count", 0)
+                        })
+
+                    self.df = self.df.with_columns(
+                        pl.Series("drain", drain_results, dtype=return_dtype)
+                    )
+                else:
+                    from loglead.parsers import DrainTemplateMinerNoMasking as tm
+                    self.df = self.df.with_columns(
+                        drain=pl.col(field).map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
 
             if templates:
                 self.df = self.df.with_columns(
