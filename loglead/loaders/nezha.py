@@ -276,7 +276,13 @@ class NezhaLoader(BaseLoader):
             logger.info (f"WS df_normal_json: {df_normal_json[0]['raw_m_message'] [0]}")
             logger.info (f"WS df_abnormal_json: {df_abnormal_json[0]['raw_m_message'][0]}")
         
-            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").str.json_decode())
+            # Dtype for outer JSON: {log, stream, time}
+            outer_dtype = pl.Struct([
+                pl.Field("log", pl.String),
+                pl.Field("stream", pl.String),
+                pl.Field("time", pl.String)
+            ])
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").str.json_decode(dtype=outer_dtype))
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").struct.field("log"))
             #Debug bad JSON
             # for index, row in enumerate(df_normal_json.to_dicts()):
@@ -287,8 +293,12 @@ class NezhaLoader(BaseLoader):
             #     except Exception as e:
             #         logger.error(f"Row {index}:{df_normal_json[index]['log'][0]} {str(e)}")
 
-
-            df_normal_json = df_normal_json.with_columns(pl.col("log").str.json_decode())
+            # Dtype for inner JSON: {message, severity, ...}
+            inner_dtype = pl.Struct([
+                pl.Field("message", pl.String),
+                pl.Field("severity", pl.String)
+            ])
+            df_normal_json = df_normal_json.with_columns(pl.col("log").str.json_decode(dtype=inner_dtype))
             #extract message and severity
             df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("message"))
             df_normal_json = df_normal_json.with_columns(pl.col("log").struct.field("severity"))
@@ -339,8 +349,14 @@ class NezhaLoader(BaseLoader):
             #     except Exception as e:
             #         logger.error(f"Row {index}:{df_normal_json[index]['raw_m_message_fix'][0]} {str(e)}")
             # #Fix broken JSON
-            df_normal_json = df_normal_json.drop("json_error_part") 
-            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").str.json_decode())
+            df_normal_json = df_normal_json.drop("json_error_part")
+            # Dtype for JSON: {log, stream, time}
+            json_dtype = pl.Struct([
+                pl.Field("log", pl.String),
+                pl.Field("stream", pl.String),
+                pl.Field("time", pl.String)
+            ])
+            df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").str.json_decode(dtype=json_dtype))
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message_fix").struct.field("log"))
             #df_abnormal_json = df_abnormal_json.with_columns(pl.col("log")
             #TODO toimisi uudemmalla 0.20
