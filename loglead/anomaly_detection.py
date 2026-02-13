@@ -326,8 +326,12 @@ class AnomalyDetector:
                 X_train_to_use = self.X_train_no_anos if  self.filter_anos else self.X_train
                 # In sklearn 1.5+, cv='prefit' is no longer supported
                 # Create a new model instance and let CalibratedClassifierCV handle fitting
+                # Determine appropriate number of CV folds based on training data size
+                # Need at least 2 folds, but can't have more folds than the smallest class
+                min_class_count = min(np.bincount(self.labels_train))
+                n_folds = min(5, max(2, min_class_count))
                 new_model = LinearSVC(max_iter=self.model.max_iter, random_state=getattr(self.model, 'random_state', None))
-                calibrated_model = CalibratedClassifierCV(new_model, cv=5)
+                calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
                 calibrated_model.fit(X_train_to_use, self.labels_train)
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
             elif isinstance(self.model, (OOV_detector, RarityModel)):
