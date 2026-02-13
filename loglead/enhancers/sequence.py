@@ -81,7 +81,7 @@ class SequenceEnhancer:
 
     def embeddings(self, embedding_column="e_bert_emb"):
         # Aggregate by averaging the embeddings for each sequence (seq_id)
-        df_temp = self.df.select(pl.col("seq_id"), pl.col(embedding_column).list.to_struct()).unnest(embedding_column)
+        df_temp = self.df.select(pl.col("seq_id"), pl.col(embedding_column).list.to_struct(n_field_strategy="max_width")).unnest(embedding_column)
         df_temp = df_temp.group_by('seq_id').mean()
         df_temp = df_temp.select(pl.col("seq_id"), pl.concat_list(pl.col("*").exclude("seq_id")).alias(embedding_column))
         # Join this result with df_sequences on seq_id

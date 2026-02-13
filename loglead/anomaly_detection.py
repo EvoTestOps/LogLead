@@ -324,7 +324,10 @@ class AnomalyDetector:
                 # and convert them to probabilities using Platt scaling
                 from sklearn.calibration import CalibratedClassifierCV
                 X_train_to_use = self.X_train_no_anos if  self.filter_anos else self.X_train
-                calibrated_model = CalibratedClassifierCV(self.model, cv='prefit')
+                # In sklearn 1.5+, cv='prefit' is no longer supported
+                # Create a new model instance and let CalibratedClassifierCV handle fitting
+                new_model = LinearSVC(max_iter=self.model.max_iter, random_state=getattr(self.model, 'random_state', None))
+                calibrated_model = CalibratedClassifierCV(new_model, cv=5)
                 calibrated_model.fit(X_train_to_use, self.labels_train)
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
             elif isinstance(self.model, (OOV_detector, RarityModel)):

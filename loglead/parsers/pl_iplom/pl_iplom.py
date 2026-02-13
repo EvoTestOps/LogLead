@@ -219,12 +219,12 @@ class PL_IPLoMParser:
         #Create dataframes for each partition
         #We iterate over rows of Dataframe.  
         for i in range(len(df_aggre_s1)):
-            df_part = df_aggre_s1[i] 
-            len_words = df_part['e_words_len'][0]
-            part_len = df_part['part_len'][0]
+            df_part = df_aggre_s1[i]
+            len_words = df_part['e_words_len'].item(0)
+            part_len = df_part['part_len'].item(0)
             logger.debug (f"\nCreation parittions with {len_words} words and {part_len} events")
             df_part = df_aggre_s1[i].with_columns(pl.col("events", "row_nr")).explode("events", "row_nr")
-            df_part = df_part.with_columns(pl.col("events").list.to_struct()).unnest("events")
+            df_part = df_part.with_columns(pl.col("events").list.to_struct(upper_bound=len_words)).unnest("events")
             df_part = df_part.drop("e_words_len", "part_len")
             self.add_partition(_Partition(df = df_part, len=len_words, split_trace="S1 "))
         return df_aggre_s1 #For easier debugging
