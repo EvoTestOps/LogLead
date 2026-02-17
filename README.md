@@ -1,9 +1,9 @@
 # LogLead
-LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations.
+LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations. LogLead is also usedas a backend for projects such as [LogDelta](https://github.com/EvoTestOps/LogDelta) and [VisualLogAnalyzer](https://github.com/EvoTestOps/VisualLogAnalyzer), which offer a more user-friendly approach to log analysis and log anomaly detection.
 
 <img src="images/Log%20processing.svg">
 
-Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
@@ -54,6 +54,28 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Log Snapshot**: View the log [here](https://github.com/logpai/loghub/blob/master/HDFS/HDFS_2k.log_structured.csv).
 - **Anomaly Labels**: Provided in a separate file.
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
+
+## Testing
+Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
+
+Basic demos
+```
+cd demo 
+python HDFS_samples.py 
+python TB_samples.py
+```
+
+Parser benchmark
+```
+cd demo/parser_benchmark
+python ano_detection.py
+python parsing_speed.py
+```
+Run full tests
+```
+cd tests
+python main.py
+```
 
 ## Example of Anomaly Detection results
 Below you can see anomaly detection results (F1-Binary) trained on 0.5% subset of HDFS data. 
