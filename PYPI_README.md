@@ -1,24 +1,40 @@
 # LogLead
-LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations.
+LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations. LogLead is also usedas a backend for projects such as [LogDelta](https://github.com/EvoTestOps/LogDelta) and [VisualLogAnalyzer](https://github.com/EvoTestOps/VisualLogAnalyzer), which offer a more user-friendly approach to log analysis and log anomaly detection.
 
-Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. LogLead is an actively evolving project, and we are continually adding new datasets, representations, and classifiers. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
 ## Installing LogLead
 
-Simply install with `pip`:
+Install with `pip`:
 
 ```
 python -m pip install loglead
 ```
-
-NOTE: pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
-Install them manually (preferably in a conda enviroment).
-
+Then clone the project, move to demo folder and run some demos
+```
+git clone https://github.com/EvoTestOps/LogLead.git
+cd LogLead/demo
+python HDFS_samples.py
+python TB_samples.py
+```
+To start working with your own data, it is easiest to begin with the [RawLoader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py). To try out RawLoader, run the [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py). For this, you will need the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets. You will also need to edit the [RawLoaderDemo script](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py) or add a ".env" file to your LogLead root so that the demo knows where the data is located on your machine. See [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample) as an example of how the ".env" file should look. After that run the demo
+```
+python RawLoader_NoLabels.py
+```
+Finally, you can try downloading all data with [DownLoadData](https://github.com/EvoTestOps/LogLead/blob/main/tests/download_data.py). [Configuration file](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) controls what gets loaded and also how are they used in testing in case you also run the tests.  
+```
+cd LogLead/tests
+python download_data.py
+```
 ### Known issues
 
 - If `scikit-learn` wheel fails to compile, check that you can `gcc` and `g++` installed.
+- pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
+Install them manually (preferably in a conda enviroment).
+
+
 
 ## Demos
 In the following demonstrations, you'll notice a significant aspect of LogLead's design efficiency: code reusability. Both demos, while analyzing different datasets, share a substantial amount of their underlying code. This not only showcases LogLead's versatility in handling various log formats but also its ability to streamline the analysis process through reusable code components.
@@ -36,6 +52,28 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Log Snapshot**: View the log [here](https://github.com/logpai/loghub/blob/master/HDFS/HDFS_2k.log_structured.csv).
 - **Anomaly Labels**: Provided in a separate file.
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
+
+## Testing
+Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
+
+Basic demos
+```
+cd demo 
+python HDFS_samples.py 
+python TB_samples.py
+```
+
+Parser benchmark
+```
+cd demo/parser_benchmark
+python ano_detection.py
+python parsing_speed.py
+```
+Run full tests
+```
+cd tests
+python main.py
+```
 
 ## Example of Anomaly Detection results
 Below you can see anomaly detection results (F1-Binary) trained on 0.5% subset of HDFS data. 
@@ -56,7 +94,7 @@ The enhancement strategies are tested with 5 different machine learning algorith
 ## Functional overview
 LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars](https://www.pola.rs/) dataframes as its notably faster than Pandas.
 
-**Loader:** This module reads in the log files and deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages. LogLead has loaders to the following public datasets from 10 different systems: 
+**Loader:** This module reads in the log files and deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages. LogLead has a [raw loader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py) that can load any log file. It also has custom loaders to the following public datasets from 10 different systems. Custom loaders should result in more accurate anomaly detection: 
 * 3: [HDFS_v1](https://github.com/logpai/loghub/tree/master/HDFS#hdfs_v1), [Hadoop](https://github.com/logpai/loghub/tree/master/Hadoop), [BGL](https://github.com/logpai/loghub/tree/master/BGL) thanks to amazing [LogHub team](https://github.com/logpai/loghub). For full data see [Zenodo](https://zenodo.org/records/3227177).
 * 3: [Sprit, Thunderbird and Liberty](https://www.usenix.org/cfdr-data#hpc4) can be found from Usenix site.  
 * 2: [Nezha](https://github.com/IntelligentDDS/Nezha) has data from two systems [TrainTicket](https://github.com/FudanSELab/train-ticket) and [Google Cloud Webshop demo](https://github.com/GoogleCloudPlatform/microservices-demo). It is the first dataset of microservice-based systems. Like other traditional log datasets it has Log data but additionally there are Traces and Metrics.
@@ -68,3 +106,6 @@ LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detec
 * Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [Support Vector Machine](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [eXtreme Gradient Boosting](https://en.wikipedia.org/wiki/XGBoost)
 * Unsupervised (4): [One-class SVM](https://en.wikipedia.org/wiki/Support_vector_machine#One-class_SVM), [Local Outlier Factor](https://en.wikipedia.org/wiki/Local_outlier_factor), [Isolation Forest](https://en.wikipedia.org/wiki/Isolation_forest), [K-Means](https://en.wikipedia.org/wiki/K-means_clustering)
 * Custom Unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) counts amount words or character n-grams that are novel in test set. [Rarity Model](https://github.com/EvoTestOps/LogLead/blob/main/loglead/RarityModel.py), scores seen words or character n-grams based on their rarity in training set. See our public [preprint](https://arxiv.org/abs/2312.01934) for more details
+
+## Reference
+Mäntylä MV, Wang Y, Nyyssölä J. Loglead-fast and integrated log loader, enhancer, and anomaly detector. In2024 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER) 2024 Mar 12 (pp. 395-399). IEEE.  [PDF](https://ieeexplore.ieee.org/abstract/document/10589612), [preprint](https://arxiv.org/abs/2311.11809)
