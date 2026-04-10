@@ -1,0 +1,140 @@
+# This is an example using OpenStack data from samples folder.
+# Source: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH
+
+# ______________________________________________________________________________
+# Part 1 load libraries and setup paths.
+import os
+import random
+import polars as pl
+
+from loglead.enhancers import EventLogEnhancer
+from loglead import AnomalyDetector
+
+# Ensure this always gets executed in the same location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+
+# Location of our sample data
+sample_data = os.path.join(script_dir, 'samples', 'OpenStack_data_original.xlsx')
+
+# _________________________________________________________________________________
+# Part 2 load data from sample file
+# Load TB from sample data
+df = pl.read_excel(sample_data)
+print(f"Read OpenStack sample. Numbers of events: {len(df)}")
+ano_count = df["anom_label"].sum()
+print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count / len(df) * 100:.2f}%")
+
+### Create a new column called m_message that contains a copy of all values from the Content column using Polars
+df = df.with_columns(pl.col("Content").alias("m_message"))
+
+### Create a boolean anomaly column based on anom_label (0 = False, 1 = True)
+df = df.with_columns(
+    pl.col("anom_label").cast(pl.Boolean).alias("anomaly")
+)
+
+# Handle null values in m_message - replace with empty string to avoid parsing errors
+df = df.with_columns(pl.col("m_message").fill_null(""))
+
+# Clean text to handle Unicode characters that can cause parsing issues
+df = df.with_columns(
+    pl.col("m_message")
+    .str.replace_all(r"[^\x00-\x7F]", " ")  # Replace non-ASCII characters with spaces
+)
+
+# _________________________________________________________________________________
+# Part 3 add enhanced representations
+print(f"\nStarting enhancing all log events:")
+enhancer = EventLogEnhancer(df)
+
+# For nicer printing a function to format series of elements as a list-like string
+def format_as_list(series):
+    elements = [str(item) for item in series]
+    return '[' + ', '.join(elements) + ']'
+
+
+# Pick a random line
+# row_index = 1
+row_index = random.randint(0, len(df) - 1)
+
+
+print(f"Original log message: {df['m_message'][row_index]}")
+# Create some enhanced representations
+df = enhancer.normalize()
+print(f"as normalized:        {df['e_message_normalized'][row_index]}")
+df = enhancer.words()
+print(f"as words:             {format_as_list(df['e_words'][row_index])}")
+df = enhancer.trigrams()
+print(f"as trigrams:          {format_as_list(df['e_trigrams'][row_index])}")
+df = enhancer.parse_drain()
+print(f"as Drain event id:    {df['e_event_drain_id'][row_index]}")
+df = enhancer.parse_tip()
+print(f"as Tipping event id:    {df['e_event_tip_id'][row_index]}")
+# Spell parser takes a bit too long for the video
+# df = enhancer.parse_spell()
+# print(f"as Spell event id:    {df['e_event_spell_id'][row_index]}")
+df = enhancer.length()
+print(f"event length chars:   {df['e_chars_len'][row_index]}")
+print(f"event length lines:   {df['e_lines_len'][row_index]}")
+print(f"event length words:   {df['e_words_len'][row_index]}")
+
+# _________________________________________________________________________________________
+# Part 4 we do some anomaly detection.
+print(f"\nStarting anomaly detection of OpenStack Events")
+numeric_cols = ["e_chars_len",  "e_lines_len",]
+sad = AnomalyDetector()
+# Using 10% for training 90% for testing
+sad.numeric_cols = numeric_cols
+sad.test_train_split(df, test_frac=0.90)
+print(f"using 10% for training and 90% for testing")
+print(f"Predicting with sequence length and duration ")
+
+# Logistic Regression
+sad.train_LR()
+df_seq = sad.predict()
+# Use Decision Tree
+sad.train_DT()
+df_seq = sad.predict()
+
+print(f"Predicting with words")
+sad.item_list_col = "e_words"
+sad.numeric_cols = None  # Important otherwise we use both numeric_col and item_list_col for predicting
+sad.prepare_train_test_data()  # Data needs to prepared after changing the predictor columns
+# Logistic Regression
+sad.train_LR()
+df_seq = sad.predict()
+# Use Decision Tree
+sad.train_DT()
+df_seq = sad.predict()
+
+print(f"Predicting with Drain parsing results")
+sad.item_list_col = "e_event_drain_id"
+sad.prepare_train_test_data()
+# Logistic Regression
+sad.train_LR()
+df_seq = sad.predict()
+# Use Decision Tree
+sad.train_DT()
+df_seq = sad.predict()
+
+# ____________________________________________________________
+# Part 5 run all anomaly detectors and store scores
+print(f"Running all anomaly detectors, excluding OneClassSVM and LOF, with Words and Trigrams and storing results")
+print(f"We run everything two times - Adjust as needed")
+
+sad = AnomalyDetector(store_scores=True, print_scores=False)
+for i in range(2):  # We do just two loops in this demo
+    sad.item_list_col = "e_words"
+    sad.test_train_split(df, test_frac=0.90)
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
+    
+    # We keep existing split but need to prepare data for trigram data
+    sad.item_list_col = "e_trigrams"
+    sad.prepare_train_test_data()
+    sad.evaluate_all_ads(disabled_methods=["train_OneClassSVM", "train_LOF"])
+
+
+print(f"Inspecting results. Averages of runs:")
+print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
+print(f"Confusion matrices can also be inspected")
+sad.storage.print_confusion_matrices("LogisticRegression", "e_trigrams")

@@ -34,25 +34,30 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Logging"]
 
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
 "polars[numpy,pandas,pyarrow]>=1.5.0,<1.39.0",
+"fastexcel>=0.19.0",
 "scipy>=1.10.1",
 'regex>=2023.10.3',
 'drain3>=0.9.11',
 'tipping>=0.1.3',
 "scikit-learn>=1.2.2",
 "xgboost>=1.7.3",
+"tensorflow==2.16.2",
+"tf-keras==2.16.0",
+"transformers>=4.30.0,<5.0.0",
+"torch>=2.10.0",
 "python-dotenv>=1.0.1",
 "pyyaml",
 "psutil",
 "jinja2",
 "matplotlib",
-"requests", #tests 
+"requests", #tests
 "tqdm", #tests
 "GitPython", #tests
-"py7zr", #tests 
-"shap>=0.42.1", #explainer 
+"py7zr", #tests
+"shap>=0.42.1", #explainer
 "umap-learn>=0.5.6", #explainer
 "plotly>=5.19.0", #explainer
 "nbformat>=4.2.0", #explainer

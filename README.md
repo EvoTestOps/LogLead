@@ -20,6 +20,7 @@ git clone https://github.com/EvoTestOps/LogLead.git
 cd LogLead/demo
 python HDFS_samples.py
 python TB_samples.py
+python OpenStack_samples.py
 ```
 To start working with your own data, it is easiest to begin with the [RawLoader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py). To try out RawLoader, run the [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py). For this, you will need the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets. You will also need to edit the [RawLoaderDemo script](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py) or add a ".env" file to your LogLead root so that the demo knows where the data is located on your machine. See [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample) as an example of how the ".env" file should look. After that run the demo
 ```
@@ -55,6 +56,11 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Anomaly Labels**: Provided in a separate file.
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
 
+### OpenStack Log Demo
+- **Script**: [OpenStack_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/OpenStack_samples.py)
+- **Log Snapshot**: View the log [here](https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH).
+- **Dataset**: The demo includes a xlsx file containing a subset of 217,534 log events, with 84,760 anomalies.
+
 ## Testing
 Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
 
@@ -63,6 +69,7 @@ Basic demos
 cd demo 
 python HDFS_samples.py 
 python TB_samples.py
+python OpenStack_samples.py
 ```
 
 Parser benchmark
