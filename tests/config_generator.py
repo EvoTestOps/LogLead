@@ -137,7 +137,21 @@ datasets = [
         'anomaly_detection': False,
         'expected_length': 174847810,
         'reduction_fraction': 0.0057
-    }
+    },
+    {
+        'name': 'openstack',
+        'urls': [
+            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Cinder/',
+            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Neutron/',
+            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Nova/'
+        ],
+        'download': True,
+        'load': True,
+        'enhance': True,
+        'anomaly_detection': True,
+        'expected_length': 0,
+        'reduction_fraction': 0.01
+    },
 ]
 
 

@@ -180,7 +180,7 @@ def transform_github_url(url):
     Returns:
         tuple: A tuple containing the repository URL and the folder path.
     """
-    repo_path = url.split('github.com/')[-1].replace('tree/main/', '')
+    repo_path = url.split('github.com/')[-1].replace('tree/main/', '').replace('tree/master/', '')
     repo_url = 'https://github.com/' + '/'.join(repo_path.split('/')[:2]) + '.git'
     folder_path = '/'.join(repo_path.split('/')[2:])
     return repo_url, folder_path
