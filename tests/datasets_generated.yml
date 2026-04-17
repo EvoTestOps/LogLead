@@ -117,13 +117,9 @@ datasets:
   expected_length: 174847810
   reduction_fraction: 0.0005719259509169717
 - name: openstack
-  urls:
-    - https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Cinder/
-    - https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Neutron/
-    - https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Nova/
+  url: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv
   download: true
   load: true
   enhance: true
   anomaly_detection: true
-  expected_length: 0
-  reduction_fraction: 0.01
+  expected_length: 217534

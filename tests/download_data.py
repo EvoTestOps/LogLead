@@ -180,7 +180,7 @@ def transform_github_url(url):
     Returns:
         tuple: A tuple containing the repository URL and the folder path.
     """
-    repo_path = url.split('github.com/')[-1].replace('tree/main/', '').replace('tree/master/', '')
+    repo_path = url.split('github.com/')[-1].replace('tree/main/', '')
     repo_url = 'https://github.com/' + '/'.join(repo_path.split('/')[:2]) + '.git'
     folder_path = '/'.join(repo_path.split('/')[2:])
     return repo_url, folder_path
@@ -224,12 +224,14 @@ def download_all_parts(name, urls, dest_folder):
             if file_path:
                 if file_path.endswith('.zip'):
                     unzip_file(file_path, dest_folder)
+                    os.remove(file_path) # Remove the zip or gz file after extraction
                 elif file_path.endswith('.gz'):
                     ungzip_file(file_path, dest_folder)
+                    os.remove(file_path) # Remove the zip or gz file after extraction
                 elif file_path.endswith('.7z'):
                     un7z_file(file_path, dest_folder)
-                os.remove(file_path)  # Remove the zip or gz file after extraction
-    
+                    os.remove(file_path) # Remove the zip or gz file after extraction
+
     # Clean up cloned repositories
     for repo_url, repo_folder in cloned_repos.items():
         shutil.rmtree(repo_folder)

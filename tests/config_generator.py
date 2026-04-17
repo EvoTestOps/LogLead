@@ -140,17 +140,12 @@ datasets = [
     },
     {
         'name': 'openstack',
-        'urls': [
-            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Cinder/',
-            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Neutron/',
-            'https://github.com/dessertlab/Fault-Injection-Dataset/tree/master/Nova/'
-        ],
+        'url': 'https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv',
         'download': True,
         'load': True,
         'enhance': True,
         'anomaly_detection': True,
-        'expected_length': 0,
-        'reduction_fraction': 0.01
+        'expected_length': 217534
     },
 ]
 

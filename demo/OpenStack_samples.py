@@ -15,12 +15,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
 # Location of our sample data
-sample_data = os.path.join(script_dir, 'samples', 'OpenStack_data_original.xlsx')
+sample_data = os.path.join(script_dir, 'samples', 'OpenStack_data_original.csv')
 
 # _________________________________________________________________________________
 # Part 2 load data from sample file
 # Load TB from sample data
-df = pl.read_excel(sample_data)
+df = pl.read_csv(sample_data)
 print(f"Read OpenStack sample. Numbers of events: {len(df)}")
 ano_count = df["anom_label"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count / len(df) * 100:.2f}%")
