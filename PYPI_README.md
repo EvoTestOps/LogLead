@@ -7,26 +7,53 @@ A key strength of LogLead is its custom loader system, which efficiently isolate
 
 ## Installing LogLead
 
-Install with `pip`:
-
+Install with [`uv`](https://docs.astral.sh/uv/):
+```
+uv add loglead
+```
+Or with `pip`:
 ```
 python -m pip install loglead
 ```
+
 Then clone the project, move to demo folder and run some demos
 ```
 git clone https://github.com/EvoTestOps/LogLead.git
+cd LogLead
+uv run demo/HDFS_samples.py
+uv run demo/TB_samples.py
+```
+Or with `pip` (after installing LogLead into your environment):
+```
 cd LogLead/demo
 python HDFS_samples.py
 python TB_samples.py
 ```
+`uv run` syncs the environment from `pyproject.toml`/`uv.lock` on first use, so there's no separate install step before running anything.
+
 To start working with your own data, it is easiest to begin with the [RawLoader](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py). To try out RawLoader, run the [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py). For this, you will need the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets. You will also need to edit the [RawLoaderDemo script](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py) or add a ".env" file to your LogLead root so that the demo knows where the data is located on your machine. See [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample) as an example of how the ".env" file should look. After that run the demo
+```
+uv run demo/RawLoader_NoLabels.py
+```
+Or with `pip`:
 ```
 python RawLoader_NoLabels.py
 ```
-Finally, you can try downloading all data with [DownLoadData](https://github.com/EvoTestOps/LogLead/blob/main/tests/download_data.py). [Configuration file](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) controls what gets loaded and also how are they used in testing in case you also run the tests.  
+Finally, you can try downloading all data. The [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script downloads the public datasets listed in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml):
 ```
-cd LogLead/tests
-python download_data.py
+uv run downloader/download_data.py
+```
+Or with `pip` (after cloning the repo):
+```
+python downloader/download_data.py
+```
+If you've cloned the repo and want to run the test suite too, point it at [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) instead, which also controls what gets loaded and how it's used in testing:
+```
+uv run downloader/download_data.py --config tests/datasets.yml
+```
+Or with `pip`:
+```
+python downloader/download_data.py --config tests/datasets.yml
 ```
 ### Known issues
 
@@ -58,18 +85,33 @@ Typically, our test procedure includes running the following. The demos can reve
 
 Basic demos
 ```
-cd demo 
-python HDFS_samples.py 
+uv run demo/HDFS_samples.py
+uv run demo/TB_samples.py
+```
+Or with `pip`:
+```
+cd demo
+python HDFS_samples.py
 python TB_samples.py
 ```
 
 Parser benchmark
 ```
+uv run demo/parser_benchmark/ano_detection.py
+uv run demo/parser_benchmark/parsing_speed.py
+```
+Or with `pip`:
+```
 cd demo/parser_benchmark
 python ano_detection.py
 python parsing_speed.py
 ```
+
 Run full tests
+```
+uv run tests/main.py
+```
+Or with `pip`:
 ```
 cd tests
 python main.py

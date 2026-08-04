@@ -3,6 +3,7 @@ import requests
 import argparse
 import yaml
 import shutil
+from pathlib import Path
 from zipfile import ZipFile
 import gzip
 from tqdm import tqdm
@@ -264,10 +265,15 @@ def main(dest_base_folder, yaml_file):
         
         download_all_parts(name, urls, dataset_folder)
 
-#if __name__ == '__main__':
-parser = argparse.ArgumentParser(description='Download datasets to a specified location.')
-parser.add_argument('--location', type=str, help='The base folder where datasets should be downloaded. This overrides the location in the YAML file.')
-parser.add_argument('--config', type=str, default='datasets.yml', help='Path to the YAML file containing dataset information. Default is datasets.yml.')
-args = parser.parse_args()
+def cli():
+    parser = argparse.ArgumentParser(description='Download datasets to a specified location.')
+    parser.add_argument('--location', type=str, help='The base folder where datasets should be downloaded. This overrides the location in the YAML file.')
+    parser.add_argument('--config', type=str,
+                         default=str(Path(__file__).parent / 'datasets.yml'),
+                         help='Path to the YAML file containing dataset information. '
+                              'Defaults to the datasets.yml next to this script.')
+    args = parser.parse_args()
+    main(args.location, args.config)
 
-main(args.location, args.config)
+if __name__ == '__main__':
+    cli()

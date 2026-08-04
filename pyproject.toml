@@ -48,11 +48,11 @@ dependencies = [
 "psutil",
 "jinja2",
 "matplotlib",
-"requests", #tests 
-"tqdm", #tests
-"GitPython", #tests
-"py7zr", #tests 
-"shap>=0.42.1", #explainer 
+"requests",#downloader
+"tqdm",#downloader
+"GitPython",#downloader
+"py7zr",#downloader
+"shap>=0.42.1", #explainer
 "umap-learn>=0.5.6", #explainer
 "plotly>=5.19.0", #explainer
 "nbformat>=4.2.0", #explainer
