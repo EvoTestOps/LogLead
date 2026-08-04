@@ -404,7 +404,7 @@ class AnomalyDetector:
         train_methods.discard(self.train_model)
         for method in train_methods:
             if not self.print_scores:
-                print(f"Running {method}")
+                print(f"Running {method.__name__}")
             time_start = time.process_time()
             method()
             self.predict()

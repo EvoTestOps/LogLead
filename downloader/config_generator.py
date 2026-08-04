@@ -5,6 +5,8 @@ import os
 import runpy
 import sys
 
+from download_data import main as download_data_main
+
 """
 This UI based tool is primarily meant for generating more varied configuration files faster. It can also be more approachable to some users.
 
@@ -254,7 +256,7 @@ class ConfigGenerator(tk.Tk):
 
         ttk.Label(run_buttons_frame, text="Run scripts (see console):").grid(row=0, column=0, padx=10)
 
-        ttk.Button(run_buttons_frame, text="Run Download Data", command=lambda: self.run_script('download_data.py')).grid(row=0, column=1, padx=10)
+        ttk.Button(run_buttons_frame, text="Run Download Data", command=self.run_download).grid(row=0, column=1, padx=10)
         ttk.Button(run_buttons_frame, text="Run Loaders", command=lambda: self.run_script('loaders.py')).grid(row=0, column=2, padx=10)
         ttk.Button(run_buttons_frame, text="Run Enhancers", command=lambda: self.run_script('enhancers.py')).grid(row=0, column=3, padx=10)
         ttk.Button(run_buttons_frame, text="Run Anomaly Detectors", command=lambda: self.run_script('anomaly_detectors.py')).grid(row=0, column=4, padx=10)
@@ -307,6 +309,15 @@ class ConfigGenerator(tk.Tk):
             with open(file_path, 'w') as file:
                 yaml.dump(config, file, default_flow_style=False, sort_keys=False)
             messagebox.showinfo("Success", f"Configuration saved to {file_path}")
+
+    def run_download(self):
+        file_path = self.save_location_entry.get()
+        if os.path.exists(file_path):
+            print(f"Using configuration file: {file_path}")
+            download_data_main(None, file_path)
+            print("___________________________________________________")
+        else:
+            messagebox.showerror("Error", f"Configuration file not found: {file_path}")
 
     def run_script(self, script_name):
         file_path = self.save_location_entry.get()
