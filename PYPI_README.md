@@ -55,6 +55,23 @@ Or with `pip`:
 ```
 python downloader/download_data.py --config tests/datasets.yml
 ```
+**Disk space:** downloading everything in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) transfers roughly 7 GB and the datasets expand to about 104 GB once unzipped. Make sure you have **at least ~110 GB free** before running the full downloader. The three supercomputer logs — Liberty, Spirit, and Thunderbird — account for most of it, at 30-38 GB each once unzipped.
+
+If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) if you're using `--config tests/datasets.yml`) and set `download: false` for datasets you don't need.
+
+| Dataset | Download size | Unzipped size |
+|---|---|---|
+| BGL | 58 MB | 709 MB |
+| Hadoop | 3 MB | 49 MB |
+| HDFS | 187 MB | 1.8 GB |
+| Liberty | 672 MB | 30 GB |
+| Spirit | 906 MB | 38 GB |
+| Thunderbird | 2.0 GB | 30 GB |
+| Nezha (git clone) | ~2.9 GB | 2.9 GB |
+| ADFA-LD | 2.4 MB | 26 MB |
+| AWSCTD | 10 MB | 559 MB |
+| **Total** | **~6.7 GB** | **~104 GB** |
+
 ### Known issues
 
 - If `scikit-learn` wheel fails to compile, check that you can `gcc` and `g++` installed.

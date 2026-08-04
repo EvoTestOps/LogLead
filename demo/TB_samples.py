@@ -121,6 +121,6 @@ for i in range(2):  # We do just two loops in this demo
 
 
 print(f"Inspecting results. Averages of runs:")
-print(sad.storage.calculate_average_scores(score_type="accuracy").to_csv())
+print(sad.storage.calculate_average_scores(score_type="accuracy"))
 print(f"Confusion matrices can also be inspected")
 sad.storage.print_confusion_matrices("LogisticRegression", "e_trigrams")

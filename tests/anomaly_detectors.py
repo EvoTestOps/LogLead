@@ -33,7 +33,7 @@ for f in all_files:
         dataset_name = basename.replace(".parquet", "")
         datasets.add(dataset_name)
 
-cols_event = ["m_message", "e_words", "e_event_drain_id", "e_trigrams", "e_event_tip_id", "e_event_lenma_id", "e_bert_emb"] 
+cols_event = ["m_message", "e_words", "e_event_drain_id", "e_trigrams", "e_event_tip_id"] 
 numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_prob_nmax_avg", "nep_prob_nmax_min"]
 
 def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
