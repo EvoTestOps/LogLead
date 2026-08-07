@@ -59,6 +59,18 @@ dependencies = [
 "scikit-optimize>=0.10.1" #f1-score optimzer
 ]
 
+[project.optional-dependencies]
+# MCP server: pip install loglead[mcp], then run loglead-mcp
+# The MCP SDK needs Python 3.10+, while LogLead itself still supports 3.9,
+# so the marker keeps `pip install loglead` resolvable on 3.9.
+mcp = [
+'mcp[cli]>=1.9; python_version >= "3.10"',
+"XlsxWriter>=3.2" #xlsx result tables
+]
+
+[project.scripts]
+loglead-mcp = "loglead.mcp.server:main"
+
 [project.urls]
 Homepage = "https://github.com/EvoTestOps/LogLead"
 

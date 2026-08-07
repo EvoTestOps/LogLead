@@ -100,6 +100,55 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Anomaly Labels**: Provided in a separate file.
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
 
+## MCP server
+
+LogLead ships an [MCP](https://modelcontextprotocol.io) server so an AI assistant can drive log
+analysis conversationally. It exposes the same run-comparison analyses as
+[LogDelta](https://github.com/EvoTestOps/LogDelta) — comparing a suspect run against a baseline of
+other runs — but interactively: the corpus is loaded, masked, and parsed **once**, and every later
+question reuses it.
+
+```
+pip install loglead[mcp]      # or: uv sync --extra mcp
+loglead-mcp                   # stdio; also --transport streamable-http --port 8000
+```
+
+Register it with Claude Code:
+
+```
+claude mcp add loglead -- loglead-mcp
+```
+
+### What it can do
+
+Your logs are organized as a **corpus**: a directory whose subdirectories are *runs* (one execution,
+deployment, or test run), matched against each other by file name. Three question types across four
+granularities:
+
+|                          | Distance (pair)           | Anomaly (one vs many)      | Visualize (set)      |
+|--------------------------|---------------------------|----------------------------|----------------------|
+| **L1** run / file names  | `distance_run_file`       | `anomaly_run_file`         | `plot_run_file`      |
+| **L2** run / log text    | `distance_run_content`    | `anomaly_run_content`      | `plot_run_content`   |
+| **L3** file              | `distance_file_content`   | `anomaly_file_content`     | `plot_file_content`  |
+| **L4** line              | `distance_line_content`   | `anomaly_line_content`     | —                    |
+
+Plus session and drill-down tools: `open_corpus`, `list_corpora`, `describe_corpus`, `close_corpus`,
+`read_log_lines`, `search_log_lines`, and `run_config` for executing an existing LogDelta YAML.
+
+A typical investigation: score every run (`anomaly_run_content`) → narrow to a file
+(`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
+each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
+about, with the full tables and interactive Plotly HTML written alongside.
+
+Try it against LogDelta's Hadoop demo data:
+
+```
+uv run demo/mcp_session_demo.py --corpus /path/to/Hadoop
+```
+
+The underlying analyses are also importable directly, without MCP — see
+[`loglead/analysis/`](loglead/analysis/).
+
 ## Testing
 Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
 

@@ -182,3 +182,56 @@ SequenceEnhancer chained calls (aggregate into df_seq) → AnomalyDetector(...).
 train_*() → predict(). `demo/HDFS_samples.py` and `demo/TB_samples.py` are the canonical worked examples
 of this chain and deliberately share most of their code to demonstrate loader-independence of the rest of
 the pipeline.
+
+### Run comparison (`loglead/analysis/`)
+
+A second, **unsupervised** pipeline that sits on top of the primitives above and answers a different
+question: given many runs of the same system, which one looks wrong? It was ported from the sibling
+project LogDelta (`~/LogDelta`, which drives the same analyses from a YAML config) so that LogLead
+could expose them over MCP — LogDelta depends on LogLead, so the dependency could not go the other way.
+
+The data shape here is a **corpus**: a directory whose immediate subdirectories are *runs*, loaded via
+`RawLoader` into a single event-level `df` with `run` and `file_name` columns. There are no labels and
+no `df_seq`; comparison is always target-vs-baseline, where the baseline is the other runs.
+
+Three question types × four granularities, one function per cell, all named after the LogDelta config
+keys they came from:
+
+| | Distance (pair) | Anomaly (one vs many) | Visualize (set) |
+|---|---|---|---|
+| **L1** run / file names | `distance_run_file` | `anomaly_run(file=True)` | `plot_run(file=True)` |
+| **L2** run / log text | `distance_run_content` | `anomaly_run()` | `plot_run()` |
+| **L3** file | `distance_file_content` | `anomaly_file_content` | `plot_file_content` |
+| **L4** line | `distance_line_content` | `anomaly_line_content` | — |
+
+Supporting modules: `corpus.py` (loading, and resolving the `"ALL"`/list/int/`"Prefix*"` selectors for
+runs and files), `masking.py` (named regex sets — **only ever resolve these by name via `get_pattern()`,
+because `EventLogEnhancer.normalize()` `eval()`s what it is handed**), `scoring.py` (`zscore_sum` and
+`rank_sum` over the four measures; prefer `rank_sum`, the raw detector scales differ by orders of
+magnitude), `export.py` (the only thing that writes files).
+
+**The invariant that differs from LogDelta**: these functions hold no module state, never `os.chdir`,
+and never write files — they return DataFrames. Functions that may add an `e_*` column return
+`(results, df)` so the caller can keep the enhanced frame. Keeping it is the whole point; LogDelta
+discarded it and re-parsed on every step.
+
+### MCP server (`loglead/mcp/`)
+
+Exposes `loglead/analysis/` as 18 MCP tools. Optional install: `uv sync --extra mcp`; entry point
+`loglead-mcp` (`[project.scripts]`).
+
+- `session.py` — `Session` holds one corpus's enhanced frame and grows it in place;
+  `Session.ensure_content()` adds only the missing column and keeps it. `SessionStore` mirrors each
+  frame to a parquet cache keyed on the corpus fingerprint (file count, total bytes, max mtime) plus
+  the preprocessing options, so a restart re-attaches in ~0.2s instead of re-reading. This module has
+  no `mcp` dependency and is usable on its own — that is how `demo/mcp_session_demo.py` runs.
+- `server.py` — one tool per analysis, named exactly like the LogDelta config keys. The local `@tool`
+  decorator wraps each in `redirect_stdout(sys.stderr)`: LogLead prints freely and stdout carries
+  JSON-RPC under the stdio transport. Imports `MCPServer` (SDK 2.x) with a fallback to `FastMCP`
+  (SDK 1.x).
+- `formatting.py` — every analysis tool returns the same envelope: full table on disk, plus a preview
+  sorted by the column that answers the question (`rank_sum` for anomalies) and truncated to
+  `max_rows`. Tool results go into a model's context, so unbounded tables are not an option.
+
+`demo/mcp_session_demo.py` exercises all 18 tools against a real corpus without an MCP client attached
+— the fastest way to check a change here.
