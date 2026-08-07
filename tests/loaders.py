@@ -2,11 +2,6 @@ import psutil
 import os
 import yaml
 import argparse
-import sys
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
-LOGLEAD_PATH = os.environ.get("LOGLEAD_PATH")
-sys.path.append(os.environ.get("LOGLEAD_PATH"))
 
 from loglead.loaders import BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader
 
