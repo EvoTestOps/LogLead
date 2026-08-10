@@ -19,24 +19,33 @@ import polars as pl
 TABLE_FORMATS = ("csv", "xlsx")
 
 
+def _path_safe(value):
+    """Flatten anything that would break out of, or mangle, a file name."""
+    for char in "/\\\n\r\t":
+        value = value.replace(char, "_")
+    return value.strip()
+
+
 def build_file_name(
-    analysis, level=0, target_run="", comparison_run="", file="", mask=False,
+    analysis, level=0, target_folder="", comparison_folder="", file="", mask=False,
     content_format="", vectorizer="", prefix="", timestamp=None,
 ):
     """Assemble the LogDelta-style stem for an output file (no extension)."""
     name = f"{prefix}_{analysis}" if prefix else analysis
     name += f"_L{level}"
-    if target_run:
-        name += f"_{target_run}"
-    if comparison_run:
-        name += f"_vs_{comparison_run}"
+    # Log folder names come from directory names and may carry a caller-supplied
+    # name on top, so neither is trusted to be path-safe.
+    if target_folder:
+        name += f"_{_path_safe(target_folder)}"
+    if comparison_folder:
+        name += f"_vs_{_path_safe(comparison_folder)}"
     name += f"_mask={mask}"
     if content_format:
         name += f"_format={content_format}"
     if vectorizer:
         name += f"_vec={vectorizer}"
     if file:
-        name += "_" + file.replace("/", "_").replace("\\", "_")
+        name += "_" + _path_safe(file)
     stamp = timestamp or datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     return f"{name}_{stamp}"
 

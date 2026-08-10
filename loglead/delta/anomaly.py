@@ -1,15 +1,15 @@
-"""Unsupervised anomaly scoring of a target against a baseline of other runs.
+"""Unsupervised anomaly scoring of a target against a baseline of other log folders.
 
-The shape is always the same: **comparison runs are the training set, the
+The shape is always the same: **comparison log folders are the training set, the
 target is the test set**. There are no labels, so only unsupervised detectors
 apply and the output is a score per object, not a verdict.
 
 Four levels, mirroring LogDelta's config step names:
 
-* **L1** ``anomaly_run_file``    -- score each run, described by its file names.
-* **L2** ``anomaly_run_content`` -- score each run, described by its log text.
-* **L3** ``anomaly_file_content``-- score each file of the target run.
-* **L4** ``anomaly_line_content``-- score each *line* of a target file.
+* **L1** ``anomaly_folder_filename`` -- score each log folder, by its file names.
+* **L2** ``anomaly_folder_content``  -- score each log folder, by its log text.
+* **L3** ``anomaly_file_content``    -- score each file of the target log folder.
+* **L4** ``anomaly_line_content``    -- score each *line* of a target file.
 
 Scores from the four detectors are on incomparable scales, so every result also
 carries ``zscore_sum`` and ``rank_sum``; sort by ``rank_sum``.
@@ -20,7 +20,7 @@ import warnings
 import polars as pl
 
 from .. import AnomalyDetector
-from . import corpus, scoring
+from . import log_root, scoring
 
 #: detector name -> (AnomalyDetector method, output column)
 DETECTORS = {
@@ -55,7 +55,7 @@ def run_anomaly_detection(
         )
     detector_params = detector_params or {}
 
-    vectorizer_class = corpus.create_vectorizer(vectorizer)
+    vectorizer_class = log_root.create_vectorizer(vectorizer)
 
     sad = AnomalyDetector(item_list_col=field, print_scores=False, auc_roc=True)
     sad.train_df = train_df
@@ -65,7 +65,7 @@ def run_anomaly_detection(
         sad.prepare_train_test_data(vectorizer_class=vectorizer_class)
 
         # Start from the full test frame so every level keeps its context
-        # columns (m_message, file_name, run). LogDelta started from whichever
+        # columns (m_message, file_name, folder). LogDelta started from whichever
         # detector happened to run first and kept only the score when that was
         # not KMeans.
         result = test_df
@@ -78,47 +78,47 @@ def run_anomaly_detection(
     return result
 
 
-def _score_objects(df, field, target_run, comparison_runs, group_by, detectors,
+def _score_objects(df, field, target_folder, comparison_folders, group_by, detectors,
                    vectorizer, detector_params):
     """Aggregate target and baseline to one row per ``group_by`` value, then score."""
-    target_df, comparison_run_names = corpus.prepare_runs(df, target_run, comparison_runs)
-    target_agg = corpus.aggregate_dataframe(target_df, group_by, field)
-    baseline_agg = corpus.aggregate_dataframe(
-        df.filter(pl.col("run").is_in(comparison_run_names)), group_by, field
+    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_agg = log_root.aggregate_dataframe(target_df, group_by, field)
+    baseline_agg = log_root.aggregate_dataframe(
+        df.filter(pl.col("folder").is_in(comparison_folder_names)), group_by, field
     )
     scored = run_anomaly_detection(
         baseline_agg, target_agg, field,
         detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
     )
-    return scored, comparison_run_names
+    return scored, comparison_folder_names
 
 
-def anomaly_run(
-    df, target_run, comparison_runs="ALL", file=False, detectors=None, mask=True,
+def anomaly_folder(
+    df, target_folder, comparison_folders="ALL", file=False, detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
-    """L1/L2: score whole runs.
+    """L1/L2: score whole log folders.
 
-    :param file: ``True`` describes a run by its *file names* (L1),
+    :param file: ``True`` describes a log folder by its *file names* (L1),
         ``False`` by its log *text* (L2). L1 forces ``content_format="File"``.
-    :param target_run: exact name, ``"ALL"``, an int N, or a ``"Prefix*"``
+    :param target_folder: exact name, ``"ALL"``, an int N, or a ``"Prefix*"``
         wildcard -- each resolved target gets its own baseline.
-    :returns: ``(results_df, df)`` -- one row per scored run.
+    :returns: ``(results_df, df)`` -- one row per scored log folder.
     """
     if file:
         content_format = "File"
-    df, field = corpus.prepare_content(df, mask, content_format)
-    target_run_names = corpus.resolve_target_runs(df, target_run)
+    df, field = log_root.prepare_content(df, mask, content_format)
+    target_folder_names = log_root.resolve_target_folders(df, target_folder)
 
     frames = []
-    for name in target_run_names:
-        scored, comparison_run_names = _score_objects(
-            df, field, name, comparison_runs, "run",
+    for name in target_folder_names:
+        scored, comparison_folder_names = _score_objects(
+            df, field, name, comparison_folders, "folder",
             detectors, vectorizer, detector_params,
         )
         # LogDelta forwarded no vectorizer here, so L1/L2 always used Count.
         frames.append(
-            scored.with_columns(pl.lit(" ".join(comparison_run_names)).alias("comparison_runs"))
+            scored.with_columns(pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"))
         )
 
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
@@ -127,29 +127,29 @@ def anomaly_run(
 
 
 def anomaly_file_content(
-    df, target_run, comparison_runs="ALL", target_files="ALL", detectors=None, mask=True,
+    df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
-    """L3: score each file of the target run against the same files elsewhere.
+    """L3: score each file of the target log folder against the same files elsewhere.
 
-    :returns: ``(results_df, df)`` -- one row per (target run, file).
+    :returns: ``(results_df, df)`` -- one row per (target log folder, file).
     """
-    df, field = corpus.prepare_content(df, mask, content_format)
-    target_run_names = corpus.resolve_target_runs(df, target_run)
+    df, field = log_root.prepare_content(df, mask, content_format)
+    target_folder_names = log_root.resolve_target_folders(df, target_folder)
 
     frames = []
-    for run_name in target_run_names:
-        target_df, comparison_run_names = corpus.prepare_runs(df, run_name, comparison_runs)
-        # Resolve against this run's own files, not the previous iteration's.
-        file_names = corpus.prepare_files(target_df, target_files)
-        baseline_agg = corpus.aggregate_dataframe(
-            df.filter(pl.col("run").is_in(comparison_run_names)), "file_name", field
+    for folder_name in target_folder_names:
+        target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
+        # Resolve against this log folder's own files, not the previous iteration's.
+        file_names = log_root.prepare_files(target_df, target_files)
+        baseline_agg = log_root.aggregate_dataframe(
+            df.filter(pl.col("folder").is_in(comparison_folder_names)), "file_name", field
         )
         if baseline_agg.height == 0:
             continue
 
         for file_name in file_names:
-            target_agg = corpus.aggregate_dataframe(
+            target_agg = log_root.aggregate_dataframe(
                 target_df.filter(pl.col("file_name") == file_name), "file_name", field
             )
             if target_agg.height == 0:
@@ -159,8 +159,8 @@ def anomaly_file_content(
                 detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
             )
             frames.append(scored.with_columns([
-                pl.lit(run_name).alias("target_run"),
-                pl.lit(" ".join(comparison_run_names)).alias("comparison_runs"),
+                pl.lit(folder_name).alias("target_folder"),
+                pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"),
             ]))
 
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
@@ -169,7 +169,7 @@ def anomaly_file_content(
 
 
 def anomaly_line_content(
-    df, target_run, comparison_runs="ALL", target_files="ALL", detectors=None, mask=True,
+    df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
     """L4: score every line of a target file against the same file elsewhere.
@@ -178,22 +178,22 @@ def anomaly_line_content(
     sits next to the message that earned it.
 
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
-        ``(target_run, file_name, scored_df)``. Each ``scored_df`` carries
+        ``(target_folder, file_name, scored_df)``. Each ``scored_df`` carries
         ``line_number``, the original columns, one score column per detector,
         and 10/100-line moving averages of each.
     """
-    df, field = corpus.prepare_content(df, mask, content_format)
-    target_run_names = corpus.resolve_target_runs(df, target_run)
+    df, field = log_root.prepare_content(df, mask, content_format)
+    target_folder_names = log_root.resolve_target_folders(df, target_folder)
 
     per_file = []
-    for run_name in target_run_names:
-        target_df, comparison_run_names = corpus.prepare_runs(df, run_name, comparison_runs)
-        file_names = corpus.prepare_files(target_df, target_files)
-        other_runs_df = df.filter(pl.col("run").is_in(comparison_run_names))
+    for folder_name in target_folder_names:
+        target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
+        file_names = log_root.prepare_files(target_df, target_files)
+        other_folders_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
 
         for file_name in file_names:
             target_lines = target_df.filter(pl.col("file_name") == file_name)
-            baseline_lines = other_runs_df.filter(pl.col("file_name") == file_name)
+            baseline_lines = other_folders_df.filter(pl.col("file_name") == file_name)
             if baseline_lines.height == 0 or target_lines.height == 0:
                 continue
 
@@ -208,6 +208,6 @@ def anomaly_line_content(
             scored = scored.with_columns(scoring.moving_averages(score_only, 10))
             scored = scored.with_columns(scoring.moving_averages(score_only, 100))
             scored = scored.with_row_index("line_number")
-            per_file.append((run_name, file_name, scored))
+            per_file.append((folder_name, file_name, scored))
 
     return per_file, df

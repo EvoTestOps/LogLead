@@ -1,4 +1,4 @@
-"""MCP server exposing LogLead's run-comparison analyses over a live session.
+"""MCP server exposing LogLead's log folder comparison analyses over a session.
 
 Install with ``pip install loglead[mcp]``, then run ``loglead-mcp``.
 

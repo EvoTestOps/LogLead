@@ -1,11 +1,13 @@
-"""Pairwise distance between runs, files, and lines.
+"""Pairwise distance between log folders, files, and lines.
 
 Four levels, mirroring LogDelta's config step names:
 
-* **L1** ``distance_run_file``    -- run vs run over *file names* only. Never opens a file.
-* **L2** ``distance_run_content`` -- run vs run over log *text*.
-* **L3** ``distance_file_content``-- file vs same-named file, across runs.
-* **L4** ``distance_line_content``-- line-by-line diff of one file across runs.
+* **L1** ``distance_folder_filename`` -- log folder vs log folder over *file
+  names* only. Never opens a file.
+* **L2** ``distance_folder_content``  -- log folder vs log folder over log *text*.
+* **L3** ``distance_file_content``    -- file vs same-named file, across log folders.
+* **L4** ``distance_line_content``    -- line-by-line diff of one file across log
+  folders.
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
@@ -14,21 +16,21 @@ Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 import polars as pl
 
 from .. import LogDistance
-from . import corpus, scoring
+from . import log_root, scoring
 
 
-def distance_run_file(df, target_run, comparison_runs="ALL"):
-    """L1: compare runs by which file names they contain.
+def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
+    """L1: compare log folders by which file names they contain.
 
-    :returns: one row per comparison run with set overlaps, ``jaccard distance``
+    :returns: one row per comparison log folder with set overlaps, ``jaccard distance``
         and ``overlap distance``.
     """
-    target_df, comparison_run_names = corpus.prepare_runs(df, target_run, comparison_runs)
+    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
     target_files = target_df.select("file_name").unique()
 
     results = []
-    for other_run in comparison_run_names:
-        other_files = df.filter(pl.col("run") == other_run).select("file_name").unique()
+    for other_folder in comparison_folder_names:
+        other_files = df.filter(pl.col("folder") == other_folder).select("file_name").unique()
         other_series = other_files.get_column("file_name")
         target_series = target_files.get_column("file_name")
 
@@ -39,14 +41,14 @@ def distance_run_file(df, target_run, comparison_runs="ALL"):
 
         smaller = min(target_files.height, other_files.height)
         results.append({
-            "target_run": target_run,
-            "comparison_run": other_run,
+            "target_folder": target_folder,
+            "comparison_folder": other_folder,
             "files only in target": only_in_target,
             "files only in comparison": only_in_comparison,
             "union": union,
             "intersection": intersection,
             "jaccard distance": 1 - (intersection / union) if union else None,
-            # LogDelta used min(run1, run1) here -- always 1.0 unless run1 was
+            # LogDelta used min(folder1, folder1) here -- always 1.0 unless folder1 was
             # the smaller side. Fixed to compare against the true smaller set.
             "overlap distance": 1 - (intersection / smaller) if smaller else None,
         })
@@ -54,27 +56,27 @@ def distance_run_file(df, target_run, comparison_runs="ALL"):
     return pl.DataFrame(results)
 
 
-def distance_run_content(
-    df, target_run, comparison_runs="ALL", mask=True,
+def distance_folder_content(
+    df, target_folder, comparison_folders="ALL", mask=True,
     content_format="Words", vectorizer="Count",
 ):
-    """L2: compare runs by their whole log text.
+    """L2: compare log folders by their whole log text.
 
-    :returns: ``(results_df, df)`` -- one row per comparison run with all four
+    :returns: ``(results_df, df)`` -- one row per comparison log folder with all four
         distances plus ``zscore_sum``/``rank_sum``, and the (possibly enhanced)
         input frame so the caller can retain any newly computed column.
     """
-    df, field = corpus.prepare_content(df, mask, content_format)
-    vectorizer_class = corpus.create_vectorizer(vectorizer)
-    target_df, comparison_run_names = corpus.prepare_runs(df, target_run, comparison_runs)
+    df, field = log_root.prepare_content(df, mask, content_format)
+    vectorizer_class = log_root.create_vectorizer(vectorizer)
+    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
 
     results = []
-    for other_run in comparison_run_names:
-        other_df = df.filter(pl.col("run") == other_run)
+    for other_folder in comparison_folder_names:
+        other_df = df.filter(pl.col("folder") == other_folder)
         distance = LogDistance(target_df, other_df, vectorizer=vectorizer_class, field=field)
         results.append({
-            "target_run": target_run,
-            "comparison_run": other_run,
+            "target_folder": target_folder,
+            "comparison_folder": other_folder,
             "target_lines": distance.size1,
             "comparison_lines": distance.size2,
             "cosine": distance.cosine(),
@@ -88,27 +90,27 @@ def distance_run_content(
 
 
 def distance_file_content(
-    df, target_run, comparison_runs="ALL", target_files="ALL", mask=True,
+    df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
     content_format="Words", vectorizer="Count",
 ):
-    """L3: compare each file against the same-named file in other runs.
+    """L3: compare each file against the same-named file in other log folders.
 
-    Only files present in *both* runs are compared. If ``target_files`` is
+    Only files present in *both* log folders are compared. If ``target_files`` is
     given, the comparison is further restricted to that set.
 
-    :returns: ``(results_df, df)`` -- one row per (file, comparison run).
+    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder).
     """
-    df, field = corpus.prepare_content(df, mask, content_format)
-    vectorizer_class = corpus.create_vectorizer(vectorizer)
-    target_df, comparison_run_names = corpus.prepare_runs(df, target_run, comparison_runs)
+    df, field = log_root.prepare_content(df, mask, content_format)
+    vectorizer_class = log_root.create_vectorizer(vectorizer)
+    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
 
     wanted = None
     if target_files != "ALL":
-        wanted = set(corpus.prepare_files(target_df, target_files))
+        wanted = set(log_root.prepare_files(target_df, target_files))
 
     results = []
-    for other_run in comparison_run_names:
-        other_df = df.filter(pl.col("run") == other_run)
+    for other_folder in comparison_folder_names:
+        other_df = df.filter(pl.col("folder") == other_folder)
         other_names = other_df.get_column("file_name").unique()
         matching = (
             target_df.select("file_name")
@@ -131,8 +133,8 @@ def distance_file_content(
             )
             results.append({
                 "file_name": file_name,
-                "target_run": target_run,
-                "comparison_run": other_run,
+                "target_folder": target_folder,
+                "comparison_folder": other_folder,
                 "target_lines": distance.size1,
                 "comparison_lines": distance.size2,
                 "cosine": distance.cosine(),
@@ -147,11 +149,11 @@ def distance_file_content(
 
 
 def distance_line_content(
-    df, target_run, comparison_runs="ALL", target_files="ALL", mask=True,
+    df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
 ):
-    """L4: line-by-line diff of a file between the target run and other runs.
+    """L4: line-by-line diff of a file between the target log folder and others.
 
-    :returns: a list of ``(file_name, comparison_run, diff_df)``. Each
+    :returns: a list of ``(file_name, comparison_folder, diff_df)``. Each
         ``diff_df`` has ``line_number``, ``difference`` (``' '`` unchanged,
         ``'-'`` only in target, ``'+'`` only in comparison, ``'?'`` hint) and
         ``content``.
@@ -159,24 +161,24 @@ def distance_line_content(
     field = "e_message_normalized" if mask else "m_message"
     if mask and field not in df.columns:
         raise ValueError(
-            "mask=True requires the corpus to have been normalized. "
-            "Open the corpus with mask=True."
+            "mask=True requires the log root to have been normalized. "
+            "Open the log root with mask=True."
         )
 
-    target_df, comparison_run_names = corpus.prepare_runs(df, target_run, comparison_runs)
-    file_names = corpus.prepare_files(target_df, target_files)
-    other_runs_df = df.filter(pl.col("run").is_in(comparison_run_names))
+    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    file_names = log_root.prepare_files(target_df, target_files)
+    other_folders_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
 
     diffs = []
-    for other_run in comparison_run_names:
-        other_run_df = other_runs_df.filter(pl.col("run") == other_run)
+    for other_folder in comparison_folder_names:
+        other_folder_df = other_folders_df.filter(pl.col("folder") == other_folder)
         for file_name in file_names:
             target_file_df = target_df.filter(pl.col("file_name") == file_name)
-            other_file_df = other_run_df.filter(pl.col("file_name") == file_name)
+            other_file_df = other_folder_df.filter(pl.col("file_name") == file_name)
             if other_file_df.height == 0:
                 continue
             distance = LogDistance(target_file_df, other_file_df, field=field)
-            diffs.append((file_name, other_run, distance.diff_lines()))
+            diffs.append((file_name, other_folder, distance.diff_lines()))
 
     return diffs
 

@@ -103,10 +103,10 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 ## MCP server
 
 LogLead ships an [MCP](https://modelcontextprotocol.io) server so an AI assistant can drive log
-analysis conversationally. It exposes the same run-comparison analyses as
-[LogDelta](https://github.com/EvoTestOps/LogDelta) — comparing a suspect run against a baseline of
-other runs — but interactively: the corpus is loaded, masked, and parsed **once**, and every later
-question reuses it.
+analysis conversationally. It exposes the same comparison analyses as
+[LogDelta](https://github.com/EvoTestOps/LogDelta) — comparing a suspect set of logs against a
+baseline of others — but interactively: the logs are loaded, masked, and parsed **once**, and every
+later question reuses it.
 
 ```
 pip install loglead[mcp]      # or: uv sync --extra mcp
@@ -121,33 +121,39 @@ claude mcp add loglead -- loglead-mcp
 
 ### What it can do
 
-Your logs are organized as a **corpus**: a directory whose subdirectories are *runs* (one execution,
-deployment, or test run), matched against each other by file name. Three question types across four
-granularities:
+Your logs are organized under a **log root**: a directory whose subdirectories are *log folders*, matched
+against each other by file name. A log folder is any set of logs that belong together — one test run,
+one day, one deployment, "last release" — so the three levels read **log folder → log file → log
+line**. Three question types across four granularities:
 
-|                          | Distance (pair)           | Anomaly (one vs many)      | Visualize (set)      |
-|--------------------------|---------------------------|----------------------------|----------------------|
-| **L1** run / file names  | `distance_run_file`       | `anomaly_run_file`         | `plot_run_file`      |
-| **L2** run / log text    | `distance_run_content`    | `anomaly_run_content`      | `plot_run_content`   |
-| **L3** file              | `distance_file_content`   | `anomaly_file_content`     | `plot_file_content`  |
-| **L4** line              | `distance_line_content`   | `anomaly_line_content`     | —                    |
+|                             | Distance (pair)             | Anomaly (one vs many)       | Visualize (set)          |
+|-----------------------------|-----------------------------|-----------------------------|--------------------------|
+| **L1** folder / file names  | `distance_folder_filename`  | `anomaly_folder_filename`   | `plot_folder_filename`   |
+| **L2** folder / log text    | `distance_folder_content`   | `anomaly_folder_content`    | `plot_folder_content`    |
+| **L3** file                 | `distance_file_content`     | `anomaly_file_content`      | `plot_file_content`      |
+| **L4** line                 | `distance_line_content`     | `anomaly_line_content`      | —                        |
 
-Plus session and drill-down tools: `open_corpus`, `list_corpora`, `describe_corpus`, `close_corpus`,
-`read_log_lines`, `search_log_lines`, and `run_config` for executing an existing LogDelta YAML.
+Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
+`set_folder_names`, `read_log_lines`, `search_log_lines`, and `run_config` for executing an existing
+LogDelta YAML.
 
-A typical investigation: score every run (`anomaly_run_content`) → narrow to a file
+A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
 each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
 about, with the full tables and interactive Plotly HTML written alongside.
 
+Directory names are often opaque ids, and that name labels every plot and result table, so
+`set_folder_names` (or `open_log_root(folder_names=...)`) gives them meaningful names such as
+`PageRank_MachineDown` or `FailingRunThu`. Nothing on disk is renamed.
+
 Try it against LogDelta's Hadoop demo data:
 
 ```
-uv run demo/mcp_session_demo.py --corpus /path/to/Hadoop
+uv run demo/mcp_demo.py --log-root /path/to/Hadoop
 ```
 
 The underlying analyses are also importable directly, without MCP — see
-[`loglead/analysis/`](loglead/analysis/).
+[`loglead/delta/`](loglead/delta/).
 
 ## Testing
 Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
