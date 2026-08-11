@@ -70,8 +70,9 @@ def download_file(url, dest_folder, is_github=False, progress_bar=None):
                 if progress_bar:
                     progress_bar.update(1)
             else:
-                total_size = int(r.headers.get('content-length', 0))
-                t = tqdm(total=total_size, unit='iB', unit_scale=True, desc=filename)
+                is_compressed_transfer = 'content-encoding' in r.headers
+                total_size = 0 if is_compressed_transfer else int(r.headers.get('content-length', 0))
+                t = tqdm(total=total_size or None, unit='iB', unit_scale=True, desc=filename)
                 with open(file_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=block_size):
                         t.update(len(chunk))
@@ -225,11 +226,16 @@ def download_all_parts(name, urls, dest_folder):
             if file_path:
                 if file_path.endswith('.zip'):
                     unzip_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the zip after extraction
                 elif file_path.endswith('.gz'):
                     ungzip_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the gz after extraction
                 elif file_path.endswith('.7z'):
                     un7z_file(file_path, dest_folder)
-                os.remove(file_path)  # Remove the zip or gz file after extraction
+                    os.remove(file_path)  # Remove the 7z after extraction
+                # else: a bare file (no archive extension) - it's already the payload in its
+                # final place, so leave it. Removing it unconditionally here used to delete the
+                # only copy of any dataset shipped as a plain file (e.g. nginx_json).
     
     # Clean up cloned repositories
     for repo_url, repo_folder in cloned_repos.items():

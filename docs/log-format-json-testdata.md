@@ -10,6 +10,11 @@ JSON.
 candidate public datasets, chosen to exercise the specific ways JSON logs are harder than the
 happy path, and proposes which to actually download into a new `downloader/datasets_json.yml`.
 
+**Outcome:** the recommendation in §3 was taken — `downloader/datasets_json.yml` now ships
+candidates 1–3. The loader those datasets are for is designed in
+[log-format-json-loader.md](log-format-json-loader.md), which measures polars' actual behaviour
+against each of the requirements in §1 below.
+
 Every size, line count, and format claim below was checked by actually fetching the data or
 querying the GitHub/Zenodo APIs — not copied from a paper or a README's prose. See §5 for exactly
 what was run.
@@ -31,6 +36,7 @@ The requirements fall out of `log-format-support.md` §1.3 — they are exactly 
 | f | **JSON that is not NDJSON** | a top-level array, or an object wrapping one (CloudTrail) |
 | g | **Several JSON schemas in one directory tree** | the `loglead/delta/` log-folder case: one root, many folders, mixed shapes |
 | h | Labels, at a stated granularity | line / time-window / file — needed for `AnomalyDetector`, nice-to-have for a loader test |
+| i | **Dynamic keys used as data** (map-like objects, e.g. hostnames or pool names as the JSON *keys* of an object) | breaks fixed-field struct inference — the "columns" are data, not schema, so `pl.read_ndjson`'s usual struct expansion doesn't apply |
 
 ## 2. The five candidates
 
@@ -41,6 +47,7 @@ The requirements fall out of `log-format-support.md` §1.3 — they are exactly 
 | 3 | [AIT Alert Data Set (AIT-ADS)](https://zenodo.org/records/8263181) | JSON alerts, **three different schemas** (AMiner / Wazuh / Suricata) | `ait_ads.zip` 96.2 MB, ~2.66 M alerts | `labels.csv` (3.7 kB), time-window attack labels | CC-BY-4.0 |
 | 4 | [AIT Log Data Set V2](https://zenodo.org/records/5789064) (one testbed) | mixed; includes Suricata `eve.json` | 8 testbed ZIPs, **7.1 – 26.5 GB each** (130.6 GB total, ~171 GB unpacked) | **per log line**, as JSON objects referencing line numbers | CC BY-**NC**-SA 4.0 |
 | 5 | [flaws.cloud CloudTrail](https://summitroute.com/blog/2020/10/09/public_dataset_of_cloudtrail_logs_from_flaws_cloud/) | `{"Records":[…]}` — JSON, **not** NDJSON | 240 MB `.tar` of gzipped chunks (verified live, 251,688,960 bytes) | none formally; the environment is almost entirely attack traffic | public dataset, summitroute.com |
+| 6 | [nginx_json_plus_logs](https://github.com/elastic/examples/tree/master/Common%20Data%20Formats/nginx_json_plus_logs) (`elastic/examples`) | NDJSON, deeply nested, **hostnames/pool names used as JSON object keys** | 2.78 MB, **500 lines** (measured) | none | Apache-2.0 |
 
 Direct links (description page vs. actual file — check both before deciding):
 
@@ -51,6 +58,7 @@ Direct links (description page vs. actual file — check both before deciding):
 | 3 | [Zenodo record 8263181](https://zenodo.org/records/8263181) · [AIT-ADS GitHub (processing scripts)](https://github.com/ait-aecid/alert-data-set) | `ait_ads.zip` linked from the Zenodo record page |
 | 4 | [Zenodo record 5789064](https://zenodo.org/records/5789064) | eight testbed ZIPs (`fox.zip` … `wilson.zip`) linked from the Zenodo record page |
 | 5 | [Summit Route blog post](https://summitroute.com/blog/2020/10/09/public_dataset_of_cloudtrail_logs_from_flaws_cloud/) | [flaws_cloudtrail_logs.tar](http://summitroute.com/downloads/flaws_cloudtrail_logs.tar) |
+| 6 | [repo folder + README](https://github.com/elastic/examples/tree/master/Common%20Data%20Formats/nginx_json_plus_logs) | [nginxplus_json_logs](https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_plus_logs/nginxplus_json_logs) (raw file, 2.78 MB) |
 
 ### 1 — nginx JSON access logs
 
@@ -104,21 +112,42 @@ frictions: it is a `.tar`, which the current downloader cannot extract (see §4)
 grows a non-NDJSON branch. Defer it, but keep it on the list — it is the honest test of whether the
 JSON support is "NDJSON support" or actually "JSON support".
 
+### 6 — nginx_json_plus_logs
+
+Lives in the same `elastic/examples` repo, right next to candidate 1, and easy to mistake for a bigger
+version of it — it isn't. It's not an access log at all: it's a periodic dump of NGINX **Plus**'s
+status API (the paid product's `/status` endpoint, "Live Activity Monitoring"), so each line is a
+snapshot of the whole server's state rather than one client request. Verified directly (downloaded the
+raw file and parsed every line): 500 lines, one every ~5.1s over ~42.5 minutes, single server, 2.78 MB
+total. The 15 top-level keys (`connections`, `ssl`, `requests`, `server_zones`, `upstreams`, `caches`,
+`stream`, …) are identical on every line — no heterogeneity at the top level, unlike candidate 2 — but
+`server_zones` and `upstreams` are objects keyed by **hostname** and **upstream-pool name**
+respectively, i.e. the object's keys are data, not a fixed schema. That's requirement (i), and nothing
+else on this list exercises it: `pl.read_ndjson`'s struct-based inference assumes a bounded field set,
+and here it isn't one. There's also lower-grade heterogeneity one level down — inside
+`upstreams.*.peers[]`, some peer objects carry a `max_conns` key and sibling peers in the same array
+don't (confirmed in the raw data). No labels, and only 500 lines, so it's not a candidate to replace
+anything in §3 — it's a small, purpose-built fixture for the dynamic-key-as-map case if/when the
+`JsonLoader` needs to prove it handles that.
+
 ## 3. Coverage and recommendation
 
-| | a scale | b het. keys | c nested | d newlines-in-field | e mixed types | f non-NDJSON | g many schemas | h labels |
-|---|---|---|---|---|---|---|---|---|
-| 1 nginx | ✓ | | | | | | | — |
-| 2 Security-Datasets | | **✓** | ✓ | **✓** | ✓ | | ✓ | file-level |
-| 3 AIT-ADS | **✓** | ✓ | ✓ | | | | **✓** | time-window |
-| 4 AIT-LDSv2 | ✓ | ✓ | ✓ | | | | ✓ | **per line** |
-| 5 flaws CloudTrail | ✓ | | **✓** | | | **✓** | | (implicit) |
+| | a scale | b het. keys | c nested | d newlines-in-field | e mixed types | f non-NDJSON | g many schemas | h labels | i dynamic-key maps |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 nginx | ✓ | | | | | | | — | |
+| 2 Security-Datasets | | **✓** | ✓ | **✓** | ✓ | | ✓ | file-level | |
+| 3 AIT-ADS | **✓** | ✓ | ✓ | | | | **✓** | time-window | |
+| 4 AIT-LDSv2 | ✓ | ✓ | ✓ | | | | ✓ | **per line** | |
+| 5 flaws CloudTrail | ✓ | | **✓** | | | **✓** | | (implicit) | |
+| 6 nginx_json_plus | | (nested only) | ✓ | | | | | none | **✓** |
 
 **Recommendation: take 1, 2 and 3 now.** Together they cover everything except (f), they total
 under 110 MB, and all three are permissively licensed. Add 4 as an opt-in entry with
 `download: false` — it is the only source of per-line labels, so it should be *listed* even if
 nobody downloads it by default. Add 5 when the non-NDJSON branch is actually being built, not
-before.
+before. Add 6 only once dynamic-key-as-map handling is actually being built and needs a fixture —
+at 500 lines it's too small and unlabeled to be a general-purpose test dataset, its only job is
+requirement (i).
 
 ## 4. `datasets_json.yml` — yes, and it works today
 
@@ -171,6 +200,7 @@ needs no download at all.
 | AIT-ADS: 96.2 MB, ~2.66M alerts, `labels.csv`, CC-BY-4.0 | [Zenodo record 8263181](https://zenodo.org/records/8263181); cross-checked against [AIT-ADS GitHub README](https://github.com/ait-aecid/alert-data-set) |
 | AIT-LDSv2: 8 ZIPs 7.1–26.5 GB, 130.6 GB total, per-line labels, CC BY-NC-SA 4.0 | [Zenodo record 5789064](https://zenodo.org/records/5789064) |
 | flaws.cloud CloudTrail: 240 MB `.tar`, `{"Records":[…]}` gzipped chunks | `HEAD https://summitroute.com/downloads/flaws_cloudtrail_logs.tar` → `Content-Length: 251688960`; description at the [Summit Route blog post](https://summitroute.com/blog/2020/10/09/public_dataset_of_cloudtrail_logs_from_flaws_cloud/) |
+| nginx_json_plus_logs: 2.78 MB, 500 lines, ~5.1s cadence over ~42.5 min, 15 fixed top-level keys, `server_zones`/`upstreams` keyed by hostname/pool name, `max_conns` present on some `peers[]` entries but not siblings | downloaded [the raw file](https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_plus_logs/nginxplus_json_logs) directly and parsed every line with Python (`wc -l`, `json.loads` per line, diffed `timestamp` deltas and top-level key sets) |
 | Downloader reads only `root_folder` + `name`/`download`/`url`\|`urls` | `downloader/download_data.py:238-266`; `--config` at `:271` |
 | Extractor handles `.zip`/`.gz`/`.7z` only | `downloader/download_data.py:88-143`, dispatch at `:225-232` |
 | Test suite dispatches loader by dataset name | `tests/loaders.py` — `create_correct_loader()` if/elif chain |

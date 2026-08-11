@@ -1,0 +1,17 @@
+name: nginx_plus_status
+description: >
+  Snapshots of the NGINX Plus status API, one object per poll rather than one per request. Included
+  mainly because it exercises two things the other specs do not: an epoch-milliseconds timestamp,
+  and nested keys reached with the "/" path syntax. Its server_zones and upstreams objects are keyed
+  by hostname and upstream-pool name, i.e. the keys are data; flatten those at your own risk, since
+  the resulting schema changes when the data does.
+
+container: ndjson
+
+timestamp_field: timestamp
+timestamp_epoch: ms
+
+line_format: "{address} nginx/{nginx_version} active={connections/active} accepted={connections/accepted} requests={requests/total}"
+
+extra_fields: keep
+flatten: false

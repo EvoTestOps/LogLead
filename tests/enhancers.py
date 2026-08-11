@@ -110,6 +110,14 @@ for dataset in datasets:
         df_seq = enhancer_seq.duration()
         print("Enhancing sequence length in events")
         df_seq = enhancer_seq.seq_len()
+        # Count the values of the log's own categorical fields per sequence - "how many WARN lines
+        # does this block have". These land as numeric columns, so anomaly_detectors.py's
+        # structured-column test picks them up through select_predictors() with no extra wiring.
+        for col in ("level", "component", "type", "severity"):
+            if col in df.columns:
+                print(f"Counting '{col}' values per sequence", end=", ")
+                df_seq = enhancer_seq.category_counts(col)
+        print()
         # Preparing loader for addition reduction
         loader.df_seq = df_seq
     loader.df = df

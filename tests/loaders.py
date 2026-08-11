@@ -3,7 +3,7 @@ import os
 import yaml
 import argparse
 
-from loglead.loaders import BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader
+from loglead.loaders import BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -66,6 +66,9 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
+    elif 'format' in data:
+        loader = JsonLoader(filename=default_path, container=data['format'],
+                            filename_pattern=data.get('filename_pattern'), flatten=True)
     else:
         print(f"ERROR did not find dataset: {dataset_name}")
         

@@ -11,9 +11,11 @@ What exactly do they support, and in what order should LogLead adopt the same ca
 | lnav | `~/lnav` | `src/formats/*.json` (73 definitions), `src/log_format_impls.cc` (5 hard-coded formats), `src/file_format.hh`, `src/time_formats.am`, `docs/schemas/format-v1.schema.json`, `docs/source/formats.rst`, `ARCHITECTURE.md` |
 | angle-grinder | `~/angle-grinder` | `src/operator/` (one file per operator), `aliases/*.toml`, `README.md` |
 
-**Companion document:** [log-format-json-testdata.md](log-format-json-testdata.md) picks up where
-§5 item 1 (JSON lines) leaves off — candidate public datasets to develop and test a `JsonLoader`
-against, with links to each dataset's description page.
+**Companion documents**, both picking up where §5 item 1 (JSON lines) leaves off:
+[log-format-json-testdata.md](log-format-json-testdata.md) — candidate public datasets to develop
+and test a `JsonLoader` against, with links to each dataset's description page;
+[log-format-json-loader.md](log-format-json-loader.md) — the design for that loader, as one
+config-driven class plus format specs as data (a first instance of §5 item 7).
 
 ---
 

@@ -8,6 +8,9 @@ datasets:
     load: true
     enhance: true 
     anomaly_detection: true
+    predictor_cols:
+      numeric: [e_words_len, e_alphanumerics_len]
+      categorical: [type, level, component]   # BGL's own fields; F1 0.844 with no message text
     expected_length: 4747963
     reduction_fraction: 0.02
   - name: hadoop
@@ -18,6 +21,9 @@ datasets:
     load: true
     enhance: true 
     anomaly_detection: true
+    predictor_cols:
+      numeric: [nep_abs_max, nep_prob_nmax_min, eve_len_med, eve_len_max]
+      categorical: [app_name]   # NOT Label - that column is the target spelled differently
     expected_length: 180897
     reduction_fraction: 0.56
   - name: hdfs
@@ -28,6 +34,9 @@ datasets:
     load: true
     enhance: true 
     anomaly_detection: true
+    predictor_cols:
+      numeric: [nep_abs_max, eve_len_max, eve_len_min, e_event_id_len, eve_len_over1]
+      categorical: []           # the sequence frame carries no categorical field of its own
     expected_length: 11175629
     reduction_fraction: 0.01
   - name: liberty
@@ -55,6 +64,9 @@ datasets:
     load: true
     enhance: true 
     anomaly_detection: true
+    predictor_cols:
+      numeric: []               # every column ThuSpiLibLoader produces is a string
+      categorical: [month, day, component, date, userid]
     expected_length: 211212192
     reduction_fraction: 0.0005
   - name: nezha
@@ -68,6 +80,10 @@ datasets:
     load: true
     enhance: true 
     anomaly_detection: true
+    # One entry serves both TrainTicket and WebShop; all five columns exist in both frames.
+    predictor_cols:
+      numeric: []
+      categorical: [Container, date_folder, severity, Node, PodName]
     train_ticket:
       expected_length: 272270
       reduction_fraction: 0.33

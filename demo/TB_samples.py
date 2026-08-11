@@ -103,6 +103,30 @@ df_seq = sad.predict()
 sad.train_DT()
 df_seq = sad.predict()
 
+# Predict from the fields the log arrived with, instead of from its message text. Thunderbird's
+# loader keeps component, userid, location and the date parts as their own columns, and those
+# carry real signal on their own. They are text, so they cannot go in numeric_cols - sklearn would
+# get an object array and the fit would fail - which is what categorical_cols is for: it one-hot
+# encodes them into the same sparse matrix the word/parser representations use.
+print(f"Predicting with the log's own categorical fields, no message text")
+sad.item_list_col = None
+sad.categorical_cols = ["month", "day", "component", "date", "userid"]
+sad.prepare_train_test_data()
+# Logistic Regression
+sad.train_LR()
+df_seq = sad.predict()
+# Use Decision Tree
+sad.train_DT()
+df_seq = sad.predict()
+# Beware of columns that give the answer away: TB's own "label" column *is* the target here
+# (anomaly == label != "-"), so predicting from it would score perfectly and prove nothing.
+# loglead.select_predictors() profiles a dataframe and rejects such columns, along with
+# identifiers and columns with no variation. Uncomment to see what it picks and what it drops:
+# from loglead import select_predictors, print_predictor_report
+# numeric, categorical, profile = select_predictors(df)
+# print_predictor_report(profile, "Thunderbird")
+sad.categorical_cols = []  # Reset so the runs below use only what they set themselves
+
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store scores
 print(f"Running all anomaly detectors, excluding OneClassSVM and LOF, with Words and Trigrams and storing results")
