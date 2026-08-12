@@ -69,10 +69,11 @@ non-UTF-8 values) rather than asserting — read the console output to see pass/
 
 `--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
 so the sets do not share a `test_data/` folder). Besides the default `tests/datasets.yml` there are
-two smaller, faster ones covering the spec-driven loaders:
+three smaller, faster ones covering the newer loaders:
 ```
 uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
 uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
+uv run tests/main.py --config downloader/datasets_fmt.yml     # LogfmtLoader: grafana/loki Drain testdata
 ```
 `datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
 account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is larger than
@@ -165,6 +166,14 @@ spec name or a path to your own file.
   `log_format` string (`'$remote_addr - - [$time_local] "$request" $status ...'`) which compiles to
   that regex. Splits `$request` into `method`/`path`/`protocol` and types `status`/byte counts as
   numbers, since those — not the message text — are what an access log gives `AnomalyDetector`.
+
+`LogfmtLoader` (`loaders/logfmt.py`) is a third family loader but has **no spec directory**, on
+purpose: logfmt lines carry their own key names and the names are conventional, so the mapping the
+other two need as configuration is just `ts|timestamp|time|t` → `m_timestamp`, `msg|message` →
+`m_message`, `level|lvl|severity` → `level` (docs/log-format-support.md §5 item 2). The kwargs for
+overriding those exist and read the same as the other two. Each key becomes its own column, so a
+tree of files lands wide-and-sparse the way heterogeneous JSON does; candidate keys are *coalesced*
+rather than first-wins, because one file routinely mixes `t=` and `ts=` lines from two components.
 
 When adding a format that already fits one of the spec-driven loaders, add a `.yml` spec, not a class.
 

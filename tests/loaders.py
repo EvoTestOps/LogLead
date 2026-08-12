@@ -5,7 +5,8 @@ import yaml
 import argparse
 
 from loglead.loaders import (AccessLogLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader,
-                             ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader)
+                             ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader,
+                             LogfmtLoader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -71,7 +72,10 @@ def create_correct_loader(dataset_name, data, system=""):
     elif data.get('loader') == 'access_log':
         loader = AccessLogLoader(filename=default_path, format=data['format'],
                                 filename_pattern=data.get('filename_pattern'))
-        
+    elif data.get('loader') == 'logfmt':
+        loader = LogfmtLoader(filename=default_path,
+                              filename_pattern=data.get('filename_pattern'))
+
     elif 'format' in data:
         loader = JsonLoader(filename=default_path, container=data['format'],
                             filename_pattern=data.get('filename_pattern'), flatten=True)
