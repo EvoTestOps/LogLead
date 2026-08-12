@@ -69,11 +69,12 @@ non-UTF-8 values) rather than asserting — read the console output to see pass/
 
 `--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
 so the sets do not share a `test_data/` folder). Besides the default `tests/datasets.yml` there are
-three smaller, faster ones covering the newer loaders:
+four smaller, faster ones covering the newer loaders:
 ```
 uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
 uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
 uv run tests/main.py --config downloader/datasets_fmt.yml     # LogfmtLoader: grafana/loki Drain testdata
+uv run tests/main.py --config downloader/datasets_syslog.yml  # SyslogLoader: loghub Linux, Mac, OpenSSH
 ```
 `datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
 account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is larger than
@@ -174,6 +175,24 @@ other two need as configuration is just `ts|timestamp|time|t` → `m_timestamp`,
 overriding those exist and read the same as the other two. Each key becomes its own column, so a
 tree of files lands wide-and-sparse the way heterogeneous JSON does; candidate keys are *coalesced*
 rather than first-wins, because one file routinely mixes `t=` and `ts=` lines from two components.
+
+`SyslogLoader` (`loaders/syslog.py`) also has no spec directory, for the opposite reason: syslog has
+exactly two layouts and both are defined by an RFC, so `rfc3164` and `rfc5424` are built-in regexes
+(`pattern=` is the escape hatch). Which one applies is decided **per file** from its first lines —
+lnav's rule, and the shape §5 item 6 of the support doc asks for — so a directory holding both reads
+in one call. Two consequences worth knowing before editing it: RFC 3164 carries **no year**, so
+`m_timestamp` is built by prepending `year=` (the current year by default), and a load mixing both
+RFCs runs two vectorized parses and coalesces them, since no single strptime covers both. A line that
+does not match is normally the second line of a multi-line message rather than garbage, so the knob
+for it is `multiline` (`merge-message` default / `merge-add-column` / `keep` / `drop` / `raise` —
+`keep` and `drop` named after `RawLoader.missing_timestamp_action`, the merges named for where they
+put the text since there are two of them), and `min_match_rate` — not the first bad line — is what
+catches a wrong format. Both merges group **per file**, so a file opening with continuation lines
+cannot attach them to the previous file's last event. The two differ only in *where* the
+continuation text lands, and not where you would guess: `normalize()` keeps just the first line of
+`m_message`, so every `parse_*` sees the same thing either way; what changes is `words()`,
+`trigrams()`, `alphanumerics()` and `length()`, which read `m_message` whole. `merge-message` feeds
+the trace into `e_words`/`e_chars_len`; `merge-add-column` keeps it out by parking it in `trace`.
 
 When adding a format that already fits one of the spec-driven loaders, add a `.yml` spec, not a class.
 

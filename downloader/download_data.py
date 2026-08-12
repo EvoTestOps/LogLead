@@ -3,6 +3,7 @@ import requests
 import argparse
 import yaml
 import shutil
+import tarfile
 from pathlib import Path
 from zipfile import ZipFile
 import gzip
@@ -97,6 +98,31 @@ def unzip_file(zip_path, dest_folder):
     with ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(dest_folder)
     print(f'Extracted {zip_path} to {dest_folder}')
+
+def is_tar(path):
+    """Whether a path is a tar archive, gzipped or not.
+
+    Checked before the plain-gzip branch everywhere, because '.tar.gz' also ends with '.gz' and
+    gunzipping it just leaves a tar file lying there under a .log name.
+    """
+    return path.endswith(('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz'))
+
+def untar_file(tar_path, dest_folder):
+    """
+    Extracts a tar archive (optionally compressed) to the specified destination folder.
+
+    Args:
+        tar_path (str): The path to the tar archive.
+        dest_folder (str): The directory where the contents should be extracted.
+    """
+    os.makedirs(dest_folder, exist_ok=True)
+    with tarfile.open(tar_path, 'r:*') as tar:
+        try:
+            tar.extractall(dest_folder, filter='data')
+        except TypeError:
+            # The extraction filter arrived in Python 3.12; this project still supports 3.9.
+            tar.extractall(dest_folder)
+    print(f'Extracted {tar_path} to {dest_folder}')
 
 def ungzip_file(gz_path, dest_folder):
     """
@@ -227,6 +253,9 @@ def download_all_parts(name, urls, dest_folder):
                 if file_path.endswith('.zip'):
                     unzip_file(file_path, dest_folder)
                     os.remove(file_path)  # Remove the zip after extraction
+                elif is_tar(file_path):
+                    untar_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the tarball after extraction
                 elif file_path.endswith('.gz'):
                     ungzip_file(file_path, dest_folder)
                     os.remove(file_path)  # Remove the gz after extraction
@@ -268,6 +297,8 @@ def extract_local_archive(name, archive, dest_folder, source_url=None):
     print(f'Extracting local archive {path} into {dest_folder}')
     if path.endswith('.zip'):
         unzip_file(path, dest_folder)
+    elif is_tar(path):
+        untar_file(path, dest_folder)
     elif path.endswith('.gz'):
         ungzip_file(path, dest_folder)
     elif path.endswith('.7z'):

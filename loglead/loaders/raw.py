@@ -165,7 +165,7 @@ class RawLoader(BaseLoader):
         elif self.missing_timestamp_action == 'fill-lastseen':
             # Fill missing timestamps with the last seen valid timestamp
             self.df = self.df.with_columns(
-                pl.col("m_timestamp").fill_null(strategy='backward')
+                pl.col("m_timestamp").fill_null(strategy='forward')
             )
 
         elif self.missing_timestamp_action == 'merge':

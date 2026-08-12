@@ -1,0 +1,41 @@
+root_folder: '~/Datasets_syslog'
+
+# Syslog - RFC 3164, the BSD format every Linux box and appliance still writes
+# (docs/log-format-support.md section 5 item 5), read by SyslogLoader.
+#
+# No labels. The labelled syslog data that exists is the AIT Log Data Set (v1.1 is 3.4 GB zipped,
+# v2.1 is 137 GB) and the AIT CAM-LDS, and in both the labels are separate ground-truth files
+# giving attack *time intervals*, not a column in the log - so wiring them up is a dataset-specific
+# time-window join rather than anything a syslog loader does. These three loghub files are the
+# format's canonical unlabelled corpus instead, and the OpenSSH one is at least full of visible
+# brute-force attacks ("POSSIBLE BREAK-IN ATTEMPT!") if a target is wanted.
+#
+# Three systems in one directory on purpose: Linux /var/log/messages (25,567 lines), macOS
+# (117,283, and the only one with multi-line messages) and an OpenSSH auth log (655,147) - 797,997
+# lines in total. expected_length is lower than that because the loader defaults to
+# multiline='merge-message': the 10,138 continuation lines are folded into the event that started
+# them, appended to its m_message, giving 787,859 events. Merging is not cosmetic here -
+# it takes Drain from 901 templates to 647 on the macOS file, the difference being stack-trace
+# fragments that were being mined as if they were events.
+#
+# RFC 3164 timestamps carry no year, so m_timestamp uses the current one unless SyslogLoader is
+# given year=. These three files were recorded in 2005, 2016 and 2017 respectively, so no single
+# year would be right for all of them anyway; ordering within each file is what survives.
+
+datasets:
+  - name: syslog
+    loader: syslog
+    filename_pattern: "*.log"
+    urls:
+      - https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [app_name]   # host is one value per file, i.e. the file_name trap again
+    expected_length: 787859
+    reduction_fraction: 0.07

@@ -10,9 +10,10 @@ from .logfmt import LogfmtLoader
 from .nezha import NezhaLoader
 from .pro import ProLoader
 from .supercomputers import ThuSpiLibLoader
+from .syslog import SyslogLoader
 from .raw import RawLoader
 from .lo2 import LO2Loader
 
 __all__ = ['AccessLogLoader', 'ADFALoader', 'AWSCTDLoader', 'BGLLoader', 'HadoopLoader',
            'HDFSLoader', 'JsonLoader', 'LogfmtLoader', 'NezhaLoader', 'ProLoader',
-           'ThuSpiLibLoader', 'BaseLoader', 'RawLoader', 'LO2Loader']
+           'SyslogLoader', 'ThuSpiLibLoader', 'BaseLoader', 'RawLoader', 'LO2Loader']
