@@ -67,6 +67,23 @@ stage once its input parquet files already exist in `<root_folder>/test_data/`. 
 `tests/datasets.yml`, and raises/prints on structural problems (missing mandatory columns, null or
 non-UTF-8 values) rather than asserting — read the console output to see pass/fail.
 
+`--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
+so the sets do not share a `test_data/` folder). Besides the default `tests/datasets.yml` there are
+two smaller, faster ones covering the spec-driven loaders:
+```
+uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
+uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
+```
+`datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
+account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is larger than
+most machines' RAM, so how much of it gets read is **decided at run time**: the entry states the
+dataset's memory cost (`memory_gb_per_million_rows`, `memory_gb_overhead`) and `tests/loaders.py`
+turns that plus `psutil`'s free memory into an `n_rows` cap, skipping the dataset entirely below
+~7 GB free. Two consequences to keep in mind when editing any dataset entry: `expected_length` is
+the *full* file length and a capped read is checked against its cap instead, and `target_rows`
+(rather than `reduction_fraction`) pins what reaches the enhancer/detector stages so their cost
+does not vary by machine.
+
 Downloading datasets directly (independent of running tests):
 ```
 uv run downloader/download_data.py                          # everything in downloader/datasets.yml
@@ -76,6 +93,11 @@ Edit the `datasets:` list in the relevant YAML and set `download: false` per-ent
 don't need. Disk space: the full set in `downloader/datasets.yml` is ~7 GB to download and ~104 GB
 unzipped (Liberty/Spirit/Thunderbird dominate at 30-38 GB each) — make sure ~110 GB is free before running
 the unrestricted downloader.
+
+A dataset entry that carries `local_archive: '~/path/to/archive.zip'` instead of `url:`/`urls:` is one
+the downloader cannot fetch — it sits behind a login, Kaggle being the usual case. The archive is
+unpacked from wherever the user put it and, unlike a downloaded one, is never deleted afterwards. Add
+`source_url:` so the "not found" message can say where to get it.
 
 There is no linter, formatter, or CI workflow configured in this repo — don't invent one unless asked.
 
@@ -123,10 +145,28 @@ add_ano_col` and returns `self.df`. Subclasses only need to implement `load()`/`
 what "isolates the unique aspects of logs from different systems" so enhancer/anomaly-detection code
 never needs to know which dataset it's operating on.
 
-Concrete loaders: `RawLoader` (any plain log file, no labels — the starting point for new/custom data),
-and dataset-specific loaders `HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird /
-Spirit / Liberty supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop
-systems), `ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `GELFLoader`, `LO2Loader`.
+Loaders come in two shapes. Most are **dataset-specific**, one Python class per dataset:
+`HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird / Spirit / Liberty
+supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop systems),
+`ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `LO2Loader`. Plus `RawLoader` — any
+plain log file, one event per line, no labels; the starting point for new/custom data, and the loader
+behind `loglead/delta/` and every MCP tool.
+
+The newer ones are **spec-driven**: one class per *format family*, configured by a YAML spec rather
+than subclassed per dataset (the reasoning is in `docs/log-format-support.md` §7 and
+`docs/log-format-json-loader.md`). Their keyword arguments are exactly the spec keys, so a spec file
+is a serialized constructor call and the two forms cannot drift; `format=` takes either a shipped
+spec name or a path to your own file.
+
+- `JsonLoader` + `loaders/json_formats/*.yml` — JSON/NDJSON logs. The mapping it supplies is which
+  key is the message, the timestamp, the sequence id.
+- `AccessLogLoader` + `loaders/access_log_formats/*.yml` — Apache/nginx web access logs (Common,
+  Combined, and variants). Positional text, so a format is one regex; specs write it as an nginx
+  `log_format` string (`'$remote_addr - - [$time_local] "$request" $status ...'`) which compiles to
+  that regex. Splits `$request` into `method`/`path`/`protocol` and types `status`/byte counts as
+  numbers, since those — not the message text — are what an access log gives `AnomalyDetector`.
+
+When adding a format that already fits one of the spec-driven loaders, add a `.yml` spec, not a class.
 
 ### Enhancers (`loglead/enhancers/`)
 

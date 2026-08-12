@@ -84,7 +84,10 @@ into `folder` + `file_name`.
 
 ### 1.2 The loaders
 
-Eleven concrete loaders. Only the first is format-driven; the other ten are dataset-driven.
+Twelve concrete loaders. Ten are dataset-driven, one Python class per dataset; two —
+`JsonLoader` and `AccessLogLoader` — are **spec-driven**, one class per *format family*,
+configured by a YAML spec rather than subclassed per dataset. Delivered since this analysis was
+written; see §5 items 1 and 4.
 
 | Loader | Reads | Physical format | Notes |
 |---|---|---|---|
@@ -98,7 +101,8 @@ Eleven concrete loaders. Only the first is format-driven; the other ten are data
 | `LO2Loader` | tree of runs/services | text logs + JSON metrics | builds `seq_id` from run/test/service |
 | `ADFALoader` | directories of `.txt` | whitespace-separated syscall **ids** | not log text; already "parsed" |
 | `AWSCTDLoader` | directories of `.csv` | newline-separated syscall names, one sequence per file | not log text |
-| `GELFLoader` | one JSON object per line | **JSON lines** | the codebase's only JSON reader — see below |
+| `JsonLoader` | one file, or a directory tree via `filename_pattern` | JSON lines, or a top-level array / wrapped-object container | spec-driven — `loglead/loaders/json_formats/*.yml` supplies the field mapping; see §5 item 1 |
+| `AccessLogLoader` | one file, or a directory tree via `filename_pattern` | positional text (Apache/nginx Common/Combined Log Format) | spec-driven — `loglead/loaders/access_log_formats/*.yml` is an nginx `log_format` string compiled to a regex; see §5 item 4 |
 
 ### 1.3 The gap, stated precisely
 
@@ -107,13 +111,8 @@ LogLead can read exactly two things: **text that can be split positionally on sp
 production logging — JSON lines, logfmt, CSV/TSV with a header, syslog, web access logs, journald,
 Windows events — requires a new hand-written loader.
 
-Two specifics worth recording because they change the priorities below:
+One specific worth recording because it changes the priorities below:
 
-- **`GELFLoader` is not a usable JSON implementation.** It loops in Python: `json.loads` per line,
-  builds a **one-row `pl.DataFrame` per line**, then `pl.concat`s them all. That is one DataFrame
-  construction per log event, so it will not survive a real GELF volume. It is also brittle: the
-  default vertical `concat` requires identical schemas, so a single line with a missing or extra key
-  raises rather than unifying. Polars' native `read_ndjson`/`scan_ndjson` does both correctly.
 - **Compression is already fine.** Polars transparently decompresses `.gz` in both `read_csv` and
   `scan_csv` (verified against the pinned polars 1.38.1), so gzipped logs already work today —
   provided the caller's `filename_pattern` matches the `.gz` extension. This is *not* a gap; don't
@@ -241,10 +240,10 @@ The intersection is a short list, and it is the shortlist LogLead should work fr
 
 | Format | lnav | angle-grinder | LogLead today |
 |---|---|---|---|
-| **JSON lines / NDJSON** | 14 built-in formats + declarative support | `json` operator (its headline feature) | `GELFLoader` only, Python loop, not scalable |
+| **JSON lines / NDJSON** | 14 built-in formats + declarative support | `json` operator (its headline feature) | `JsonLoader` (§5 item 1) |
 | **logfmt** | built-in C++ format | `logfmt` operator | — |
 | **Delimited + header (CSV/TSV)** | Zeek TSV + W3C ELF, both self-describing | `split` | only inside `NezhaLoader`, dataset-specific |
-| **Web access logs (CLF/Combined)** | ~12 formats | all 3 shipped aliases | — |
+| **Web access logs (CLF/Combined)** | ~12 formats | all 3 shipped aliases | `AccessLogLoader` (§5 item 4) |
 | **Syslog** | built-in format | — | — |
 | **Generic timestamped text** | `generic_log` fallback + 107 timestamp patterns | `parse` / `parse regex` | `RawLoader`, but the user must supply the regex *and* the format |
 | **Binary containers** (pcap, SQLite, archives) | container layer + converter subprocesses | — | — |
@@ -263,8 +262,7 @@ which today only ever sees `RawLoader` output.
 The default output of essentially every modern logging library and platform: Bunyan, pino, zap,
 Serilog, `python-json-logger`, Docker's `json-file` driver, Kubernetes, Elastic ECS, OpenTelemetry,
 GELF, `journalctl -o json`, and the log exports of Cloudflare/AWS. lnav ships 14 such formats;
-angle-grinder's first documented example is a JSON one. LogLead has one JSON loader and it builds a
-DataFrame per line.
+angle-grinder's first documented example is a JSON one.
 
 Build a `JsonLoader` on Polars' native `read_ndjson`/`scan_ndjson` (multithreaded, schema-unifying,
 same lazy/`collect_all` pattern as the existing loaders), with:
@@ -274,10 +272,25 @@ same lazy/`collect_all` pattern as the existing loaders), with:
   uses `.key[i]`; pick one and document it;
 - a **policy for the remaining keys**: keep as columns, fold into `m_message`, or drop.
 
-Payoff beyond the obvious: `GELFLoader` becomes a three-line configuration of it rather than a
-separate implementation; and Kubernetes/OTel logs carry `trace_id`/`pod`/`container` fields, which
+Payoff beyond the obvious: Kubernetes/OTel logs carry `trace_id`/`pod`/`container` fields, which
 give `SequenceEnhancer` a *real* `seq_id` — something the current dataset-specific loaders have to
 manufacture with regexes.
+
+**Delivered as `JsonLoader`** (`loglead/loaders/json.py`), built on `scan_ndjson`/`read_ndjson`
+exactly as proposed, plus the two other container shapes Polars gives for free: `array` (a
+top-level `[...]`) and `wrapped` (an object holding the records, e.g. CloudTrail's
+`{"Records": [...]}`). The field mapping is `timestamp_field`/`message_field`/`level_field`/
+`seq_id_field`, with `line_format` covering records where no single key is the message (an access
+log delivered as JSON). Nested-key path syntax landed as lnav's `/`-separated JSON pointers rather
+than angle-grinder's `.key[i]` (`path_separator`, default `/`) — the choice left open above,
+decided because a real dataset in the test data has literal dots inside its own keys. `extra_fields`
+(`keep`/`drop`) is the remaining-keys policy. Format specs
+(`loglead/loaders/json_formats/*.yml`: `nginx_json`, `otrf_winevent`, `nginx_plus_status`, `gelf`)
+are exactly what item 7 below calls for — the loader's keyword arguments are the spec keys, so a
+spec file is a serialized constructor call. Tested against three of the candidates in
+[log-format-json-testdata.md](log-format-json-testdata.md) (nginx access logs, OTRF
+Security-Datasets, AIT-ADS); design detail and measurements in
+[log-format-json-loader.md](log-format-json-loader.md).
 
 ### 2. logfmt — **cheapest win on the list**
 
@@ -309,6 +322,23 @@ plausible route to a demo dataset that is neither a 15-year-old HDFS dump nor a 
 Cover Apache access + error, nginx, and the AWS variants (ALB/ELB/S3/CloudFront) — all positional,
 all expressible as one regex each.
 
+**Delivered as `AccessLogLoader`** (`loglead/loaders/access_log.py`), the second spec-driven loader
+after item 1's `JsonLoader`, reusing that loader's field-semantics vocabulary
+(`timestamp_field`/`message_field`/`line_format`/`level_field`/`seq_id_field`) rather than
+inventing a parallel one. Where a JSON format spec is a field mapping, an access-log format spec is
+one regex: the shipped specs (`loglead/loaders/access_log_formats/*.yml` — `common`, `combined`,
+`combined_xff`, `vhost_combined`) write it as an nginx `log_format` string
+(`'$remote_addr - - [$time_local] "$request" $status $body_bytes_sent ...'`), which the loader
+compiles to named captures rather than requiring a hand-written regex per format — the same "spec
+is a serialized constructor call" property item 7 argues for generally. `$request` is additionally
+split into `method`/`path`/`protocol`, and `status`/byte counts land as typed numbers, so the
+natural anomaly signal this section opens with reaches `AnomalyDetector(numeric_cols=...)` with no
+manual cast — the typed-columns point in §6 below, applied. Tested against the
+[Kaggle "Web Server Access Logs"](https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs)
+dataset (`tests/datasets_access_log.yml`): 10,365,152 lines, 100% matching the `combined_xff` spec.
+Not yet done: Apache error logs and the AWS variants (ALB/ELB/S3/CloudFront) have no spec yet, since
+nothing in the test data exercises them.
+
 ### 5. Syslog (RFC 3164 and RFC 5424) and journald
 
 Still the substrate of Linux and network-device logging; lnav treats syslog as a core format. RFC
@@ -330,7 +360,8 @@ Two implementation constraints specific to LogLead:
 
 - lnav needed a code-generated timestamp parser because repeated `strptime` attempts are expensive.
   The Polars equivalent is: **run the trial on a sample of lines, then apply one vectorized
-  `strptime` to the entire column.** Never per row — that is the mistake `GELFLoader` already makes.
+  `strptime` to the entire column.** Never per row. `JsonLoader` and `AccessLogLoader` already
+  follow this (`_pick_format()` in each), so a future detector can reuse the same helper.
 - Detection is inherently **per file**, but LogLead's `delta`/MCP path loads a whole directory tree
   in one call. The detection result must therefore be resolved per `file_name` group, not once per
   load — a mixed-format log folder is the normal case, not the exception.
@@ -413,7 +444,6 @@ decide once:
 | angle-grinder input is stdin or one file | `~/angle-grinder/src/bin/agrind.rs` |
 | angle-grinder's shipped format aliases | `~/angle-grinder/aliases/{apache,nginx,k8s-ingress-nginx}.toml` |
 | LogLead loader contract | `loglead/loaders/base.py` — `execute()`, `_split_and_unnest()`, `_csv_separator` |
-| `GELFLoader`'s per-line DataFrame construction | `loglead/loaders/gelf.py` |
 | `.gz` already works | Polars 1.38.1 decompresses transparently in both `read_csv` and `scan_csv` |
 
 JSON test-dataset candidates, their measured sizes, and the downloader/test-suite integration notes

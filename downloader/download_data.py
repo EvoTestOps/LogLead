@@ -241,6 +241,41 @@ def download_all_parts(name, urls, dest_folder):
     for repo_url, repo_folder in cloned_repos.items():
         shutil.rmtree(repo_folder)
 
+def extract_local_archive(name, archive, dest_folder, source_url=None):
+    """
+    Unpacks a dataset from an archive already on disk, for datasets this script cannot fetch.
+
+    Some datasets are served only to a logged-in account - Kaggle is the usual case - so there is
+    no URL to GET. The YAML entry then carries `local_archive` pointing at a copy the user
+    downloaded by hand, and optionally `source_url` saying where to get it. The archive is only
+    read: unlike a downloaded one it is never removed, because it is the user's file and this
+    script did not put it there.
+
+    Args:
+        name (str): The name of the dataset.
+        archive (str): Path to the local archive, '~' allowed.
+        dest_folder (str): The directory where the contents should be extracted.
+        source_url (str, optional): Where the archive can be obtained, quoted if it is missing.
+    """
+    path = os.path.expanduser(archive)
+    if not os.path.exists(path):
+        where = f' from {source_url}' if source_url else ''
+        print(f'Local archive {path} for {name} not found. Download it by hand{where}, put it '
+              f'there, and re-run - or set "download: false" for {name} to skip it.')
+        return
+
+    os.makedirs(dest_folder, exist_ok=True)
+    print(f'Extracting local archive {path} into {dest_folder}')
+    if path.endswith('.zip'):
+        unzip_file(path, dest_folder)
+    elif path.endswith('.gz'):
+        ungzip_file(path, dest_folder)
+    elif path.endswith('.7z'):
+        un7z_file(path, dest_folder)
+    else:
+        shutil.copy2(path, dest_folder)  # not an archive: it is already the payload
+
+
 def main(dest_base_folder, yaml_file):
     """
     Downloads and unzips all datasets to the specified base folder.
@@ -258,18 +293,22 @@ def main(dest_base_folder, yaml_file):
         if skip_download:
             print(f'Skipping download for {name}.')
             continue
+        local_archive = dataset.get('local_archive')
         urls = dataset.get('urls', [dataset.get('url')])
-        if not any(urls):
+        if not local_archive and not any(urls):
             print(f'No URLs provided for {name}. Skipping download.')
             continue
         dataset_folder = os.path.join(root_folder, name)
-        
+
         # Check if the dataset folder already exists
         if os.path.exists(dataset_folder):
             print(f'Folder {dataset_folder} already exists. Skipping download for {name}.')
             continue
-        
-        download_all_parts(name, urls, dataset_folder)
+
+        if local_archive:
+            extract_local_archive(name, local_archive, dataset_folder, dataset.get('source_url'))
+        else:
+            download_all_parts(name, urls, dataset_folder)
 
 def cli():
     parser = argparse.ArgumentParser(description='Download datasets to a specified location.')

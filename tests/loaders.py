@@ -1,9 +1,11 @@
 import psutil
 import os
+import time
 import yaml
 import argparse
 
-from loglead.loaders import BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader
+from loglead.loaders import (AccessLogLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader,
+                             ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -19,7 +21,7 @@ full_data_path = os.path.expanduser(config['root_folder'])
 memory_limit_TB = 50
 memory_limit_NEZHA_WS = 17
 memory = psutil.virtual_memory().available / (1024 ** 3)
-memory = round(memory, 2)  
+memory = round(memory, 2)
 
 print(f"Loaders test starting. Memory available: {memory}GB. Data folder: {full_data_path}")
 def create_correct_loader(dataset_name, data, system=""):
@@ -66,6 +68,10 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
+    elif data.get('loader') == 'access_log':
+        loader = AccessLogLoader(filename=default_path, format=data['format'],
+                                filename_pattern=data.get('filename_pattern'))
+        
     elif 'format' in data:
         loader = JsonLoader(filename=default_path, container=data['format'],
                             filename_pattern=data.get('filename_pattern'), flatten=True)
@@ -132,13 +138,17 @@ for dataset in config['datasets']:
             loader = create_correct_loader(dataset_name, dataset, system)
             if loader is None:
                 continue
+            start_time = time.time()
             loader.execute()
+            print(f"Loading {dataset_name} ({system}) took {time.time() - start_time:.2f}s")
             check_and_save(dataset_name, loader, config, system)
     else:
         loader = create_correct_loader(dataset_name, dataset)
         if loader is None:
             continue
+        start_time = time.time()
         loader.execute()
+        print(f"Loading {dataset_name} took {time.time() - start_time:.2f}s")
         check_and_save(dataset_name, loader, config)
 
 print("Loading test complete.")
