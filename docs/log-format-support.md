@@ -103,6 +103,7 @@ written; see §5 items 1 and 4.
 | `AWSCTDLoader` | directories of `.csv` | newline-separated syscall names, one sequence per file | not log text |
 | `JsonLoader` | one file, or a directory tree via `filename_pattern` | JSON lines, or a top-level array / wrapped-object container | spec-driven — `loglead/loaders/json_formats/*.yml` supplies the field mapping; see §5 item 1 |
 | `AccessLogLoader` | one file, or a directory tree via `filename_pattern` | positional text (Apache/nginx Common/Combined Log Format) | spec-driven — `loglead/loaders/access_log_formats/*.yml` is an nginx `log_format` string compiled to a regex; see §5 item 4 |
+| `AutoLoader` | anything the loaders above read | decided per file from a sample | detects the format and **builds one of the other loaders**; parses nothing itself. See §5 item 6 |
 
 ### 1.3 The gap, stated precisely
 
@@ -365,6 +366,46 @@ Two implementation constraints specific to LogLead:
 - Detection is inherently **per file**, but LogLead's `delta`/MCP path loads a whole directory tree
   in one call. The detection result must therefore be resolved per `file_name` group, not once per
   load — a mixed-format log folder is the normal case, not the exception.
+
+**Delivered as `AutoLoader`** (`loglead/loaders/auto.py`). It **builds one of the other loaders and
+never parses anything itself**, which is what log-format-json-loader.md §2 asked for — detection is
+a layer *on top of* the spec system that picks a spec name — and why `detect_format()` is importable
+on its own: the decision is inspectable without loading. Both constraints above are met: candidates
+are scored on a sample and the winner runs one vectorized pass, and detection is resolved per file,
+with a tree whose files all agree delegated to a single loader (keeping its parallel multi-file
+read) and a genuinely mixed folder loaded one file at a time and stacked with `diagonal_relaxed`.
+
+The order shipped is JSON → access log → syslog → logfmt → generic timestamped text → `RawLoader`,
+which differs from the list above in two ways. **Delimited-with-header is absent**: item 3 was never
+built, so there is no loader to delegate to. And there is a **stage before all of it** that this
+section did not anticipate — a *dataset probe* recognizing the public datasets that have their own
+loader, from the label file and directory layout beside the log rather than from the log alone,
+because `HDFSLoader` needs its `anomaly_label.csv` and `HadoopLoader` its `abnormal_label.txt`. That
+is what makes auto-loading a labelled dataset yield a real `df_seq` instead of bare lines; a dataset
+whose labels are absent is deliberately not claimed, and falls through to the format probe.
+
+Three things were measured rather than reasoned, and each contradicts the obvious implementation:
+
+- **The logfmt test counts `>=2` `key=value` pairs per line and must not be anchored at `^`.**
+  Anchoring looks like the right way to stop syslog lines (which do contain `key=value`) from being
+  read as logfmt. On the shipped logfmt corpus it scores 0.996 at a 1,000-line sample and **0.199 at
+  5,000** — real Grafana lines put free text before the pairs — and 0.000 on the very common
+  `<timestamp> level=info msg="…"` shape. The syslog false positive it was meant to prevent is
+  already harmless: unanchored, syslog scores 0.16–0.20, well under `min_match_rate`.
+- **The sample is the file's head plus a chunk from its middle**, because that same file's head is
+  not representative of it — which is what hid the bug above. A `seek` and one 256 KB read costs
+  milliseconds even on a multi-gigabyte log.
+- **`m_timestamp` is normalized to naive microseconds afterwards.** Polars takes the time unit from
+  the format string, so a `%3f` pattern yields `Datetime('ms')` while every other loader yields
+  `'us'`, and the two will not `pl.concat` — the same trap as timezone-awareness (D5 in
+  log-format-json-loader.md), reached by a different route. A loader whose output dtype depends on
+  which format happened to be detected would export that trap to its caller.
+
+The `m_timestamp`-mandatory question from §6 is answered the way `JsonLoader` answered it: per
+instance, `["m_message"]` only, since a plain-text fallback legitimately has no clock. §6's encoding
+requirement is met by `detections()`, which reports the undecodable-character count per file so that
+a mis-decoded file and a mis-detected format do not look alike. Not yet done: reaching `delta`/MCP,
+which is blocked on `read_folders()` consuming `orig_file_name`, a column only `RawLoader` produces.
 
 ### 7. Declarative format definitions (a format registry) — the real architectural lesson
 

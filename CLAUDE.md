@@ -67,15 +67,34 @@ stage once its input parquet files already exist in `<root_folder>/test_data/`. 
 `tests/datasets.yml`, and raises/prints on structural problems (missing mandatory columns, null or
 non-UTF-8 values) rather than asserting — read the console output to see pass/fail.
 
+There is a fifth stage that `tests/main.py` does **not** chain, because it is cheap enough to run on
+its own and useful against configs whose data is too big to load:
+```
+uv run tests/detection.py --config tests/datasets.yml
+```
+It checks that `AutoLoader` picks the same loader `create_correct_loader()` picks by name, for every
+dataset in a config. Nothing is loaded — only ~1000 lines per file are sampled — so it covers the
+datasets `tests/loaders.py` cannot handle on an ordinary machine: Thunderbird/Spirit/Liberty are
+30–38 GB unpacked, and AWSCTD expands to 174 M rows and will OOM well under 16 GB. It also reads
+those three straight from their `.gz`, since Polars decompresses transparently and they are usually
+left packed. Its `BY_NAME` table mirrors `create_correct_loader()`'s if/elif chain and has to stay
+in step with it — that chain is the reference answer being checked against.
+
 `--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
 so the sets do not share a `test_data/` folder). Besides the default `tests/datasets.yml` there are
-four smaller, faster ones covering the newer loaders:
+five smaller, faster ones covering the newer loaders:
 ```
 uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
 uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
 uv run tests/main.py --config downloader/datasets_fmt.yml     # LogfmtLoader: grafana/loki Drain testdata
 uv run tests/main.py --config downloader/datasets_syslog.yml  # SyslogLoader: loghub Linux, Mac, OpenSSH
+uv run tests/main.py --config tests/datasets_auto.yml         # AutoLoader: the above, detected + one mixed folder
 ```
+`datasets_auto.yml` is the odd one: detection is not a format, so there is nothing of its own to
+download. It re-loads corpora the other configs already cover and copies their `expected_length`
+values unchanged, so a count that drifts there but not in the original config means detection chose
+the wrong loader. Its `mixed` entry downloads three unrelated corpora into **one** folder — the case
+§5 item 6 calls normal rather than exceptional — and its `expected_length` is the sum of the three.
 `datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
 account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is larger than
 most machines' RAM, so how much of it gets read is **decided at run time**: the entry states the
@@ -147,12 +166,33 @@ add_ano_col` and returns `self.df`. Subclasses only need to implement `load()`/`
 what "isolates the unique aspects of logs from different systems" so enhancer/anomaly-detection code
 never needs to know which dataset it's operating on.
 
+There is a per-directory `loglead/loaders/README.md` documenting every loader and the dataset each
+one reads — keep it in sync when adding or changing a loader.
+
 Loaders come in two shapes. Most are **dataset-specific**, one Python class per dataset:
 `HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird / Spirit / Liberty
 supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop systems),
 `ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `LO2Loader`. Plus `RawLoader` — any
 plain log file, one event per line, no labels; the starting point for new/custom data, and the loader
 behind `loglead/delta/` and every MCP tool.
+
+`AutoLoader` (`loaders/auto.py`) sits above all of them: it samples a file, decides the format, and
+**builds one of the other loaders** — it never parses anything itself, which is what keeps the
+decision (`detect_format()`, importable on its own) separable from the reading. Two stages, most
+specific first: a **dataset probe** that recognizes a public dataset from the label file and
+directory layout *beside* the log (so `HDFSLoader` gets its `anomaly_label.csv` and `df_seq`
+survives — a dataset whose labels are missing is deliberately not claimed and falls through), then a
+**per-file format probe** ordered JSON → access log → syslog → logfmt → generic timestamped text →
+plain text, each scored as a match rate over a sample. Two things here are load-bearing and were
+measured rather than reasoned: the logfmt test counts `>=2` `key=value` pairs per line and **must
+not** be anchored at `^` (real Grafana output puts free text before the pairs — anchoring passes a
+1,000-line sample at 0.996 and collapses to 0.199 at 5,000), and the sample is the file's head
+**plus a chunk from its middle**, because that same file's head is not representative of it.
+`AutoLoader` normalizes `m_timestamp` to naive microseconds afterwards, since Polars takes the time
+unit from the format string and a `%3f` pattern otherwise yields a frame that silently refuses to
+`pl.concat` with every other loader's output. When every file in a tree agrees it delegates the
+whole tree to one loader; only a genuinely mixed folder pays for one loader per file, stacked with
+`diagonal_relaxed`.
 
 The newer ones are **spec-driven**: one class per *format family*, configured by a YAML spec rather
 than subclassed per dataset (the reasoning is in `docs/log-format-support.md` §7 and

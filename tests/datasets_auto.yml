@@ -1,0 +1,96 @@
+root_folder: '~/Datasets_auto'
+
+# AutoLoader - detect the format, then build the loader that reads it
+# (docs/log-format-support.md section 5 item 6), read by AutoLoader.
+#
+# There is no "auto-detection dataset" to download, because detection is not a format: what has to
+# be tested is that AutoLoader, pointed at a corpus, reproduces exactly what the named loader
+# produces when pointed at the same corpus. So the entries below are the same corpora the four
+# format-family configs already use, re-loaded through AutoLoader, and their expected_length values
+# are copied unchanged from those configs. A number that drifts here but not there means detection
+# picked the wrong loader, which is precisely the failure this config exists to catch.
+#
+# The last entry is the one that is not a copy. It downloads three unrelated corpora into a single
+# folder, which is the case docs/log-format-support.md calls the normal one rather than the
+# exception: a log folder holding several formats at once. AutoLoader has to detect per file, build
+# three different loaders and stack their output into one frame, and its expected_length is the sum
+# of the three individual ones (56,100 + 787,859 + 51,462).
+#
+# Not covered here, and verified through demo/AutoLoader_samples.py instead: the dataset probe,
+# which recognizes HDFS/Hadoop/ADFA/AWSCTD/Nezha from the label files and directory layout beside
+# the logs. Those corpora live under the ~/Datasets root of downloader/datasets.yml and are up to
+# 100 GB, so re-downloading them into a second root to test detection would be absurd.
+
+datasets:
+  - name: logfmt
+    loader: auto
+    filename_pattern: "*.txt"
+    urls:
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/grafana-ruler.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/agent-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/distributor-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/ingester-logfmt.txt
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [level, caller]
+    expected_length: 56100
+    reduction_fraction: 1.0
+
+  - name: syslog
+    loader: auto
+    filename_pattern: "*.log"
+    urls:
+      - https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [app_name]
+    expected_length: 787859
+    reduction_fraction: 0.07
+
+  - name: nginx_json
+    loader: auto
+    log_file: nginx_json_logs
+    url: https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_logs/nginx_json_logs
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [response, bytes, e_chars_len, e_words_len]
+      categorical: []   # remote_ip and request are ids, not categories
+    expected_length: 51462
+    reduction_fraction: 1.0
+
+  # Three formats in one folder, which is what detection is actually for. filename_pattern is "*"
+  # because the three corpora do not share an extension - the nginx one has none at all.
+  - name: mixed
+    loader: auto
+    filename_pattern: "*"
+    urls:
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/grafana-ruler.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/agent-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/distributor-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/ingester-logfmt.txt
+      - https://zenodo.org/records/8196385/files/Linux.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/Mac.tar.gz?download=1
+      - https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1
+      - https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_logs/nginx_json_logs
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [level]   # the one field all three formats contribute to
+    expected_length: 895421
+    reduction_fraction: 0.06

@@ -4,9 +4,9 @@ import time
 import yaml
 import argparse
 
-from loglead.loaders import (AccessLogLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader, HadoopLoader,
-                             ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader, JsonLoader,
-                             LogfmtLoader, SyslogLoader)
+from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader,
+                             HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader,
+                             JsonLoader, LogfmtLoader, SyslogLoader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -69,6 +69,9 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
+    #TODO from here on we no longer test dataset_name but something else. 
+    #Code created by idiot Claude and cannot even fix it. 
+    #Needs to be alligend later with the dataset_name above.
     elif data.get('loader') == 'access_log':
         loader = AccessLogLoader(filename=default_path, format=data['format'],
                                 filename_pattern=data.get('filename_pattern'))
@@ -78,6 +81,12 @@ def create_correct_loader(dataset_name, data, system=""):
     elif data.get('loader') == 'syslog':
         loader = SyslogLoader(filename=default_path,
                               filename_pattern=data.get('filename_pattern'))
+    # Before the bare 'format' branch below, which would otherwise swallow this: an auto entry may
+    # legitimately carry a format key describing what it is expected to detect.
+    elif data.get('loader') == 'auto':
+        loader = AutoLoader(filename=default_path,
+                            filename_pattern=data.get('filename_pattern'),
+                            system=system or None)
 
     elif 'format' in data:
         loader = JsonLoader(filename=default_path, container=data['format'],

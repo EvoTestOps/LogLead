@@ -7,6 +7,16 @@ Currently, it features nearly 1,000 unique anomaly detection combinations, encom
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
+**Don't know which loader you need?** [`AutoLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/auto.py) samples a file, works out its format, and builds the loader that reads it — JSON, web access log, syslog, logfmt, generic timestamped text, or plain text as the fallback. It also recognizes the public datasets that have their own loader (HDFS, Hadoop, ADFA, AWSCTD, Nezha, BGL, Thunderbird) from the label file sitting *beside* the log, so an auto-loaded dataset keeps its anomaly labels and its sequence-level frame:
+
+```python
+AutoLoader(filename="mystery.log").execute()                     # one file
+AutoLoader(filename="logs", filename_pattern="*.log").execute()  # a tree, detected per file
+loader.detections()                                              # what it chose, and how sure
+```
+
+Detection is per file, because a folder holding several formats is the normal case rather than the exception — those get read by different loaders and stacked into one frame. Nothing is ever refused: an unrecognized file is read as plain text and said so. See [demo/AutoLoader_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/AutoLoader_samples.py), whose first two sections need no download.
+
 **JSON logs** are supported by a single configurable [`JsonLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/json.py) rather than a class per dataset, because reading JSON is one Polars call — what actually differs between JSON logs is only the *mapping*: which key is the timestamp, which is the message, which correlates records. That mapping is configuration, so a format spec is nothing more than a serialized call:
 
 ```python
