@@ -1,15 +1,22 @@
 # Broadening LogLead's log format support
 
-**Status:** investigation / proposal. No code changes.
-**Question:** `lnav` and `angle-grinder` can read log formats that LogLead cannot — most obviously JSON.
-What exactly do they support, and in what order should LogLead adopt the same capabilities?
+**Status:** living document — the original proposal plus a record of what has since been built
+against it. Items 1, 2, 4, 5 and 6 of §5 are delivered and are marked as such inline; item 3 is the
+one piece of the agreed shortlist still missing. §8 is the current scorecard and the answer to
+"what next".
+**Question:** `lnav` and `angle-grinder` can read log formats that LogLead cannot — most obviously
+JSON. What exactly do they support, and in what order should LogLead adopt the same capabilities?
 
 **Evidence base:** local clones of both tools, read directly rather than from their websites:
 
 | Tool | Local path | Files that define format support |
 |---|---|---|
 | lnav | `~/lnav` | `src/formats/*.json` (73 definitions), `src/log_format_impls.cc` (5 hard-coded formats), `src/file_format.hh`, `src/time_formats.am`, `docs/schemas/format-v1.schema.json`, `docs/source/formats.rst`, `ARCHITECTURE.md` |
-| angle-grinder | `~/angle-grinder` | `src/operator/` (one file per operator), `aliases/*.toml`, `README.md` |
+| angle-grinder | `~/angle-grinder` | `src/lang.rs` (the `json`/`logfmt` inline operators), `src/operator/` (one file per aggregating operator), `aliases/*.toml`, `README.md` |
+
+Both clones were re-read when this document was last revised (lnav `bb0005f9`, 2026-07-21;
+angle-grinder `9c2fc88`, 2026-02-05). Counts below were re-verified against them rather than carried
+forward; where a number has drifted since the first draft it is noted.
 
 **Companion documents**, both picking up where §5 item 1 (JSON lines) leaves off:
 [log-format-json-testdata.md](log-format-json-testdata.md) — candidate public datasets to develop
@@ -84,10 +91,20 @@ into `folder` + `file_name`.
 
 ### 1.2 The loaders
 
-Twelve concrete loaders. Ten are dataset-driven, one Python class per dataset; two —
-`JsonLoader` and `AccessLogLoader` — are **spec-driven**, one class per *format family*,
-configured by a YAML spec rather than subclassed per dataset. Delivered since this analysis was
-written; see §5 items 1 and 4.
+Fifteen loaders, in three groups rather than the two this section originally described:
+
+- **Dataset-driven** (10) — one Python class per dataset: `HDFSLoader`, `HadoopLoader`, `BGLLoader`,
+  `ThuSpiLibLoader`, `ProLoader`, `NezhaLoader`, `LO2Loader`, `ADFALoader`, `AWSCTDLoader`, plus
+  `RawLoader` as the general-purpose fallback.
+- **Format-family** (4) — one class per *format family* rather than per dataset. Two are
+  **spec-driven**, configured by a YAML spec (`JsonLoader`, `AccessLogLoader`; §5 items 1 and 4);
+  two ship **no spec directory on purpose** (`LogfmtLoader`, `SyslogLoader`; §5 items 2 and 5),
+  because their field names are fixed by convention or by an RFC and so there is nothing per-dataset
+  left to configure. That distinction is the useful one: a spec directory is what a family needs
+  when the *mapping* varies between datasets, and logfmt and syslog are the cases where it does not.
+- **Detecting** (1) — `AutoLoader` (§5 item 6), which picks one of the above and builds it.
+
+All four format-family loaders, and `AutoLoader`, were delivered after this analysis was written.
 
 | Loader | Reads | Physical format | Notes |
 |---|---|---|---|
@@ -103,14 +120,31 @@ written; see §5 items 1 and 4.
 | `AWSCTDLoader` | directories of `.csv` | newline-separated syscall names, one sequence per file | not log text |
 | `JsonLoader` | one file, or a directory tree via `filename_pattern` | JSON lines, or a top-level array / wrapped-object container | spec-driven — `loglead/loaders/json_formats/*.yml` supplies the field mapping; see §5 item 1 |
 | `AccessLogLoader` | one file, or a directory tree via `filename_pattern` | positional text (Apache/nginx Common/Combined Log Format) | spec-driven — `loglead/loaders/access_log_formats/*.yml` is an nginx `log_format` string compiled to a regex; see §5 item 4 |
+| `LogfmtLoader` | one file, or a directory tree via `filename_pattern` | `key=value` logfmt text | no spec directory — the key names are conventional, so the mapping is built in; see §5 item 2 |
+| `SyslogLoader` | one file, or a directory tree via `filename_pattern` | syslog, RFC 3164 / RFC 5424, chosen **per file** | no spec directory — two layouts, both defined by an RFC; `multiline` handles continuation lines; see §5 item 5 |
 | `AutoLoader` | anything the loaders above read | decided per file from a sample | detects the format and **builds one of the other loaders**; parses nothing itself. See §5 item 6 |
 
 ### 1.3 The gap, stated precisely
 
-LogLead can read exactly two things: **text that can be split positionally on spaces**, and
-**whatever a person has written a bespoke Python class for**. Every format that dominates modern
-production logging — JSON lines, logfmt, CSV/TSV with a header, syslog, web access logs, journald,
-Windows events — requires a new hand-written loader.
+*As first written, this section said:* LogLead can read exactly two things — **text that can be
+split positionally on spaces**, and **whatever a person has written a bespoke Python class for**.
+Every format that dominates modern production logging — JSON lines, logfmt, CSV/TSV with a header,
+syslog, web access logs, journald, Windows events — requires a new hand-written loader.
+
+**That is no longer the gap.** JSON lines, logfmt, syslog and web access logs each have a
+format-family loader, and `AutoLoader` picks between them without being told. journald's JSON output
+falls out of `JsonLoader`, as item 5 predicted it would. What remains, stated precisely:
+
+- **Delimited text with a header (CSV/TSV) has no loader** — the one row of §4's agreement table
+  still empty for LogLead, and the last unbuilt item of the shortlist (§5 item 3). It is also the
+  only gap that costs LogLead something *internally*: loghub-style datasets ship their already-parsed
+  form as `*_structured.csv`, and today only `NezhaLoader` reads a CSV, dataset-specifically.
+- **Parsers cannot be re-run against a column** (§5 item 8). A Kubernetes JSON envelope wrapping an
+  app line needs two passes, and every parser LogLead has takes a file, not a `Series`.
+- **The catalogue is small.** The *mechanisms* now match the two reference tools; the inventory of
+  known formats does not. Eight shipped specs against lnav's 73 definitions (§8).
+- **None of it reaches `delta`/MCP** (§6, last bullet). `log_root.py` still calls `RawLoader`
+  directly, so the 19 MCP tools remain plain-text-only regardless of what the loader layer can do.
 
 One specific worth recording because it changes the priorities below:
 
@@ -175,7 +209,8 @@ This is the part worth copying, and it is deliberately cheap:
    line. `max-unrecognized-lines` bounds how much leading noise is tolerated. No match → plain text.
 3. **Timestamp parse.** All formats need a timestamp, so this must be fast. `strptime(3)` was too
    slow, so lnav *generates* a parser at compile time (the `ptimec` component) over a fixed list of
-   **107 distinct strptime-style patterns** in `src/time_formats.am`.
+   **109 distinct strptime-style patterns** in `src/time_formats.am` (107 when this was first
+   written — the list grows, which is itself the point: it is data, not code).
 4. **Samples double as tests.** Every format definition carries a `sample` array of real log lines
    that must parse. Contributing a format is submitting data, not code.
 
@@ -217,10 +252,15 @@ Its parsers, from `src/operator/`:
 | `parse "* pat * pat *" as a,b,c [nodrop] [noconvert]` | Glob-style positional extraction. `*` ≈ `.*`. Whitespace in the pattern matches any whitespace. |
 | `parse regex "(?P<name>…)" [from <field>] [nodrop]` | Rust-syntax regex, **named captures only**. |
 
+Note that `json` and `logfmt` are not files in `src/operator/` — that directory holds the
+aggregating operators. Both are `InlineOperator` variants defined in `src/lang.rs`, which is where
+to look to check their behaviour.
+
 Plus **aliases** (`aliases/*.toml`): named, reusable pipelines discoverable by keyword. Tellingly,
-all three shipped aliases are *format definitions expressed as a `parse` pattern* — `apache`,
-`nginx`, `k8s-ingress-nginx` — each one a positional extraction of a Common/Combined Log Format
-line into named fields.
+every shipped alias that is not a test fixture is a *format definition expressed as a `parse`
+pattern* — `apache`, `nginx`, `k8s-ingress-nginx` — each one a positional extraction of a
+Common/Combined Log Format line into named fields. (There are four files; the fourth,
+`multi-operator.toml`, is a `json | count` test fixture keyed `testmultioperator`, not a format.)
 
 Three transferable lessons:
 
@@ -241,13 +281,15 @@ The intersection is a short list, and it is the shortlist LogLead should work fr
 
 | Format | lnav | angle-grinder | LogLead today |
 |---|---|---|---|
-| **JSON lines / NDJSON** | 14 built-in formats + declarative support | `json` operator (its headline feature) | `JsonLoader` (§5 item 1) |
-| **logfmt** | built-in C++ format | `logfmt` operator | — |
-| **Delimited + header (CSV/TSV)** | Zeek TSV + W3C ELF, both self-describing | `split` | only inside `NezhaLoader`, dataset-specific |
-| **Web access logs (CLF/Combined)** | ~12 formats | all 3 shipped aliases | `AccessLogLoader` (§5 item 4) |
-| **Syslog** | built-in format | — | — |
-| **Generic timestamped text** | `generic_log` fallback + 107 timestamp patterns | `parse` / `parse regex` | `RawLoader`, but the user must supply the regex *and* the format |
-| **Binary containers** (pcap, SQLite, archives) | container layer + converter subprocesses | — | — |
+| **JSON lines / NDJSON** | 14 built-in formats + declarative support | `json` operator (its headline feature) | ✅ `JsonLoader` (§5 item 1) |
+| **logfmt** | built-in C++ format | `logfmt` operator | ✅ `LogfmtLoader` (§5 item 2) |
+| **Delimited + header (CSV/TSV)** | Zeek TSV + W3C ELF, both self-describing | `split` | ❌ **only inside `NezhaLoader`, dataset-specific** |
+| **Web access logs (CLF/Combined)** | ~12 formats | all 3 shipped format aliases | ✅ `AccessLogLoader` (§5 item 4) |
+| **Syslog** | built-in format | — | ✅ `SyslogLoader` (§5 item 5) |
+| **Generic timestamped text** | `generic_log` fallback + 109 timestamp patterns | `parse` / `parse regex` | ✅ `AutoLoader`'s generic pass — 9 patterns tried automatically; `RawLoader` still takes a user-supplied regex |
+| **Format auto-detection** | the whole design goal | none — the user names the parser | ✅ `AutoLoader` (§5 item 6), incl. a dataset probe neither tool has |
+| **Parse from an existing field** | — | `json \| logfmt from <field>` | ❌ (§5 item 8) |
+| **Binary containers** (pcap, SQLite, archives) | container layer + converter subprocesses | — | ❌ deliberately deprioritized |
 
 ---
 
@@ -302,6 +344,17 @@ key names are conventional, so lnav's mapping (`timestamp|time|ts|t` → time, `
 `message|msg` → body) can be adopted wholesale and the loader needs **zero configuration** in the
 common case.
 
+**Delivered as `LogfmtLoader`** (`loglead/loaders/logfmt.py`), and the "zero configuration" bet held:
+lnav's mapping was adopted wholesale, which makes this the first family loader with **no spec
+directory** — keyword arguments to override the mapping exist and read like the other two, but no
+shipped dataset needs them. Two things the proposal did not anticipate, both from real Grafana
+output: candidate keys are **coalesced rather than first-wins**, because one file routinely mixes
+`t=` and `ts=` lines from two components; and each key becomes its own column, so a tree of files
+lands wide-and-sparse the way heterogeneous JSON does. Tested against Grafana Labs' own production
+logs from four services, committed to `grafana/loki` as its Drain test data
+(`tests/datasets_fmt.yml`, 56,100 events). One result carries beyond logfmt: lnav's *anchored* logfmt
+test turns out to be wrong on real data, and only measurement caught it — see item 6.
+
 ### 3. Delimited text with a header (CSV/TSV), including the self-describing variants
 
 How exported observability data usually arrives: SIEM exports, audit logs, Zeek, W3C/IIS — and,
@@ -315,7 +368,7 @@ in lnav and can be copied nearly verbatim as specs.
 ### 4. Web access logs: Common/Combined Log Format and relatives
 
 The most common non-structured format on the internet, and the one place both tools invest most
-(lnav: ~12 formats; angle-grinder: all three shipped aliases). For LogLead specifically it is
+(lnav: ~12 formats; angle-grinder: all three of its shipped format aliases). For LogLead specifically it is
 attractive for a reason beyond ubiquity: access logs have a **natural sequence id** (client IP,
 session, or request id) and a **natural anomaly signal** (status codes, byte counts, latency), so
 they exercise the loader → enhancer → sequence → detector chain end to end. This is also the most
@@ -347,6 +400,25 @@ Still the substrate of Linux and network-device logging; lnav treats syslog as a
 LogLead columns and give another free correlation id. journald's JSON output falls out of item 1 for
 free *once the field mapping is configurable* — which is an argument for doing item 1 properly
 rather than hard-coding one JSON shape.
+
+**Delivered as `SyslogLoader`** (`loglead/loaders/syslog.py`). Like item 2 it ships **no spec
+directory**, but for the opposite reason: syslog has exactly two layouts and both are defined by an
+RFC, so `rfc3164` and `rfc5424` are built-in regexes with `pattern=` as the escape hatch. Which one
+applies is decided **per file** from its first lines — lnav's own rule — so a directory holding both
+reads in one call; a load that mixes them runs two vectorized parses and coalesces, since no single
+`strptime` covers both. Two consequences worth knowing before editing it. RFC 3164 carries **no
+year**, so `m_timestamp` is built by prepending `year=` (current year by default) — the three test
+files were recorded in 2005, 2016 and 2017, so no single year would be right for all of them and
+only ordering within a file survives. And a non-matching line is normally the second line of a
+multi-line message rather than garbage, so it is `multiline` that handles it
+(`merge-message` default / `merge-add-column` / `keep` / `drop` / `raise`), with `min_match_rate` —
+not the first bad line — as what catches a genuinely wrong format. Merging is not cosmetic: it takes
+Drain from 901 templates to 647 on the macOS file, the difference being stack-trace fragments that
+were being mined as if they were events. Tested against three loghub corpora in one directory
+(`tests/datasets_syslog.yml`: Linux, macOS, OpenSSH — 797,997 lines in, 787,859 events out after
+merging). **Not done:** journald specifically, which needs no syslog work — it is a `JsonLoader`
+spec nobody has written, and there is no test corpus for it. RFC 5424 structured-data elements
+(`[exampleSDID@32473 iut="3"]`) are captured as one raw string rather than exploded into columns.
 
 ### 6. A generic "timestamped line" detector — LogLead's own `generic_log`
 
@@ -382,7 +454,13 @@ section did not anticipate — a *dataset probe* recognizing the public datasets
 loader, from the label file and directory layout beside the log rather than from the log alone,
 because `HDFSLoader` needs its `anomaly_label.csv` and `HadoopLoader` its `abnormal_label.txt`. That
 is what makes auto-loading a labelled dataset yield a real `df_seq` instead of bare lines; a dataset
-whose labels are absent is deliberately not claimed, and falls through to the format probe.
+whose labels are absent is deliberately not claimed, and falls through to the format probe. It
+covers HDFS, Hadoop, ADFA, AWSCTD, Nezha, LO2, Profilence, BGL and Thunderbird/Spirit/Liberty.
+**Neither reference tool has this stage**, because neither has a reason to: lnav identifies a
+*format* so it can display a file, while LogLead identifies a *dataset* so it can attach labels.
+LO2 is the case that shows what that means in practice — its label is not in a file at all but in
+the name of a test-case directory (`correct` versus the error injected), so the probe looks for the
+directory layout and nothing in the log lines would ever reveal it.
 
 Three things were measured rather than reasoned, and each contradicts the obvious implementation:
 
@@ -445,29 +523,41 @@ of `EventLogEnhancer`.
 ## 6. Cross-cutting issues to settle while doing the above
 
 These are not formats, but they will each be hit repeatedly during items 1–6 and are cheaper to
-decide once:
+decide once. Four of the six are now settled; the two that are not are called out as **open**.
 
-- **Typed columns.** Both tools convert on extraction — angle-grinder documents `noconvert` as the
-  *opt-out*, which shows it is deliberate. LogLead's loaders keep everything as `Utf8`
-  (`infer_schema_length=0`). New structured loaders should land numeric fields as numbers so that
-  `AnomalyDetector`'s `numeric_cols` works without a manual cast.
-- **Centralize timestamp parsing.** It is currently a hard-coded `strptime` string per loader. The
-  format work needs one shared list of candidate patterns and one "try these, vectorized" helper —
-  effectively LogLead's version of `time_formats.am`.
-- **Unify multi-line handling.** Implemented twice already (`RawLoader`'s merge action and
-  `HadoopLoader._merge_multiline_entries`). lnav expresses this as a single `multiline` flag on the
-  format. Hoist it to one shared continuation rule: *a line that does not start a new record belongs
-  to the previous one.*
-- **Decide whether `m_timestamp` stays mandatory.** It currently is, for all but three loaders. Plain
-  application logs without dates, and syscall traces, legitimately have no clock. Either detection is
-  allowed to produce a timeless frame, or the mandatory set becomes per-format.
-- **Encoding.** Loaders read `utf8-lossy` and then warn about `U+FFFD`. That is a reasonable default,
-  but a detection path should record *which files* degraded, since a mis-detected format and a
-  mis-decoded file look the same downstream.
-- **Reach the MCP path.** `loglead/delta/log_root.py` calls `RawLoader` with a glob and nothing else.
-  Unless new format support is exposed there — most naturally as a format argument on
-  `open_log_root`, with `"auto"` as the default once item 6 exists — the 19 MCP tools stay
-  plain-text-only and none of this work is visible through them.
+- **Typed columns.** ✅ *Settled.* Both tools convert on extraction — angle-grinder documents
+  `noconvert` as the *opt-out*, which shows it is deliberate. LogLead's older loaders keep everything
+  as `Utf8` (`infer_schema_length=0`); the new family loaders do not. `AccessLogLoader` lands
+  `status` and the byte counts as numbers, so the natural anomaly signal reaches
+  `AnomalyDetector(numeric_cols=...)` with no manual cast. The old loaders were not retrofitted, so
+  the convention holds going forward rather than across the board.
+- **Centralize timestamp parsing.** ⚠️ **Open, and now half-done in a way worth finishing.** There
+  are two lists: `_GENERIC_TIMESTAMPS` in `auto.py` (9 pattern/format pairs, used only by the
+  detector's generic pass) and a hard-coded `strptime` string inside each dataset loader. So the
+  shared list exists but only detection consumes it. lnav's `time_formats.am` has 109 entries
+  against those 9 — the gap is the *inventory*, not the mechanism, and it is the cheapest way to
+  make the generic pass cover more unknown files.
+- **Unify multi-line handling.** ⚠️ **Open, and it got worse.** Implemented *three* times now:
+  `RawLoader.missing_timestamp_action`, `HadoopLoader._merge_multiline_entries`, and
+  `SyslogLoader.multiline`. The third deliberately named its `keep`/`drop` options after the first,
+  which documents the duplication without removing it. lnav expresses this as a single `multiline`
+  flag on the format. The shared continuation rule is still worth hoisting: *a line that does not
+  start a new record belongs to the previous one.* `SyslogLoader`'s version is the most developed
+  and is the natural thing to generalize — note it also learned that where the merged text lands
+  matters (`merge-message` feeds it to `e_words`/`e_chars_len`; `merge-add-column` parks it in
+  `trace`), which the other two do not distinguish.
+- **Decide whether `m_timestamp` stays mandatory.** ✅ *Settled: per instance.* `JsonLoader`,
+  `LogfmtLoader` and `AutoLoader` each set `self._mandatory_columns = ["m_message"]`, because a
+  plain-text fallback legitimately has no clock. The mandatory set is therefore per-loader, not
+  global, and detection is allowed to produce a timeless frame.
+- **Encoding.** ✅ *Settled.* Loaders still read `utf8-lossy`, and `AutoLoader.detections()` reports
+  the `U+FFFD` count per file, so a mis-decoded file and a mis-detected format no longer look alike.
+- **Reach the MCP path.** ⚠️ **Open — and this is the one that makes all the other work invisible.**
+  `loglead/delta/log_root.py` still calls `RawLoader` with a glob and nothing else, so the 19 MCP
+  tools remain plain-text-only no matter what the loader layer can now read. The natural shape is a
+  format argument on `open_log_root` defaulting to `"auto"`. The blocker is small and specific:
+  `read_folders()` consumes an `orig_file_name` column that only `RawLoader` produces, and
+  `mcp/session.py`'s `BASE_COLUMNS` requires it downstream.
 
 ---
 
@@ -478,15 +568,104 @@ decide once:
 | lnav format counts (73 external: 59 regex + 14 JSON-lines) | `~/lnav/src/formats/*.json`, key `file-type` (older files use legacy `"json": true`) |
 | lnav's 5 hard-coded formats | `~/lnav/src/log_format_impls.cc` — `generic_log_format`, `logfmt_format`, `bro_log_format`, `w3c_log_format`, `piper_log_format` |
 | Detection algorithm | `~/lnav/docs/source/formats.rst` §"Built-in Formats"; `~/lnav/ARCHITECTURE.md` §"File Monitoring" and §"Log Formats" |
-| 107 timestamp patterns | `~/lnav/src/time_formats.am` |
+| 109 timestamp patterns | `~/lnav/src/time_formats.am` — `grep -oE '"[^"]+"' src/time_formats.am \| wc -l` |
 | Format spec fields | `~/lnav/docs/schemas/format-v1.schema.json` |
 | Container formats and converters | `~/lnav/src/file_format.hh`; `~/lnav/src/formats/pcap_log.json` (`converter` block) |
-| angle-grinder parsers | `~/angle-grinder/src/operator/{parse,split}.rs`, `~/angle-grinder/README.md` §"Non Aggregate Operators" |
+| angle-grinder parsers | `~/angle-grinder/src/operator/{parse,split}.rs`; `json`/`logfmt` are `InlineOperator` variants in `~/angle-grinder/src/lang.rs`, not files under `src/operator/`. `README.md` §"Non Aggregate Operators" |
 | angle-grinder input is stdin or one file | `~/angle-grinder/src/bin/agrind.rs` |
-| angle-grinder's shipped format aliases | `~/angle-grinder/aliases/{apache,nginx,k8s-ingress-nginx}.toml` |
+| angle-grinder's shipped format aliases | `~/angle-grinder/aliases/{apache,nginx,k8s-ingress-nginx}.toml`; `multi-operator.toml` is a test fixture, not a format |
 | LogLead loader contract | `loglead/loaders/base.py` — `execute()`, `_split_and_unnest()`, `_csv_separator` |
+| LogLead's loader inventory | `loglead/loaders/__init__.py`; per-loader detail in `loglead/loaders/README.md` |
+| Which formats LogLead detects, and in what order | `loglead/loaders/auto.py` — `detect_dataset()` then `detect_format()`; `tests/log_file_detection.py` checks the choice against every dataset config |
+| Shipped format specs (8) | `loglead/loaders/json_formats/*.yml` (4), `loglead/loaders/access_log_formats/*.yml` (4) |
+| MCP path is still `RawLoader`-only | `loglead/delta/log_root.py` — the single `RawLoader(...)` call; `orig_file_name` in `loglead/mcp/session.py` `BASE_COLUMNS` |
 | `.gz` already works | Polars 1.38.1 decompresses transparently in both `read_csv` and `scan_csv` |
 
 JSON test-dataset candidates, their measured sizes, and the downloader/test-suite integration notes
 have their own verification table in
 [log-format-json-testdata.md](log-format-json-testdata.md)&nbsp;§5.
+
+---
+
+## 8. Where LogLead stands, and what to do next
+
+### 8.1 Against angle-grinder: ahead, except on one axis
+
+angle-grinder's whole format surface is five parsers — `json`, `logfmt`, `split`, `parse`,
+`parse regex` — and no detection at all: the user names the parser. LogLead now has an equal or
+better answer to four of the five, plus detection, which angle-grinder deliberately does not attempt.
+
+Two things it still does that LogLead does not, and only one of them matters:
+
+- **`from <field>`** (§5 item 8) — re-running a parser against a column instead of a file. This is
+  the real gap, and angle-grinder's own documentation leads with it (`json | logfmt from
+  nested_key`) because layered logs are ubiquitous: a Kubernetes JSON envelope around an app line, a
+  syslog frame around a JSON payload.
+- **`split` without a header** — a thin slice of §5 item 3, and the less useful half of it.
+
+### 8.2 Against lnav: the mechanisms match, the catalogue does not
+
+This is the honest summary, and the distinction is worth being precise about, because the two halves
+have very different costs.
+
+**Mechanisms — LogLead is close to parity, and ahead in one place.** Of lnav's five hard-coded
+formats, `piper_log` is lnav's own capture format and irrelevant here; of the remaining four,
+LogLead has equivalents for `generic_log` (`AutoLoader`'s generic pass) and `logfmt`
+(`LogfmtLoader`), and lacks `bro_log` and `w3c_log` — which are both §5 item 3. lnav's detection
+design — sniff, match on the first lines, **lock the format for the file**, fall back to plain text —
+was adopted wholesale and is what `AutoLoader` does. LogLead is *ahead* on the dataset probe (§5
+item 6), which lnav has no reason to want: lnav identifies a format so it can display a file;
+LogLead identifies a dataset so it can attach labels and produce a `df_seq`.
+
+**Catalogue — not close, and that is a deliberate choice rather than a backlog.**
+
+| | lnav | LogLead |
+|---|---|---|
+| Format definitions shipped as data | 73 | 8 (4 JSON + 4 access log) |
+| Format families needing code | 5 C++ classes | 4 family loaders + 1 detector |
+| Timestamp patterns tried automatically | 109 | 9 |
+
+§5 item 7 already argues that closing the *definition* count is not the goal — "LogLead's users
+bring their own logs; the answer is the registry, not sixty hand-written loaders" — and that holds.
+The **109-vs-9 timestamp row does not fall under that argument**, though, and is the one number in
+this table worth moving: it is a list of patterns, it costs nothing but transcription, and every
+entry added widens what `AutoLoader`'s generic pass recognizes on files nobody wrote a spec for.
+
+### 8.3 What to add next
+
+In order. The first two are small and unlock disproportionate value; the third is the last item of
+the original shortlist.
+
+1. **Expose the format layer to `delta`/MCP** (§6, last bullet). *Not a format at all*, which is why
+   it is first: every loader built since this document was written is invisible through the 19 MCP
+   tools, because `log_root.py` hard-codes `RawLoader`. A format argument on `open_log_root`
+   defaulting to `"auto"` turns four delivered loaders and a detector into user-visible capability
+   for what is, mechanically, a small change — the blocker is one column (`orig_file_name`) that
+   only `RawLoader` currently produces. Nothing else on this list has that ratio.
+2. **Grow the generic timestamp list** (§6, second bullet). Nine patterns against lnav's 109, in one
+   already-central place (`_GENERIC_TIMESTAMPS` in `auto.py`), consumed by the one code path that
+   handles files no spec covers. Pure transcription from `time_formats.am`, bounded, and directly
+   measurable: the detection test already reports the match rate per file.
+3. **Delimited text with a header — §5 item 3, self-describing variants first.** The last unbuilt
+   item of the agreed shortlist and the only empty row left in §4's agreement table. Do Zeek's
+   `#fields` and W3C's `#Fields:` before generic CSV, because they are the cheapest auto-detection
+   win available anywhere in this document: the column names come out of the file, so there is
+   nothing to configure and nothing to guess. Generic CSV/TSV then needs a decision the
+   self-describing pair does not — which column is the message, which is the time — i.e. a spec, and
+   `JsonLoader`'s vocabulary already supplies the words for it. The internal payoff is real:
+   loghub-style datasets ship `*_structured.csv`, and LogLead currently reads a CSV only inside
+   `NezhaLoader`.
+
+Then, if the layered-log case shows up in practice, **§5 item 8 (`from <field>`)** — noting the
+design point that section already makes: it belongs in `EventLogEnhancer` producing `e_*` columns,
+not in a loader.
+
+**Still explicitly not worth doing:** the per-vendor long tail (§5's "explicitly deprioritized"), and
+binary containers. Both arguments hold unchanged.
+
+### 8.4 What this document should stop claiming
+
+Superseded statements, kept visible so the diff is legible rather than silently rewritten: §1.3's
+"every format that dominates modern production logging requires a new hand-written loader" (four
+families now exist), §4's empty cells for logfmt and syslog, and §6's "implemented twice already"
+for multi-line handling — it is three now, and consolidating them is still open.
