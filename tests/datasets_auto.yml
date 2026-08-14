@@ -1,4 +1,5 @@
 root_folder: '~/Datasets_auto'
+local_copy_folder: '~/Datasets'
 
 # AutoLoader - detect the format, then build the loader that reads it
 # (docs/log-format-support.md section 5 item 6), read by AutoLoader.

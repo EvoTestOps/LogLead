@@ -125,7 +125,7 @@ Shipped specs live in [`json_formats/`](json_formats/):
 | [`gelf.yml`](json_formats/gelf.yml) | GELF (Logstash/Elasticsearch-style envelope) — a message format, not a dataset | [go2docs.graylog.org - GELF format](https://go2docs.graylog.org/current/getting_in_log_data/gelf_format.html) |
 
 The AIT Alert Data Set (AIT-ADS) is a fourth JSON dataset LogLead downloads
-(`downloader/datasets_json.yml`) but does not yet ship a spec for — three IDS schemas
+(`tests/datasets_json.yml`) but does not yet ship a spec for — three IDS schemas
 (AMiner/Wazuh/Suricata) in one directory, selected by `file_pattern`. Landing page:
 [zenodo.org/records/8263181](https://zenodo.org/records/8263181).
 
@@ -156,7 +156,7 @@ carries its own field names and they're conventional (`ts`/`time`/`timestamp`/`t
 `msg`/`message`, `level`/`lvl`/`severity`), so unlike JSON there is usually no mapping to configure
 and no per-dataset spec directory.
 
-Dataset exercised in the test suite (`downloader/datasets_fmt.yml`): Grafana Labs' own production
+Dataset exercised in the test suite (`tests/datasets_fmt.yml`): Grafana Labs' own production
 logs from four services (grafana-ruler, agent, distributor, ingester), committed to `grafana/loki`
 as Drain test data —
 [github.com/grafana/loki/tree/main/pkg/pattern/drain/testdata](https://github.com/grafana/loki/tree/main/pkg/pattern/drain/testdata).
@@ -167,7 +167,7 @@ One loader for syslog. Unlike access logs, syslog isn't one layout per site — 
 format) and RFC 5424 (structured successor) cover it, so both are built-in regexes rather than
 spec files; which one applies is detected per file.
 
-Dataset exercised in the test suite (`downloader/datasets_syslog.yml`): three loghub files in one
+Dataset exercised in the test suite (`tests/datasets_syslog.yml`): three loghub files in one
 directory — Linux `/var/log/messages`, macOS, and an OpenSSH auth log (full of visible brute-force
 attempts) — [github.com/logpai/loghub](https://github.com/logpai/loghub) (see the `Linux`, `Mac`
 and `OpenSSH` subdirectories). No labels.

@@ -25,13 +25,16 @@ Data is represented as [Polars](https://www.pola.rs/) DataFrames throughout (not
   - `LOG_DATA_PATH` is read (via `python-dotenv`) by the "bring your own full dataset" scripts —
     `demo/RawLoader_*`, `demo/parser_benchmark/*`, `demo/saner_2024_paper/*`, `demo/unsupervised_models.py`.
     The quick demos (`demo/HDFS_samples.py`, `demo/TB_samples.py`) use bundled sample parquet files instead
-    and never touch it. The downloader also doesn't use it — `downloader/download_data.py` reads `root_folder` from the YAML config (`datasets.yml`/`tests/datasets.yml`) instead.
+    and never touch it. The downloader also doesn't use it — `downloader/download_data.py` reads `root_folder`
+    from the YAML config (`downloader/datasets.yml` or one of `tests/datasets_*.yml`) instead.
   - See `.env.sample` for the format if you do need `LOG_DATA_PATH`.
 - There are two independent, **unlinked** ways to point tooling at a data directory on disk — nothing in
   the code cross-references them, so keeping them in sync (e.g. both pointing at `~/Datasets`) is on you:
   - `LOG_DATA_PATH` in `.env` — used only by the demo scripts listed above.
-  - `root_folder` in `datasets.yml`/`tests/datasets.yml` — used only by `downloader/download_data.py`
-    (`download_data.py:247`), optionally overridden by its `--location` CLI flag.
+  - `root_folder` in a dataset YAML config — used only by `downloader/download_data.py`, optionally
+    overridden by its `--location` CLI flag. A test config's `local_copy_folder` (see Common commands
+    below) links it back to `downloader/datasets.yml`'s `root_folder`, but that's opt-in per config —
+    it does not make `root_folder` itself a shared setting.
 - `scikit-learn` needs `gcc`/`g++` to build. The `pip`-installed package does not pull in `tensorflow`, so
   `BertEmbeddings` (`loglead/parsers/bert/`) must have TF installed manually to work.
 
@@ -58,19 +61,20 @@ anomaly-detection checks end to end; takes up to ~30 minutes:
 ```
 uv run tests/main.py
 ```
-`tests/main.py` chains together, in order: `downloader/download_data.py --config tests/datasets.yml`
-(downloads/prepares data), then `tests/loaders.py`, `tests/enhancers.py`, `tests/anomaly_detectors.py` via
-`runpy`. These are plain scripts, not a pytest suite — there's no test framework, fixtures, or `-k`
-filtering; run one of the four stages directly (e.g. `uv run tests/enhancers.py`) to iterate on just that
-stage once its input parquet files already exist in `<root_folder>/test_data/`. Each stage prints
-`MISMATCH!` warnings if a loaded dataset's row count drifts from the `expected_length` recorded in
-`tests/datasets.yml`, and raises/prints on structural problems (missing mandatory columns, null or
-non-UTF-8 values) rather than asserting — read the console output to see pass/fail.
+`tests/main.py` chains together, in order: `downloader/download_data.py --config
+tests/datasets_mid_labels.yml` (downloads/prepares data, the default when `--config` is omitted), then
+`tests/loaders.py`, `tests/enhancers.py`, `tests/anomaly_detectors.py` via `runpy`. These are plain
+scripts, not a pytest suite — there's no test framework, fixtures, or `-k` filtering; run one of the
+four stages directly (e.g. `uv run tests/enhancers.py`) to iterate on just that stage once its input
+parquet files already exist in `<root_folder>/test_data/`. Each stage prints `MISMATCH!` warnings if a
+loaded dataset's row count drifts from the `expected_length` recorded in the config, and raises/prints
+on structural problems (missing mandatory columns, null or non-UTF-8 values) rather than asserting —
+read the console output to see pass/fail.
 
 There is a fifth stage that `tests/main.py` does **not** chain, because it is cheap enough to run on
 its own and useful against configs whose data is too big to load:
 ```
-uv run tests/detection.py --config tests/datasets.yml
+uv run tests/log_file_detection.py --config tests/datasets_super_comp_labels.yml
 ```
 It checks that `AutoLoader` picks the same loader `create_correct_loader()` picks by name, for every
 dataset in a config. Nothing is loaded — only ~1000 lines per file are sampled — so it covers the
@@ -81,13 +85,19 @@ left packed. Its `BY_NAME` table mirrors `create_correct_loader()`'s if/elif cha
 in step with it — that chain is the reference answer being checked against.
 
 `--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
-so the sets do not share a `test_data/` folder). Besides the default `tests/datasets.yml` there are
-five smaller, faster ones covering the newer loaders:
+so the sets do not share a `test_data/` folder). The default, `tests/datasets_mid_labels.yml`, covers
+bgl/hadoop/hdfs/nezha/adfa/awsctd — the datasets small enough to load and enhance quickly. The three
+supercomputer logs (liberty/spirit/thunderbird) are split out into their own config precisely because
+they are not quick — up to 38 GB unpacked each — so running them is opt-in:
+```
+uv run tests/main.py --config tests/datasets_super_comp_labels.yml  # liberty, spirit, thunderbird
+```
+Plus five more, smaller and faster, covering the newer loaders:
 ```
 uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
 uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
-uv run tests/main.py --config downloader/datasets_fmt.yml     # LogfmtLoader: grafana/loki Drain testdata
-uv run tests/main.py --config downloader/datasets_syslog.yml  # SyslogLoader: loghub Linux, Mac, OpenSSH
+uv run tests/main.py --config tests/datasets_fmt.yml          # LogfmtLoader: grafana/loki Drain testdata
+uv run tests/main.py --config tests/datasets_syslog.yml       # SyslogLoader: loghub Linux, Mac, OpenSSH
 uv run tests/main.py --config tests/datasets_auto.yml         # AutoLoader: the above, detected + one mixed folder
 ```
 `datasets_auto.yml` is the odd one: detection is not a format, so there is nothing of its own to
@@ -105,10 +115,23 @@ the *full* file length and a capped read is checked against its cap instead, and
 (rather than `reduction_fraction`) pins what reaches the enhancer/detector stages so their cost
 does not vary by machine.
 
+**Config split**: `downloader/datasets.yml` is the single, download-only source of truth for every
+public dataset LogLead knows about — one `root_folder` (`~/Datasets`), and each entry carries only
+what `download_data.py` reads (`name`, `url`/`urls` or `local_archive`/`source_url`, `download`).
+Everything a test needs to know beyond that (`log_file`, `labels_file`, `format`, `loader`,
+`predictor_cols`, `expected_length`, `reduction_fraction`, ...) lives only in the `tests/datasets_*.yml`
+configs, so changing a test expectation never touches the download-only file. Since most
+`tests/datasets_*.yml` configs use their own `root_folder` (so their `test_data/` outputs don't
+collide with each other), they set `local_copy_folder: '~/Datasets'` to avoid re-downloading data that
+`downloader/datasets.yml` already fetched: `download_data.py` copies `<local_copy_folder>/<name>` to
+`<root_folder>/<name>` instead of hitting the network, falling back to a normal download if the local
+copy isn't there. `tests/datasets_mid_labels.yml` and `tests/datasets_super_comp_labels.yml` don't need
+it — they already point `root_folder` straight at `~/Datasets`.
+
 Downloading datasets directly (independent of running tests):
 ```
-uv run downloader/download_data.py                          # everything in downloader/datasets.yml
-uv run downloader/download_data.py --config tests/datasets.yml  # smaller set used by the test suite
+uv run downloader/download_data.py                                    # everything in downloader/datasets.yml
+uv run downloader/download_data.py --config tests/datasets_json.yml   # one test-specific set instead
 ```
 Edit the `datasets:` list in the relevant YAML and set `download: false` per-entry to skip datasets you
 don't need. Disk space: the full set in `downloader/datasets.yml` is ~7 GB to download and ~104 GB

@@ -1,4 +1,5 @@
 root_folder: '~/Datasets_syslog'
+local_copy_folder: '~/Datasets'
 
 # Syslog - RFC 3164, the BSD format every Linux box and appliance still writes
 # (docs/log-format-support.md section 5 item 5), read by SyslogLoader.

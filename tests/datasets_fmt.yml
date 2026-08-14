@@ -1,4 +1,5 @@
 root_folder: '~/Datasets_logfmt'
+local_copy_folder: '~/Datasets'
 
 # logfmt - the key=value convention from Heroku that the Go ecosystem writes by default
 # (docs/log-format-support.md section 5 item 2), read by LogfmtLoader.

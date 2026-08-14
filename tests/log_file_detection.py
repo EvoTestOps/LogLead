@@ -1,7 +1,7 @@
 """Check that AutoLoader picks the same loader tests/loaders.py picks by name.
 
-    uv run tests/detection.py                                   # tests/datasets.yml
-    uv run tests/detection.py --config tests/datasets_json.yml
+    uv run tests/log_file_detection.py                          # tests/datasets_mid_labels.yml
+    uv run tests/log_file_detection.py --config tests/datasets_json.yml
 
 Nothing is loaded - only the first ~1000 lines of each file are sampled - so this runs in seconds
 and needs no memory, which is the point: it covers the datasets that cannot be loaded on an
@@ -20,9 +20,9 @@ import yaml
 from loglead.loaders.auto import detect_dataset, detect_format
 
 parser = argparse.ArgumentParser(description='AutoLoader detection check')
-parser.add_argument('--config', type=str, default='datasets.yml',
+parser.add_argument('--config', type=str, default='datasets_mid_labels.yml',
                     help='Path to the YAML file containing dataset information. '
-                         'Default is datasets.yml.')
+                         'Default is datasets_mid_labels.yml.')
 args = parser.parse_args()
 
 with open(args.config, 'r') as file:

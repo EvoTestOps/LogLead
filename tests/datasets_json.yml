@@ -1,8 +1,10 @@
 root_folder: '~/Datasets_json'
+local_copy_folder: '~/Datasets'
 
 # predictor_cols pins the columns the structured-column anomaly test predicts from; omit it and
-# tests/anomaly_detectors.py falls back to loglead.select_predictors(). See tests/datasets.yml for
-# why pinning is worth it. Pinning matters more here than for the fixed-schema datasets: JSON keys
+# tests/anomaly_detectors.py falls back to loglead.select_predictors(). See
+# tests/datasets_mid_labels.yml for why pinning is worth it. Pinning matters more here than for the
+# fixed-schema datasets: JSON keys
 # vary per record, so what auto-selection finds shifts with whichever records happen to be present.
 # All three are unlabeled, so these columns are scored unsupervised, never evaluated.
 #

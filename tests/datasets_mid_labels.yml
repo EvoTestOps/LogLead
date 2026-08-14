@@ -6,7 +6,7 @@ datasets:
     log_file: BGL.log
     download: true
     load: true
-    enhance: true 
+    enhance: true
     anomaly_detection: true
     predictor_cols:
       numeric: [e_words_len, e_alphanumerics_len]
@@ -19,7 +19,7 @@ datasets:
     labels_file: abnormal_label.txt
     download: true
     load: true
-    enhance: true 
+    enhance: true
     anomaly_detection: true
     predictor_cols:
       numeric: [nep_abs_max, nep_prob_nmax_min, eve_len_med, eve_len_max]
@@ -32,53 +32,23 @@ datasets:
     labels_file: preprocessed/anomaly_label.csv
     download: true
     load: true
-    enhance: true 
+    enhance: true
     anomaly_detection: true
     predictor_cols:
       numeric: [nep_abs_max, eve_len_max, eve_len_min, e_event_id_len, eve_len_over1]
       categorical: []           # the sequence frame carries no categorical field of its own
     expected_length: 11175629
     reduction_fraction: 0.01
-  - name: liberty
-    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
-    log_file: liberty2.log
-    download: true
-    load: true
-    enhance: true 
-    anomaly_detection: true
-    expected_length: 0
-    reduction_fraction: 0.0005
-  - name: spirit
-    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
-    log_file: spirit2.log
-    download: true
-    load: true
-    enhance: true 
-    anomaly_detection: true
-    expected_length: 0
-    reduction_fraction: 0.0005
-  - name: thunderbird
-    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
-    log_file: tbird2.log 
-    download: true
-    load: true
-    enhance: true 
-    anomaly_detection: true
-    predictor_cols:
-      numeric: []               # every column ThuSpiLibLoader produces is a string
-      categorical: [month, day, component, date, userid]
-    expected_length: 211212192
-    reduction_fraction: 0.0005
   - name: nezha
-    urls: 
+    urls:
       - https://github.com/IntelligentDDS/Nezha/tree/main/construct_data/
       - https://github.com/IntelligentDDS/Nezha/tree/main/rca_data/
-    systems: 
+    systems:
       - TrainTicket
       - WebShop
     download: true
     load: true
-    enhance: true 
+    enhance: true
     anomaly_detection: true
     # One entry serves both TrainTicket and WebShop; all five columns exist in both frames.
     predictor_cols:

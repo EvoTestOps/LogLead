@@ -109,7 +109,7 @@ else:
     hadoop_path = os.path.join(full_data, "hadoop")
     if not os.path.isdir(hadoop_path):
         print(f"  Skipped: {hadoop_path} not found. Download it with")
-        print("  uv run downloader/download_data.py --config tests/datasets.yml")
+        print("  uv run downloader/download_data.py --config tests/datasets_mid_labels.yml")
     else:
         loader = AutoLoader(filename=hadoop_path)
         df = loader.execute()

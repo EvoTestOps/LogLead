@@ -1,4 +1,5 @@
 root_folder: '~/Datasets_access_log'
+local_copy_folder: '~/Datasets'
 
 datasets:
   - name: access_log

@@ -8,7 +8,7 @@ from loglead import AnomalyDetector, select_predictors, print_predictor_report
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
-parser.add_argument('--config', type=str, default='datasets.yml', help='Path to the YAML file containing dataset information. Default is datasets.yml.')
+parser.add_argument('--config', type=str, default='datasets_mid_labels.yml', help='Path to the YAML file containing dataset information. Default is datasets_mid_labels.yml.')
 args = parser.parse_args()
 
 # Read the configuration file

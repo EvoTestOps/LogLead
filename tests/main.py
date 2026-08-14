@@ -8,9 +8,9 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parser = argparse.ArgumentParser(
     description='Run the full LogLead test suite: download data, then load, enhance and '
                 'anomaly-detect it.')
-parser.add_argument('--config', type=str, default=os.path.join(script_dir, 'datasets.yml'),
+parser.add_argument('--config', type=str, default=os.path.join(script_dir, 'datasets_mid_labels.yml'),
                      help='Path to the YAML file containing dataset information. '
-                          'Default is tests/datasets.yml.')
+                          'Default is tests/datasets_mid_labels.yml.')
 args = parser.parse_args()
 
 config_path = os.path.abspath(args.config)

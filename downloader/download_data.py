@@ -307,33 +307,64 @@ def extract_local_archive(name, archive, dest_folder, source_url=None):
         shutil.copy2(path, dest_folder)  # not an archive: it is already the payload
 
 
+def copy_local_dataset(name, source_folder, dest_folder):
+    """
+    Copies an already-downloaded dataset folder instead of fetching it again.
+
+    Several YAML configs point at the same public datasets but keep separate `root_folder`s (one
+    per format family, so their `test_data/` outputs don't collide). Re-downloading each of those
+    from scratch is wasteful once a master copy already exists on disk (typically the one
+    `downloader/datasets.yml` populates under `local_copy_folder`), so this copies it locally
+    instead of hitting the network again.
+
+    Args:
+        name (str): The name of the dataset.
+        source_folder (str): Path to the already-downloaded dataset folder.
+        dest_folder (str): The directory to copy it to.
+    """
+    print(f'Copying {source_folder} to {dest_folder} (local_copy_folder set).')
+    shutil.copytree(source_folder, dest_folder)
+
+
 def main(dest_base_folder, yaml_file):
     """
     Downloads and unzips all datasets to the specified base folder.
-    
+
     Args:
         dest_base_folder (str): The base folder where datasets should be downloaded.
         yaml_file (str): Path to the YAML file containing dataset information.
     """
     data = load_datasets(yaml_file)
     root_folder = dest_base_folder if dest_base_folder else os.path.expanduser(data['root_folder'])
-    
+    local_copy_folder = data.get('local_copy_folder')
+    if local_copy_folder:
+        local_copy_folder = os.path.expanduser(local_copy_folder)
+
     for dataset in data['datasets']:
         name = dataset['name']
         skip_download = not dataset.get('download', True)
         if skip_download:
             print(f'Skipping download for {name}.')
             continue
-        local_archive = dataset.get('local_archive')
-        urls = dataset.get('urls', [dataset.get('url')])
-        if not local_archive and not any(urls):
-            print(f'No URLs provided for {name}. Skipping download.')
-            continue
         dataset_folder = os.path.join(root_folder, name)
 
         # Check if the dataset folder already exists
         if os.path.exists(dataset_folder):
             print(f'Folder {dataset_folder} already exists. Skipping download for {name}.')
+            continue
+
+        if local_copy_folder:
+            source_folder = os.path.join(local_copy_folder, name)
+            if os.path.exists(source_folder):
+                copy_local_dataset(name, source_folder, dataset_folder)
+                continue
+            print(f'local_copy_folder set but {source_folder} not found; falling back to '
+                  f'downloading {name}.')
+
+        local_archive = dataset.get('local_archive')
+        urls = dataset.get('urls', [dataset.get('url')])
+        if not local_archive and not any(urls):
+            print(f'No URLs provided for {name}. Skipping download.')
             continue
 
         if local_archive:
