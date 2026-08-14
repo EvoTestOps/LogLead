@@ -6,7 +6,7 @@ import argparse
 
 from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader,
                              HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader,
-                             JsonLoader, LogfmtLoader, SyslogLoader)
+                             JsonLoader, LogfmtLoader, SyslogLoader, LO2Loader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -69,6 +69,19 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
+    elif dataset_name == "lo2":
+        # LO2Loader chooses which test cases to read itself, so the entry's keys are just its
+        # constructor arguments. single_error_type is the one that matters for a test: without it
+        # the loader samples a different error case per run on every call and the row count is not
+        # reproducible. It also forces dup_errors=True and errors_per_run=1 inside the loader.
+        # The archive unpacks one level deep, and the loader wants the folder that directly
+        # contains the run directories, not the one containing that.
+        loader = LO2Loader(filename=os.path.join(default_path, data.get('folder', '')),
+                           n_runs=data.get('n_runs', 53),
+                           errors_per_run=data.get('errors_per_run', 1),
+                           dup_errors=data.get('dup_errors', True),
+                           single_error_type=data.get('single_error_type'),
+                           single_service=data.get('single_service', ''))
     #TODO from here on we no longer test dataset_name but something else. 
     #Code created by idiot Claude and cannot even fix it. 
     #Needs to be alligend later with the dataset_name above.
@@ -134,7 +147,7 @@ def check_and_save(dataset, loader, config, system=""):
 
     # Save the data used for anomaly_detectors tests.
     loader.df.write_parquet(f"{test_data_path}/{dataset}_lo.parquet") 
-    if any(sub in dataset for sub in ["hdfs", "profilence", "hadoop", "adfa", "awsctd"]):
+    if any(sub in dataset for sub in ["hdfs", "profilence", "hadoop", "adfa", "awsctd", "lo2"]):
         loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_lo_seq.parquet")  
 
 # Loop through the datasets in the configuration file

@@ -48,7 +48,7 @@ shipped spec, listed with its own landing page in that loader's section below.
 | [`BGLLoader`](bgl.py) | one file | BlueGene/L (BGL) | [github.com/logpai/loghub/tree/master/BGL](https://github.com/logpai/loghub/tree/master/BGL) |
 | [`ThuSpiLibLoader`](supercomputers.py) | one file | Thunderbird / Spirit / Liberty | [usenix.org/cfdr-data#hpc4](https://www.usenix.org/cfdr-data#hpc4) |
 | [`NezhaLoader`](nezha.py) | tree of CSVs + JSONs (logs, traces, metrics, fault labels) | Nezha (TrainTicket, WebShop) | [github.com/IntelligentDDS/Nezha](https://github.com/IntelligentDDS/Nezha) |
-| [`LO2Loader`](lo2.py) | tree of runs/test-cases/services (text logs + JSON metrics) | LO2 (Light-OAuth2 microservice logs & metrics) | [zenodo.org/records/14938118](https://zenodo.org/records/14938118) |
+| [`LO2Loader`](lo2.py) | tree of runs/test-cases/services (text logs + JSON metrics) | LO2v2 (Light-OAuth2 microservice logs & metrics) | [zenodo.org/records/18937117](https://zenodo.org/records/18937117) |
 | [`ADFALoader`](adfa.py) | directories of `.txt` (already-parsed syscall ids) | ADFA-LD | [github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) |
 | [`AWSCTDLoader`](awsctd.py) | directories of `.csv` (syscall names, one sequence per file) | AWSCTD | [github.com/DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD) |
 | [`ProLoader`](pro.py) | directory of files | Profilence | not a public dataset (see below) |
@@ -69,7 +69,9 @@ Detection happens in two stages, most specific first:
    sibling file both confirms the dataset and supplies the argument. A dataset whose labels are
    missing is deliberately **not** claimed — it falls through to stage 2 and loads unlabeled rather
    than crashing or silently marking everything normal. Covers HDFS, Hadoop, ADFA, AWSCTD, Nezha,
-   Profilence, BGL and Thunderbird/Spirit/Liberty.
+   LO2, Profilence, BGL and Thunderbird/Spirit/Liberty. Not every dataset keeps its labels in a
+   file: LO2's label is the *name of the test-case directory* (`correct` vs the error injected), so
+   there the `correct/` directory is what the probe looks for.
 2. **Format probe, per file** — JSON → web access log → syslog → logfmt → generic timestamped text →
    plain text. Each candidate is scored as a match rate over a sample of the file, and the best one
    above `min_match_rate` (default 0.5) wins. Specific before generic, which is what stops a logfmt
@@ -227,12 +229,21 @@ log/trace/metric dataset, covering two systems (pass as the loader's `system` ar
 
 Reads a tree of `run/test_case/service` log files (plus optional Prometheus-style JSON metrics via
 `load_metrics()`) from load-testing a Light-OAuth2 microservice deployment; `seq_id` is built from
-`run__test_case__service`, and `test_case == "correct"` is normal. Dataset: **LO2 — Microservice
-API Anomaly Dataset of Logs and Metrics** — main data on
-[Zenodo (record 14938118)](https://zenodo.org/records/14938118), paper:
-[arXiv:2504.12067](https://arxiv.org/abs/2504.12067). The dataset's own runs test the
+`run__test_case__service`, and `test_case == "correct"` is normal. Dataset: **LO2v2 — An Improved
+Microservice Dataset of Logs and Metrics** —
+[Zenodo (record 18937117)](https://zenodo.org/records/18937117). The dataset's own runs test the
 [Light-OAuth2](https://github.com/networknt/light-oauth2) services the loader's `single_service`
 argument names (`client`, `code`, `key`, `refresh-token`, `service`, `token`, `user`).
+
+Use **v2, not v1** ([record 14938118](https://zenodo.org/records/14938118),
+[arXiv:2504.12067](https://arxiv.org/abs/2504.12067)). In v1 every run ran the "correct" test first
+in a fixed order, so service startup lines occurred only in correct tests and a classifier could
+score F1 0.976 on the Token service by learning `registered for` and `status.yml` — leakage, not
+detection. v2 shuffles test order and randomizes durations; the same analysis drops to 0.623.
+
+The test suite (`tests/datasets_lo2.yml`) reads only `light-oauth2-logs.zip` (2.9 GB), the reduced
+log set the v2 paper's own analysis used — the full `LO2v2.zip` is 65.6 GB and is mostly metrics
+and traces this loader does not read.
 
 ### `ADFALoader` ([`adfa.py`](adfa.py))
 

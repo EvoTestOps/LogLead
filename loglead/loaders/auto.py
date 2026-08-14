@@ -13,6 +13,7 @@ from .bgl import BGLLoader
 from .hadoop import HadoopLoader
 from .hdfs import HDFSLoader
 from .json import JsonLoader
+from .lo2 import LO2Loader
 # The logfmt pair grammar and its conventional key names are the detector's logfmt test and its
 # fallback JSON field mapping. Importing them rather than restating them is the point: a detector
 # that recognizes a format differently from the loader that reads it is worse than no detector.
@@ -238,6 +239,29 @@ def detect_dataset(path, system=None):
         if os.path.basename(root) == "CSV" and os.path.isdir(root) and \
                 glob.glob(os.path.join(root, "*", "*.csv")):
             return Detection(AWSCTDLoader, {"_root": root}, format="awsctd")
+
+    # LO2: one directory per run, each holding one directory per test case, and the test case's
+    # *name* is the label - "correct" is normal, every other name is the error that run injected.
+    # There is no labels file, so the correct/ directory is the evidence, and it sits one level
+    # below a run rather than beside the logs. The service logs are checked too, because LO2Loader
+    # selects files by the doubled 'oauth2-oauth2-' token docker compose leaves in them (project
+    # light-oauth2 + service oauth2-client -> light-oauth2-oauth2-client-1.log). A tree of
+    # correct/ directories without those is not something LO2Loader can read, so it is not claimed.
+    # light-oauth2-logs is the folder the LO2v2 archive unpacks into, checked for the same reason
+    # ADFA-LD and CSV are above: the directory a user points at is usually the one they downloaded.
+    for root in (path, os.path.join(path, "light-oauth2-logs")):
+        if not os.path.isdir(root):
+            continue
+        correct = next((d for d in sorted(glob.glob(os.path.join(root, "*", "correct")))
+                        if glob.glob(os.path.join(d, "*oauth2-oauth2-*.log"))), None)
+        if correct:
+            # n_runs defaults to 53 in the loader, which would silently read part of a bigger tree.
+            # It counts *directories* it iterates, not runs it successfully read, so the count has
+            # to include every directory - LO2v2 ships a "prerun results" folder among the runs,
+            # and a run that lacks the sampled error is skipped whole. Counting them all is what
+            # makes "AutoLoader on an LO2 directory" mean the whole directory.
+            runs = sum(1 for e in os.listdir(root) if os.path.isdir(os.path.join(root, e)))
+            return Detection(LO2Loader, {"_root": root, "n_runs": runs}, format="lo2")
 
     # Hadoop: one directory per application, and the labels beside them.
     labels = _first_existing(os.path.join(path, "abnormal_label.txt"))

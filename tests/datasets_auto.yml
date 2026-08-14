@@ -18,7 +18,7 @@ local_copy_folder: '~/Datasets'
 # of the three individual ones (56,100 + 787,859 + 51,462).
 #
 # Not covered here, and verified through demo/AutoLoader_samples.py instead: the dataset probe,
-# which recognizes HDFS/Hadoop/ADFA/AWSCTD/Nezha from the label files and directory layout beside
+# which recognizes HDFS/Hadoop/ADFA/AWSCTD/Nezha/LO2 from the label files and directory layout beside
 # the logs. Those corpora live under the ~/Datasets root of downloader/datasets.yml and are up to
 # 100 GB, so re-downloading them into a second root to test detection would be absurd.
 

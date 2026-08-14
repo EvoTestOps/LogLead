@@ -70,3 +70,10 @@ datasets:
     local_archive: '~/kaggle/archive.zip'
     source_url: https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs
     download: true
+  # LO2v2. Only the reduced log set (light-oauth2-logs.zip, 2.9 GB) is fetched - the one the LO2v2
+  # paper's own log analysis ran on. The full LO2v2.zip is 65.6 GB and carries metrics and traces
+  # LogLead's log pipeline does not read. Deliberately v2: v1 (zenodo 14938118) had a fixed test
+  # order that leaked startup logs into the "correct" class, which v2 fixes by randomizing it.
+  - name: lo2
+    url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1
+    download: true

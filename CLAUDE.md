@@ -99,7 +99,15 @@ uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader:
 uv run tests/main.py --config tests/datasets_fmt.yml          # LogfmtLoader: grafana/loki Drain testdata
 uv run tests/main.py --config tests/datasets_syslog.yml       # SyslogLoader: loghub Linux, Mac, OpenSSH
 uv run tests/main.py --config tests/datasets_auto.yml         # AutoLoader: the above, detected + one mixed folder
+uv run tests/main.py --config tests/datasets_lo2.yml          # LO2Loader: LO2v2 Light-OAuth2 microservice logs
 ```
+`datasets_lo2.yml` is rooted at `~/Datasets` rather than a root of its own, because the unpacked
+logs are tens of GB and `local_copy_folder` would duplicate them. Its entry's keys are `LO2Loader`
+constructor arguments, and `single_error_type` is the load-bearing one: left unset the loader picks
+a *different random error test case per run on every call*, so `expected_length` would never
+reproduce. It also downloads only `light-oauth2-logs.zip` (2.9 GB) — the reduced log set the LO2v2
+paper's own analysis used — not the 65.6 GB full dataset. Use v2 and not v1: v1's fixed test order leaked startup logs into the
+"correct" class (F1 0.976 on Token, vs 0.623 once v2 randomized the order).
 `datasets_auto.yml` is the odd one: detection is not a format, so there is nothing of its own to
 download. It re-loads corpora the other configs already cover and copies their `expected_length`
 values unchanged, so a count that drifts there but not in the original config means detection chose
@@ -204,7 +212,9 @@ behind `loglead/delta/` and every MCP tool.
 decision (`detect_format()`, importable on its own) separable from the reading. Two stages, most
 specific first: a **dataset probe** that recognizes a public dataset from the label file and
 directory layout *beside* the log (so `HDFSLoader` gets its `anomaly_label.csv` and `df_seq`
-survives — a dataset whose labels are missing is deliberately not claimed and falls through), then a
+survives — a dataset whose labels are missing is deliberately not claimed and falls through; where
+the label is not a file at all the layout carries it, as with LO2's `correct/` test-case directory),
+then a
 **per-file format probe** ordered JSON → access log → syslog → logfmt → generic timestamped text →
 plain text, each scored as a match rate over a sample. Two things here are load-bearing and were
 measured rather than reasoned: the logfmt test counts `>=2` `key=value` pairs per line and **must
