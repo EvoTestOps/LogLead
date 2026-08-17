@@ -1,0 +1,33 @@
+name: zeek_labeled
+description: >
+  Zeek TSV carrying a ground-truth label, as Stratosphere's IoT-23 publishes it: conn.log with
+  'label' (Benign/Malicious) and 'det_label' (the attack name) appended to the '#fields' line. The
+  same as the zeek spec otherwise.
+
+  Note that IoT-23 does not label consistently across its 23 scenarios. This spec reads the shape
+  where the two names are declared as ordinary tab-separated fields; in others they are separated
+  from 'tunnel_parents' by spaces instead, and a strict TSV read of those returns one
+  'tunnel_parents   label   detailed-label' column rather than three.
+
+header: zeek
+
+timestamp_field: ts
+timestamp_epoch: s
+
+seq_id_field: uid
+
+# Both spellings, because the capitalisation differs between scenarios.
+label_field: label
+normal_values: [Benign, benign]
+
+# Spelled out rather than left to the name=value fallback, and not for looks: that fallback would
+# render 'det_label=DDoS' into every malicious row's message, which is the label under another
+# name. The loader keeps label_field itself out of the message but cannot know that. This is
+# conn.log's field set, which is fixed - IoT-23 publishes no other log type labelled.
+line_format: "{proto} {service} {id.orig_h}:{id.orig_p} -> {id.resp_h}:{id.resp_p} {conn_state} {history}"
+
+extra_fields: keep
+
+sample:
+  - '#fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	proto	service	tunnel_parents	label	det_label'
+  - '1553456244.926194	CjRTAo1L0Mz2xVL0e	192.168.100.103	123	89.101.160.7	123	udp	-	-	Benign	-'

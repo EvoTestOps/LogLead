@@ -1,9 +1,9 @@
 # Broadening LogLead's log format support
 
 **Status:** living document — the original proposal plus a record of what has since been built
-against it. Items 1, 2, 4, 5 and 6 of §5 are delivered and are marked as such inline; item 3 is the
-one piece of the agreed shortlist still missing. §8 is the current scorecard and the answer to
-"what next".
+against it. Items 1–6 of §5 are delivered and are marked as such inline; the agreed shortlist is
+complete, and what remains is item 8 (`from <field>`), the catalogue, and reaching `delta`/MCP.
+§8 is the current scorecard and the answer to "what next".
 **Question:** `lnav` and `angle-grinder` can read log formats that LogLead cannot — most obviously
 JSON. What exactly do they support, and in what order should LogLead adopt the same capabilities?
 
@@ -131,18 +131,15 @@ split positionally on spaces**, and **whatever a person has written a bespoke Py
 Every format that dominates modern production logging — JSON lines, logfmt, CSV/TSV with a header,
 syslog, web access logs, journald, Windows events — requires a new hand-written loader.
 
-**That is no longer the gap.** JSON lines, logfmt, syslog and web access logs each have a
-format-family loader, and `AutoLoader` picks between them without being told. journald's JSON output
-falls out of `JsonLoader`, as item 5 predicted it would. What remains, stated precisely:
+**That is no longer the gap.** JSON lines, logfmt, syslog, web access logs and delimited text with a
+header each have a format-family loader, and `AutoLoader` picks between them without being told.
+journald's JSON output falls out of `JsonLoader`, as item 5 predicted it would. What remains, stated
+precisely:
 
-- **Delimited text with a header (CSV/TSV) has no loader** — the one row of §4's agreement table
-  still empty for LogLead, and the last unbuilt item of the shortlist (§5 item 3). It is also the
-  only gap that costs LogLead something *internally*: loghub-style datasets ship their already-parsed
-  form as `*_structured.csv`, and today only `NezhaLoader` reads a CSV, dataset-specifically.
 - **Parsers cannot be re-run against a column** (§5 item 8). A Kubernetes JSON envelope wrapping an
   app line needs two passes, and every parser LogLead has takes a file, not a `Series`.
 - **The catalogue is small.** The *mechanisms* now match the two reference tools; the inventory of
-  known formats does not. Eight shipped specs against lnav's 73 definitions (§8).
+  known formats does not. Thirteen shipped specs against lnav's 73 definitions (§8).
 - **None of it reaches `delta`/MCP** (§6, last bullet). `log_root.py` still calls `RawLoader`
   directly, so the 19 MCP tools remain plain-text-only regardless of what the loader layer can do.
 
@@ -283,7 +280,7 @@ The intersection is a short list, and it is the shortlist LogLead should work fr
 |---|---|---|---|
 | **JSON lines / NDJSON** | 14 built-in formats + declarative support | `json` operator (its headline feature) | ✅ `JsonLoader` (§5 item 1) |
 | **logfmt** | built-in C++ format | `logfmt` operator | ✅ `LogfmtLoader` (§5 item 2) |
-| **Delimited + header (CSV/TSV)** | Zeek TSV + W3C ELF, both self-describing | `split` | ❌ **only inside `NezhaLoader`, dataset-specific** |
+| **Delimited + header (CSV/TSV)** | Zeek TSV + W3C ELF, both self-describing | `split` | ✅ `DelimitedLoader` (§5 item 3), incl. both self-describing variants |
 | **Web access logs (CLF/Combined)** | ~12 formats | all 3 shipped format aliases | ✅ `AccessLogLoader` (§5 item 4) |
 | **Syslog** | built-in format | — | ✅ `SyslogLoader` (§5 item 5) |
 | **Generic timestamped text** | `generic_log` fallback + 109 timestamp patterns | `parse` / `parse regex` | ✅ `AutoLoader`'s generic pass — 9 patterns tried automatically; `RawLoader` still takes a user-supplied regex |
@@ -364,6 +361,35 @@ their already-parsed form. LogLead already depends on Polars' CSV reader, so the
 available anywhere on this list: Zeek's `#fields` line and W3C's `#Fields:` directive mean the
 column names come out of the file, so there is nothing for the user to configure. Both are already
 in lnav and can be copied nearly verbatim as specs.
+
+**Delivered as `DelimitedLoader`** (`loglead/loaders/delimited.py`), the third spec-driven loader,
+reusing JsonLoader's field-semantics vocabulary as AccessLogLoader did. The prediction that the work
+is the mapping layer rather than the parsing held, with one addition this item did not anticipate:
+the loader's real question is *where the column names come from*, and there are three answers, so
+that is the `header` argument (`row`/`zeek`/`w3c`, decided per file, plus `none` and `auto`). The
+self-describing variants did turn out to be the cheapest win claimed — Zeek's header declares not
+only the names but the delimiter, the null markers **and** the column types, so `#types` is read as
+well and duration/byte counts reach `AnomalyDetector(numeric_cols=...)` as numbers with nothing
+configured. Shipped specs (`loglead/loaders/delimited_formats/*.yml`: `zeek`, `zeek_labeled`, `iis`,
+`loghub`, `loghub_labeled`) only supply what a file cannot say about itself: which column is the
+message, which is the timestamp and in what encoding, and which is a label.
+
+Labels are the part that generalized beyond this item: this is the one format family that routinely
+arrives labelled — loghub keeps the alert category in `Label`, IoT-23 appends `label` to Zeek's
+conn.log — so `label_field`/`normal_values` produce the `normal` column directly, and the label
+column is kept out of the rendered `m_message`, which otherwise hands the ground truth to every text
+detector. Tested against four corpora in `tests/datasets_csv_tsv.yml`, one per header style: loghub's
+16 `*_structured.csv` files in one folder (32,000 rows, 15 distinct headers, so 15 mappings rather
+than one), Brim's 35-log-type Zeek output directory (1,474,104 events, 342 columns after the
+diagonal concat), IoT-23's labelled conn.log (23,145 events), and Splunk Attack Range IIS logs
+(55,826). Two measured results worth keeping: the raw-BGL cross-check — the same events read as a
+structured CSV score F1 0.815 from `Type`/`Level`/`Component` against 0.844 through `BGLLoader` —
+and the header-row detection rule, where an exact-field-count test scores 1.000 on loghub's Apache
+CSV and **0.000** on its Hadoop one, whose `Content` always contains a comma, so the rule is "at
+least as many delimiters as the header, and header cells that look like names". **Not done:** a
+`#Fields:` redeclaration that changes the field set mid-file (the first one found locks the file,
+lnav's rule), Zeek's JSON output (that is a `JsonLoader` spec), and reading `#types` beyond scalars —
+a set or vector column stays raw text.
 
 ### 4. Web access logs: Common/Combined Log Format and relatives
 
@@ -447,9 +473,12 @@ are scored on a sample and the winner runs one vectorized pass, and detection is
 with a tree whose files all agree delegated to a single loader (keeping its parallel multi-file
 read) and a genuinely mixed folder loaded one file at a time and stacked with `diagonal_relaxed`.
 
-The order shipped is JSON → access log → syslog → logfmt → generic timestamped text → `RawLoader`,
-which differs from the list above in two ways. **Delimited-with-header is absent**: item 3 was never
-built, so there is no loader to delegate to. And there is a **stage before all of it** that this
+The order shipped is a file that declares its own columns (Zeek's `#separator`, W3C's `#Fields:`) →
+JSON → access log → syslog → logfmt → a delimited file with a header row → generic timestamped text
+→ `RawLoader`, which differs from the list above in two ways. **Delimited-with-header is split in
+two rather than tried once**, at opposite ends of the chain: a file that names its own columns has
+stated what it is and is the most specific evidence available, while "the first line looks like a
+header" is the weakest and goes almost last. And there is a **stage before all of it** that this
 section did not anticipate — a *dataset probe* recognizing the public datasets that have their own
 loader, from the label file and directory layout beside the log rather than from the log alone,
 because `HDFSLoader` needs its `anomaly_label.csv` and `HadoopLoader` its `abnormal_label.txt`. That
@@ -577,7 +606,7 @@ decide once. Four of the six are now settled; the two that are not are called ou
 | LogLead loader contract | `loglead/loaders/base.py` — `execute()`, `_split_and_unnest()`, `_csv_separator` |
 | LogLead's loader inventory | `loglead/loaders/__init__.py`; per-loader detail in `loglead/loaders/README.md` |
 | Which formats LogLead detects, and in what order | `loglead/loaders/auto.py` — `detect_dataset()` then `detect_format()`; `tests/log_file_detection.py` checks the choice against every dataset config |
-| Shipped format specs (8) | `loglead/loaders/json_formats/*.yml` (4), `loglead/loaders/access_log_formats/*.yml` (4) |
+| Shipped format specs (13) | `loglead/loaders/json_formats/*.yml` (4), `loglead/loaders/access_log_formats/*.yml` (4), `loglead/loaders/delimited_formats/*.yml` (5) |
 | MCP path is still `RawLoader`-only | `loglead/delta/log_root.py` — the single `RawLoader(...)` call; `orig_file_name` in `loglead/mcp/session.py` `BASE_COLUMNS` |
 | `.gz` already works | Polars 1.38.1 decompresses transparently in both `read_csv` and `scan_csv` |
 
@@ -602,6 +631,9 @@ Two things it still does that LogLead does not, and only one of them matters:
   nested_key`) because layered logs are ubiquitous: a Kubernetes JSON envelope around an app line, a
   syslog frame around a JSON payload.
 - **`split` without a header** — a thin slice of §5 item 3, and the less useful half of it.
+  `DelimitedLoader` covers it with `header='none'` plus `columns=[...]`, i.e. only if you can name
+  the fields; splitting into positional, unnamed columns is still not offered, and nothing has
+  wanted it.
 
 ### 8.2 Against lnav: the mechanisms match, the catalogue does not
 
@@ -610,8 +642,9 @@ have very different costs.
 
 **Mechanisms — LogLead is close to parity, and ahead in one place.** Of lnav's five hard-coded
 formats, `piper_log` is lnav's own capture format and irrelevant here; of the remaining four,
-LogLead has equivalents for `generic_log` (`AutoLoader`'s generic pass) and `logfmt`
-(`LogfmtLoader`), and lacks `bro_log` and `w3c_log` — which are both §5 item 3. lnav's detection
+LogLead now has an equivalent for each — `generic_log` (`AutoLoader`'s generic pass), `logfmt`
+(`LogfmtLoader`), and `bro_log` and `w3c_log` (`DelimitedLoader`'s zeek and w3c header
+styles, which read the same directives lnav's two classes do). lnav's detection
 design — sniff, match on the first lines, **lock the format for the file**, fall back to plain text —
 was adopted wholesale and is what `AutoLoader` does. LogLead is *ahead* on the dataset probe (§5
 item 6), which lnav has no reason to want: lnav identifies a format so it can display a file;
@@ -621,8 +654,8 @@ LogLead identifies a dataset so it can attach labels and produce a `df_seq`.
 
 | | lnav | LogLead |
 |---|---|---|
-| Format definitions shipped as data | 73 | 8 (4 JSON + 4 access log) |
-| Format families needing code | 5 C++ classes | 4 family loaders + 1 detector |
+| Format definitions shipped as data | 73 | 13 (4 JSON + 4 access log + 5 delimited) |
+| Format families needing code | 5 C++ classes | 5 family loaders + 1 detector |
 | Timestamp patterns tried automatically | 109 | 9 |
 
 §5 item 7 already argues that closing the *definition* count is not the goal — "LogLead's users
@@ -633,8 +666,12 @@ entry added widens what `AutoLoader`'s generic pass recognizes on files nobody w
 
 ### 8.3 What to add next
 
-In order. The first two are small and unlock disproportionate value; the third is the last item of
-the original shortlist.
+In order. Both are small and unlock disproportionate value. The third entry that stood here — §5
+item 3, delimited text with a header — is now built (`DelimitedLoader`), which completes the
+original shortlist; what it recommended held up, including doing the self-describing variants
+first, and the one thing it did not foresee is that a *generic* CSV needs less configuration than
+predicted (`Content`-style message columns are conventional enough to guess) and a *labelled* one
+needs more (the label column has to be kept out of the message).
 
 1. **Expose the format layer to `delta`/MCP** (§6, last bullet). *Not a format at all*, which is why
    it is first: every loader built since this document was written is invisible through the 19 MCP
@@ -646,16 +683,6 @@ the original shortlist.
    already-central place (`_GENERIC_TIMESTAMPS` in `auto.py`), consumed by the one code path that
    handles files no spec covers. Pure transcription from `time_formats.am`, bounded, and directly
    measurable: the detection test already reports the match rate per file.
-3. **Delimited text with a header — §5 item 3, self-describing variants first.** The last unbuilt
-   item of the agreed shortlist and the only empty row left in §4's agreement table. Do Zeek's
-   `#fields` and W3C's `#Fields:` before generic CSV, because they are the cheapest auto-detection
-   win available anywhere in this document: the column names come out of the file, so there is
-   nothing to configure and nothing to guess. Generic CSV/TSV then needs a decision the
-   self-describing pair does not — which column is the message, which is the time — i.e. a spec, and
-   `JsonLoader`'s vocabulary already supplies the words for it. The internal payoff is real:
-   loghub-style datasets ship `*_structured.csv`, and LogLead currently reads a CSV only inside
-   `NezhaLoader`.
-
 Then, if the layered-log case shows up in practice, **§5 item 8 (`from <field>`)** — noting the
 design point that section already makes: it belongs in `EventLogEnhancer` producing `e_*` columns,
 not in a loader.
@@ -666,6 +693,8 @@ binary containers. Both arguments hold unchanged.
 ### 8.4 What this document should stop claiming
 
 Superseded statements, kept visible so the diff is legible rather than silently rewritten: §1.3's
-"every format that dominates modern production logging requires a new hand-written loader" (four
-families now exist), §4's empty cells for logfmt and syslog, and §6's "implemented twice already"
-for multi-line handling — it is three now, and consolidating them is still open.
+"every format that dominates modern production logging requires a new hand-written loader" (five
+families now exist), §4's empty cells for logfmt, syslog and delimited-with-header, §6's
+"implemented twice already" for multi-line handling — it is three now, and consolidating them is
+still open — and, as of `DelimitedLoader`, this document's own repeated claim that LogLead "reads a
+CSV only inside `NezhaLoader`" and that item 3 is the last unbuilt piece of the shortlist.

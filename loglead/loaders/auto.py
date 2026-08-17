@@ -10,6 +10,7 @@ from .adfa import ADFALoader
 from .awsctd import AWSCTDLoader
 from .base import BaseLoader
 from .bgl import BGLLoader
+from .delimited import DelimitedLoader
 from .hadoop import HadoopLoader
 from .hdfs import HDFSLoader
 from .json import JsonLoader
@@ -51,11 +52,15 @@ Two stages, most specific first:
    sibling file both confirms the dataset and supplies the argument, so a dataset whose labels are
    missing is deliberately *not* claimed - it falls through to stage 2 and loads unlabeled rather
    than crashing or silently labelling everything normal.
-2. **Format probe, per file.** JSON, then web access log, then syslog, then logfmt, then a generic
-   timestamped-text pass, then plain text. Specific before generic, which is what stops a logfmt
-   line whose value is an ISO timestamp from being read as generic timestamped text. Each candidate
-   is scored as a match rate over a sample of the file and the best one above min_match_rate wins -
-   the rule SyslogLoader already uses to choose between the two syslog RFCs, generalized.
+2. **Format probe, per file.** A file that *declares* its own columns first - Zeek's '#separator'
+   and W3C's '#Fields:' are the most specific evidence in this file, since the format says so
+   itself - then JSON, then web access log, then syslog, then logfmt, then a delimited file with a
+   header row, then a generic timestamped-text pass, then plain text. Specific before generic,
+   which is what stops a logfmt line whose value is an ISO timestamp from being read as generic
+   timestamped text, and what keeps a CSV of log lines from being claimed by the far weaker
+   header-row test before the named formats have had their turn. Each candidate is scored as a
+   match rate over a sample of the file and the best one above min_match_rate wins - the rule
+   SyslogLoader already uses to choose between the two syslog RFCs, generalized.
 
 Detection is per file because a log folder holding several formats is the normal case rather than
 the exception. When every file agrees the whole tree is handed to one loader, which keeps the
@@ -74,9 +79,11 @@ per file.
 - system (str, optional): 'TrainTicket' or 'WebShop', needed only when the Nezha dataset is
   detected - nothing on disk says which of the two a Nezha directory holds.
 
-Not implemented: delimited text with a header (CSV/TSV), because there is no loader to delegate to
-- docs/log-format-support.md section 5 item 3 is not built. Nor JSON containers that wrap their
-records under a key ({"Records": [...]}), since the key name is not guessable.
+Not implemented: JSON containers that wrap their records under a key ({"Records": [...]}), since
+the key name is not guessable. A delimited file with a header row is claimed but not mapped beyond
+its message column - which column holds the timestamp, and in what format, is not guessable either,
+so name a DelimitedLoader spec when that matters. A W3C file that carries no '#Fields:' of its own
+is not claimed at all: nothing in it says what its columns are.
 """
 
 # How many lines of a file are looked at to decide its format. SyslogLoader's number, for the same
@@ -118,7 +125,20 @@ _GENERIC_TIMESTAMPS = (
 
 # The loaders that can be handed a whole tree themselves. Everything else - the dataset loaders -
 # is built per file, so the fast path below must not try to give them a filename_pattern.
-_TREE_CAPABLE = (JsonLoader, AccessLogLoader, LogfmtLoader, SyslogLoader, RawLoader)
+_TREE_CAPABLE = (JsonLoader, AccessLogLoader, DelimitedLoader, LogfmtLoader, SyslogLoader,
+                 RawLoader)
+
+# Delimiters sniffed from a header row, in the order ties are broken.
+_DELIMITED_SEPARATORS = (",", "\t", ";", "|")
+
+# What a header cell may look like: a name, starting with a letter or underscore and short. Wide
+# enough for the names these formats actually use - 'cs(User-Agent)', 'id.orig_h', 'sc-status',
+# 'LineId' - and narrow enough to reject a line of data that merely contains the delimiter.
+_HEADER_CELL = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-()/ ]{0,39}$')
+
+# Enough of IIS's default field set to be sure a W3C file is one, and to be sure the iis spec's
+# timestamp and rendered message will find the columns they name.
+_IIS_FIELDS = {"date", "time", "cs-method", "cs-uri-stem", "sc-status"}
 
 # JSON keys worth trying as the message/timestamp when no shipped spec fits. The logfmt convention
 # plus the two spellings the shipped JSON datasets use.
@@ -447,6 +467,83 @@ def _detect_logfmt(sample, min_match_rate):
     return None
 
 
+def _detect_delimited_declared(sample):
+    """Zeek and W3C name their own columns in the file, which is evidence nothing else here has.
+
+    No match rate to compute: one '#separator' or '#Fields:' line settles it, and both are looked
+    for anywhere in the sample rather than on the first line, because a rotated W3C log routinely
+    opens with the tail of the previous rotation's data before declaring its fields.
+    """
+    if not len(sample):
+        return None
+
+    if bool(sample.str.starts_with("#separator").any()) or bool(sample.str.contains(r"^#fields\t").any()):
+        declared = sample.filter(sample.str.contains(r"^#fields\t"))
+        fields = str(declared[0]).split("\t")[1:] if len(declared) else []
+        # IoT-23 appends the label to conn.log, and reading it as an ordinary column would hand the
+        # ground truth to the detectors as if it were data.
+        spec = "zeek_labeled" if "label" in fields else "zeek"
+        return Detection(DelimitedLoader, {"format": spec}, format=f"delimited/{spec}",
+                         lines=len(sample))
+
+    declared = sample.filter(sample.str.head(8).str.to_lowercase() == "#fields:")
+    if len(declared):
+        names = set(str(declared[0]).split(":", 1)[1].split())
+        if _IIS_FIELDS <= names:
+            return Detection(DelimitedLoader, {"format": "iis"}, format="delimited/iis",
+                             lines=len(sample))
+        return Detection(DelimitedLoader, {"header": "w3c"}, format="delimited/w3c",
+                         lines=len(sample),
+                         note="W3C fields are not IIS's, so only the columns are read - name a "
+                              "spec to map a timestamp or a message")
+    return None
+
+
+def _detect_delimited_header(sample, min_match_rate):
+    """A header row, which is the weakest evidence in this file and so is tried nearly last.
+
+    Two things are asked of the first line, and both were needed. Its cells have to *look like
+    names* - a header is names, not data - because a count-based test alone claims files that
+    merely contain the delimiter: an IIS log's first line splits on ';' into 3 pieces at a 0.954
+    "consistent" rate, and is not a CSV. And the rest of the sample has to carry *at least* as many
+    delimiters as the header, not exactly as many, because RFC-4180 quoting puts commas inside
+    fields - on loghub's own structured CSVs an exact-count test scores 1.000 on Apache and 0.000
+    on Hadoop, whose Content always contains one.
+    """
+    if len(sample) < 2:
+        return None
+    header = str(sample[0])
+    counts = {sep: header.count(sep) for sep in _DELIMITED_SEPARATORS}
+    separator = max(_DELIMITED_SEPARATORS, key=lambda sep: counts[sep])
+    if not counts[separator]:
+        return None
+    names = [cell.strip() for cell in header.split(separator)]
+    if len(names) < 2 or not all(_HEADER_CELL.match(name) for name in names):
+        return None
+
+    rest = sample.slice(1)
+    rate = float((rest.str.count_matches(separator, literal=True) >= counts[separator]).sum()) \
+        / len(rest)
+    if rate < min_match_rate:
+        return None
+
+    present = set(names)
+    if "Content" in present:
+        # loghub's own already-parsed form, which ships one of these per dataset in this project.
+        spec = "loghub_labeled" if {"Label", "Timestamp"} <= present else "loghub"
+        return Detection(DelimitedLoader, {"format": spec}, format=f"delimited/{spec}", rate=rate,
+                         lines=len(sample))
+    kwargs = {"header": "row"}
+    message = next((key for key in _MESSAGE_KEYS + ("Message", "text", "log") if key in present),
+                   None)
+    if message:
+        kwargs["message_field"] = message
+    return Detection(DelimitedLoader, kwargs, format="delimited/row", rate=rate, lines=len(sample),
+                     note=None if message else
+                     "no column is recognizably the message, so every row is rendered as "
+                     "name=value text; name a spec to map one")
+
+
 def _detect_generic(sample, min_match_rate):
     for pattern, chrono in _GENERIC_TIMESTAMPS:
         rate = _rate(sample, pattern)
@@ -477,10 +574,12 @@ def detect_format(path, min_match_rate=0.5, sample_lines=_SAMPLE_LINES):
 
     dataset = _detect_dataset_file(path, sample)
     detection = dataset or (
-        _detect_json(path, sample, min_match_rate)
+        _detect_delimited_declared(sample)
+        or _detect_json(path, sample, min_match_rate)
         or _detect_access_log(sample, min_match_rate)
         or _detect_syslog(sample, min_match_rate)
         or _detect_logfmt(sample, min_match_rate)
+        or _detect_delimited_header(sample, min_match_rate)
         or _detect_generic(sample, min_match_rate))
 
     if detection is None:

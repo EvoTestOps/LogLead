@@ -135,9 +135,16 @@ def ungzip_file(gz_path, dest_folder):
     """
     # Ensure the destination folder exists
     os.makedirs(dest_folder, exist_ok=True)
-    # Create the path for the extracted file
-    filename = os.path.basename(gz_path).replace('.gz', '')
-    file_path = os.path.join(dest_folder, filename+".log")
+    # Create the path for the extracted file. The '.log' is only appended when the name inside the
+    # archive has none of its own: the supercomputer logs arrive as 'liberty2.gz' and want to land
+    # as 'liberty2.log', but Zeek names its files already and 'conn.log.gz' would otherwise be
+    # extracted to 'conn.log.log'.
+    filename = os.path.basename(gz_path)
+    if filename.endswith('.gz'):
+        filename = filename[:-len('.gz')]
+    if not os.path.splitext(filename)[1]:
+        filename += '.log'
+    file_path = os.path.join(dest_folder, filename)
     # Extract the GZ file
     with gzip.open(gz_path, 'rb') as f_in:
         with open(file_path, 'wb') as f_out:

@@ -24,15 +24,15 @@ Four loader shapes live side by side here:
 - **Dataset-specific** — one Python class per dataset (`HDFSLoader`, `BGLLoader`, ...). Most of the
   table below.
 - **Spec-driven** — one class per *format family*, configured by a YAML spec instead of subclassed
-  per dataset: `JsonLoader`, `AccessLogLoader`, `LogfmtLoader`, `SyslogLoader`. Each of these can
-  also read a dataset that has no shipped spec via inline keyword arguments or a spec file of your
-  own — the keyword arguments *are* the spec keys.
+  per dataset: `JsonLoader`, `AccessLogLoader`, `DelimitedLoader`, `LogfmtLoader`, `SyslogLoader`.
+  Each of these can also read a dataset that has no shipped spec via inline keyword arguments or a
+  spec file of your own — the keyword arguments *are* the spec keys.
 
 Plus `BaseLoader`, the base class every loader above implements.
 
 ## At a glance
 
-For the four spec-driven loaders, one representative dataset is shown here; each has more than one
+For the five spec-driven loaders, one representative dataset is shown here; each has more than one
 shipped spec, listed with its own landing page in that loader's section below.
 
 | Loader | Reads | Dataset / example dataset | Landing page |
@@ -41,6 +41,7 @@ shipped spec, listed with its own landing page in that loader's section below.
 | [`RawLoader`](raw.py) | any file or directory tree, one event per line | — (your own data) | — |
 | [`JsonLoader`](json.py) | JSON/NDJSON, one class + a spec per schema | nginx JSON access logs (+ 3 more, see below) | [github.com/elastic/examples/.../nginx_json_logs](https://github.com/elastic/examples/tree/master/Common%20Data%20Formats/nginx_json_logs) |
 | [`AccessLogLoader`](access_log.py) | Apache/nginx access logs, one class + a spec per layout | Kaggle "Web Server Access Logs" | [kaggle.com/datasets/eliasdabbas/web-server-access-logs](https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs) |
+| [`DelimitedLoader`](delimited.py) | CSV/TSV with a header, Zeek's `#fields` TSV, W3C/IIS `#Fields:` | loghub `*_structured.csv` (+ 4 more, see below) | [github.com/logpai/loghub](https://github.com/logpai/loghub) |
 | [`LogfmtLoader`](logfmt.py) | `key=value` logfmt text | Grafana/Loki Drain test data | [github.com/grafana/loki](https://github.com/grafana/loki/tree/main/pkg/pattern/drain/testdata) |
 | [`SyslogLoader`](syslog.py) | syslog, RFC 3164 / RFC 5424 | loghub Linux / Mac / OpenSSH | [github.com/logpai/loghub](https://github.com/logpai/loghub) |
 | [`HDFSLoader`](hdfs.py) | one large log + a CSV label file | HDFS_v1 | [github.com/logpai/loghub/tree/master/HDFS](https://github.com/logpai/loghub/tree/master/HDFS#hdfs_v1) |
@@ -72,10 +73,14 @@ Detection happens in two stages, most specific first:
    LO2, Profilence, BGL and Thunderbird/Spirit/Liberty. Not every dataset keeps its labels in a
    file: LO2's label is the *name of the test-case directory* (`correct` vs the error injected), so
    there the `correct/` directory is what the probe looks for.
-2. **Format probe, per file** — JSON → web access log → syslog → logfmt → generic timestamped text →
-   plain text. Each candidate is scored as a match rate over a sample of the file, and the best one
-   above `min_match_rate` (default 0.5) wins. Specific before generic, which is what stops a logfmt
-   line whose value happens to be an ISO timestamp from being read as generic timestamped text.
+2. **Format probe, per file** — a file that declares its own columns (Zeek's `#separator`, W3C's
+   `#Fields:`) → JSON → web access log → syslog → logfmt → a delimited file with a header row →
+   generic timestamped text → plain text. Each candidate is scored as a match rate over a sample of
+   the file, and the best one above `min_match_rate` (default 0.5) wins. Specific before generic,
+   which is what stops a logfmt line whose value happens to be an ISO timestamp from being read as
+   generic timestamped text — and why the two delimited tests sit at opposite ends: a file that
+   names its own columns has said what it is, while "the first line looks like a header" is the
+   weakest evidence here and goes almost last.
 
 Detection is per file because a folder holding several formats is the normal case rather than the
 exception. When every file agrees, the whole tree goes to one loader and keeps its parallel
@@ -149,6 +154,46 @@ Kaggle "Web Server Access Logs" (zanbil.ir, 10,365,152 lines) —
 [kaggle.com/datasets/eliasdabbas/web-server-access-logs](https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs).
 Kaggle only serves it to a logged-in account, so it must be downloaded by hand and pointed at via
 `local_archive:` rather than a URL.
+
+### `DelimitedLoader` ([`delimited.py`](delimited.py))
+
+One loader for delimited text that names its own columns — CSV and TSV with a header row, plus the
+self-describing variants. Polars reads the bytes, so what this loader adds is the mapping layer and
+one question the other families never face: *where do the column names come from*. Three answers,
+decided **per file**, so a directory holding more than one reads in a single call:
+
+| Header style | Where the names come from | Also declared |
+|---|---|---|
+| `row` | the first line, as in any CSV | — (the delimiter is sniffed from it) |
+| `zeek` | `#fields` | `#separator`, `#types`, `#empty_field`, `#unset_field` — delimiter, column types and null markers all come out of the file |
+| `w3c` | a `#Fields:` directive, re-declared at every log rotation | — (space separated) |
+
+Shipped specs live in [`delimited_formats/`](delimited_formats/):
+
+| Spec | Format | Notes |
+|---|---|---|
+| [`zeek.yml`](delimited_formats/zeek.yml) | Zeek TSV, any log type | `ts` as an epoch timestamp, `uid` as `seq_id`; everything else is read from the file |
+| [`zeek_labeled.yml`](delimited_formats/zeek_labeled.yml) | Zeek `conn.log.labeled` | IoT-23's appended `label`/`det_label`; renders an explicit message so the label does not leak into `m_message` |
+| [`iis.yml`](delimited_formats/iis.yml) | Microsoft IIS, W3C extended | IIS's default field set as the fallback for a file that lost its `#Fields:` line |
+| [`loghub.yml`](delimited_formats/loghub.yml) | loghub `*_structured.csv` | `Content` is the message; no timestamp, since each of the 16 systems splits it differently |
+| [`loghub_labeled.yml`](delimited_formats/loghub_labeled.yml) | loghub `*_structured.csv` for BGL and Thunderbird | the two that also carry `Label` and an epoch `Timestamp` |
+
+Datasets exercised in the test suite (`tests/datasets_csv_tsv.yml`), one per header style:
+
+| Dataset | Style | Landing page |
+|---|---|---|
+| loghub `*_structured.csv`, 16 systems in one folder (32,000 rows, 15 distinct headers) | row | [github.com/logpai/loghub](https://github.com/logpai/loghub) |
+| Brim's Zeek sample data — a whole 35-log-type output directory, 1,474,104 events | zeek | [github.com/brimdata/zed-sample-data](https://github.com/brimdata/zed-sample-data/tree/main/zeek-default) |
+| IoT-23 `conn.log.labeled`, labelled per line (23,145 events, 21,222 malicious) | zeek | [stratosphereips.org/datasets-iot23](https://www.stratosphereips.org/datasets-iot23) |
+| Splunk Attack Range IIS logs, incl. an Exchange 2016 server over the ProxyLogon window | w3c | [github.com/splunk/attack_data](https://github.com/splunk/attack_data) |
+
+Two things worth knowing before extending it. Nulls are the designed outcome, not a defect: Zeek and
+W3C write a marker for every field an event did not carry, and a folder of files with different
+headers is sparse by construction (the Zeek directory above lands as 342 columns). And where a
+format has no message column — Zeek and W3C both — the row is rendered as `name=value` text, since a
+delimited row only becomes a log line once the header is put back in front of the values;
+`label_field` is never part of that rendering, because a message stating the answer makes every
+detector look perfect.
 
 ### `LogfmtLoader` ([`logfmt.py`](logfmt.py))
 

@@ -98,6 +98,7 @@ uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: ngin
 uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
 uv run tests/main.py --config tests/datasets_fmt.yml          # LogfmtLoader: grafana/loki Drain testdata
 uv run tests/main.py --config tests/datasets_syslog.yml       # SyslogLoader: loghub Linux, Mac, OpenSSH
+uv run tests/main.py --config tests/datasets_csv_tsv.yml      # DelimitedLoader: loghub CSVs, Zeek, IoT-23, IIS
 uv run tests/main.py --config tests/datasets_auto.yml         # AutoLoader: the above, detected + one mixed folder
 uv run tests/main.py --config tests/datasets_lo2.yml          # LO2Loader: LO2v2 Light-OAuth2 microservice logs
 ```
@@ -108,20 +109,27 @@ a *different random error test case per run on every call*, so `expected_length`
 reproduce. It also downloads only `light-oauth2-logs.zip` (2.9 GB) — the reduced log set the LO2v2
 paper's own analysis used — not the 65.6 GB full dataset. Use v2 and not v1: v1's fixed test order leaked startup logs into the
 "correct" class (F1 0.976 on Token, vs 0.623 once v2 randomized the order).
+`datasets_csv_tsv.yml` has five entries for four corpora, one per way a delimited file can name its
+columns: a header row (`loghub_csv`, 16 systems in one folder — and `loghub_bgl`, one of those files
+on its own, because it is labelled and a 16-file load would be 87% unlabelled), Zeek's `#fields`
+(`zeek`, a 35-log-type output directory; `iot23`, one labelled conn.log) and W3C's `#Fields:`
+(`iis`). Two are labelled, which is what puts them through the supervised half of
+`anomaly_detectors.py`; `loghub_bgl`'s predictors deliberately mirror the raw-BGL entry in
+`datasets_mid_labels.yml`, so the same events read two ways can be compared (F1 0.815 vs 0.844).
 `datasets_auto.yml` is the odd one: detection is not a format, so there is nothing of its own to
 download. It re-loads corpora the other configs already cover and copies their `expected_length`
 values unchanged, so a count that drifts there but not in the original config means detection chose
 the wrong loader. Its `mixed` entry downloads three unrelated corpora into **one** folder — the case
 §5 item 6 calls normal rather than exceptional — and its `expected_length` is the sum of the three.
 `datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
-account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is larger than
-most machines' RAM, so how much of it gets read is **decided at run time**: the entry states the
-dataset's memory cost (`memory_gb_per_million_rows`, `memory_gb_overhead`) and `tests/loaders.py`
-turns that plus `psutil`'s free memory into an `n_rows` cap, skipping the dataset entirely below
-~7 GB free. Two consequences to keep in mind when editing any dataset entry: `expected_length` is
-the *full* file length and a capped read is checked against its cap instead, and `target_rows`
-(rather than `reduction_fraction`) pins what reaches the enhancer/detector stages so their cost
-does not vary by machine.
+account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is 3.5 GB /
+10,365,152 lines and needs ~11 GB to hold as a frame, and `tests/loaders.py` **reads all of it**:
+there is no automatic capping and no memory check for it, so whether this config runs is a property
+of the machine, which is part of why it is opt-in rather than in the default set. Don't add one
+back — `AccessLogLoader(n_rows=...)` exists for a caller who wants to bound the read, and pointing
+the config at a smaller log is the other way; a test harness that quietly reads a different number
+of rows per machine was tried and removed. `reduction_fraction` (a fraction of what was read, as
+everywhere else) is what pins the cost of the enhancer and detector stages.
 
 **Config split**: `downloader/datasets.yml` is the single, download-only source of truth for every
 public dataset LogLead knows about — one `root_folder` (`~/Datasets`), and each entry carries only
@@ -215,12 +223,18 @@ directory layout *beside* the log (so `HDFSLoader` gets its `anomaly_label.csv` 
 survives — a dataset whose labels are missing is deliberately not claimed and falls through; where
 the label is not a file at all the layout carries it, as with LO2's `correct/` test-case directory),
 then a
-**per-file format probe** ordered JSON → access log → syslog → logfmt → generic timestamped text →
-plain text, each scored as a match rate over a sample. Two things here are load-bearing and were
+**per-file format probe** ordered self-declared columns (Zeek `#separator`, W3C `#Fields:`) → JSON →
+access log → syslog → logfmt → delimited-with-a-header-row → generic timestamped text →
+plain text, each scored as a match rate over a sample. The two delimited tests sit at opposite ends
+deliberately: a file that names its own columns is the strongest evidence in the chain, "the first
+line looks like a header" the weakest. Three things here are load-bearing and were
 measured rather than reasoned: the logfmt test counts `>=2` `key=value` pairs per line and **must
 not** be anchored at `^` (real Grafana output puts free text before the pairs — anchoring passes a
-1,000-line sample at 0.996 and collapses to 0.199 at 5,000), and the sample is the file's head
-**plus a chunk from its middle**, because that same file's head is not representative of it.
+1,000-line sample at 0.996 and collapses to 0.199 at 5,000); the sample is the file's head
+**plus a chunk from its middle**, because that same file's head is not representative of it; and the
+header-row test asks for **at least** as many delimiters as the header rather than exactly as many,
+plus header cells that look like names, since RFC-4180 quoting puts commas inside fields (an
+exact-count test scores 1.000 on loghub's Apache CSV and 0.000 on its Hadoop one).
 `AutoLoader` normalizes `m_timestamp` to naive microseconds afterwards, since Polars takes the time
 unit from the format string and a `%3f` pattern otherwise yields a frame that silently refuses to
 `pl.concat` with every other loader's output. When every file in a tree agrees it delegates the
@@ -240,12 +254,24 @@ spec name or a path to your own file.
   `log_format` string (`'$remote_addr - - [$time_local] "$request" $status ...'`) which compiles to
   that regex. Splits `$request` into `method`/`path`/`protocol` and types `status`/byte counts as
   numbers, since those — not the message text — are what an access log gives `AnomalyDetector`.
+- `DelimitedLoader` + `loaders/delimited_formats/*.yml` — CSV/TSV with a header, plus the
+  self-describing variants. Its extra question is `header=`: where the column names come from, as
+  `row` (the first line, delimiter sniffed from it), `zeek` (`#fields`, which also declares the
+  separator, the `#types` to cast to and the null markers), `w3c` (a `#Fields:` directive, repeated
+  at every rotation) or `none` + `columns=`. Decided **per file**, so a folder mixing them reads in
+  one call, and files are stacked `diagonal_relaxed` — a Zeek output directory is 35 log types with
+  35 different headers and lands as 342 columns. Two things to know before editing it: with no
+  message column (Zeek and W3C have none) a row is rendered as `name=value` text, since a delimited
+  row is only a log line once the header is back in front of the values; and this is the one family
+  that routinely arrives **labelled**, so `label_field`/`normal_values` build `normal` directly and
+  the label column is kept out of `m_message` — a message stating the answer makes every detector
+  look perfect.
 
-`LogfmtLoader` (`loaders/logfmt.py`) is a third family loader but has **no spec directory**, on
+`LogfmtLoader` (`loaders/logfmt.py`) is a fourth family loader but has **no spec directory**, on
 purpose: logfmt lines carry their own key names and the names are conventional, so the mapping the
-other two need as configuration is just `ts|timestamp|time|t` → `m_timestamp`, `msg|message` →
+other three need as configuration is just `ts|timestamp|time|t` → `m_timestamp`, `msg|message` →
 `m_message`, `level|lvl|severity` → `level` (docs/log-format-support.md §5 item 2). The kwargs for
-overriding those exist and read the same as the other two. Each key becomes its own column, so a
+overriding those exist and read the same as the others. Each key becomes its own column, so a
 tree of files lands wide-and-sparse the way heterogeneous JSON does; candidate keys are *coalesced*
 rather than first-wins, because one file routinely mixes `t=` and `ts=` lines from two components.
 

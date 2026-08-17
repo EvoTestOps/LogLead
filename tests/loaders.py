@@ -6,7 +6,7 @@ import argparse
 
 from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader,
                              HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader,
-                             JsonLoader, LogfmtLoader, SyslogLoader, LO2Loader)
+                             DelimitedLoader, JsonLoader, LogfmtLoader, SyslogLoader, LO2Loader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -94,6 +94,9 @@ def create_correct_loader(dataset_name, data, system=""):
     elif data.get('loader') == 'syslog':
         loader = SyslogLoader(filename=default_path,
                               filename_pattern=data.get('filename_pattern'))
+    elif data.get('loader') == 'delimited':
+        loader = DelimitedLoader(filename=default_path, format=data['format'],
+                                 filename_pattern=data.get('filename_pattern'))
     # Before the bare 'format' branch below, which would otherwise swallow this: an auto entry may
     # legitimately carry a format key describing what it is expected to detect.
     elif data.get('loader') == 'auto':

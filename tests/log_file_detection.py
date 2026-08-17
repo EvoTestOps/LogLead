@@ -47,6 +47,7 @@ BY_NAME = {
 }
 BY_LOADER_KEY = {
     "access_log": "AccessLogLoader",
+    "delimited": "DelimitedLoader",
     "logfmt": "LogfmtLoader",
     "syslog": "SyslogLoader",
 }

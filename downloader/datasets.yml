@@ -70,10 +70,72 @@ datasets:
     local_archive: '~/kaggle/archive.zip'
     source_url: https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs
     download: true
-  # LO2v2. Only the reduced log set (light-oauth2-logs.zip, 2.9 GB) is fetched - the one the LO2v2
-  # paper's own log analysis ran on. The full LO2v2.zip is 65.6 GB and carries metrics and traces
-  # LogLead's log pipeline does not read. Deliberately v2: v1 (zenodo 14938118) had a fixed test
-  # order that leaked startup logs into the "correct" class, which v2 fixes by randomizing it.
+  - name: loghub_csv
+    urls:
+      - https://raw.githubusercontent.com/logpai/loghub/master/Android/Android_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Apache/Apache_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/BGL/BGL_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HDFS/HDFS_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HPC/HPC_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Hadoop/Hadoop_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HealthApp/HealthApp_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Linux/Linux_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Mac/Mac_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/OpenSSH/OpenSSH_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/OpenStack/OpenStack_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Proxifier/Proxifier_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Spark/Spark_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Thunderbird/Thunderbird_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Windows/Windows_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Zookeeper/Zookeeper_2k.log_structured.csv
+    download: true
+  - name: zeek
+    urls:
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/analyzer.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/capture_loss.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/conn.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dce_rpc.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dns.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dpd.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/files.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ftp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/http.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/kerberos.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_certs.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_hosts.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_services.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ldap_search.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/loaded_scripts.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/modbus.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/notice.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ntlm.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ntp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ocsp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/packet_filter.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/pe.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/rdp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/rfb.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smb_files.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smb_mapping.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smtp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/snmp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/software.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ssh.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ssl.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/stats.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/syslog.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/weird.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/x509.log.gz
+    download: true
+  - name: iot23
+    url: https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset/IndividualScenarios/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled
+    download: true
+  - name: iis
+    urls:
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/suspicious_behaviour/exchange_2016_iis/exchange_2016_iis.log
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1505.003/wsus-iis.log
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1190/pswa/iis_pswaaccess.log
+    download: true
   - name: lo2
     url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1
     download: true

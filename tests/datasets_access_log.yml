@@ -15,9 +15,5 @@ datasets:
     predictor_cols:
       numeric: [status, body_bytes_sent, e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
       categorical: [method, protocol]   # path/remote_addr/http_user_agent are ids, not categories
-    # The full line count, so a machine big enough to read it all still notices the data changing.
-    # A capped read is checked against its own cap instead.
     expected_length: 10365152
-    # Rows handed to the enhancer and detector stages, as a count rather than a fraction of a read
-    # whose size varies: those stages should cost the same everywhere. Same scale as ait_ads.
     reduction_fraction: 0.01

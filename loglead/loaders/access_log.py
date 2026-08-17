@@ -174,8 +174,10 @@ class AccessLogLoader(BaseLoader):
     @staticmethod
     def _read_spec(format):
         """Resolve a shipped spec name, or a path to a spec file, into a dict of loader options."""
-        path = format if os.path.exists(format) else os.path.join(_FORMATS_DIR, f"{format}.yml")
-        if not os.path.exists(path):
+        # isfile, not exists: a shipped spec name is frequently also the name of a directory in the
+        # caller's working directory, and exists() would resolve to that and then fail on open().
+        path = format if os.path.isfile(format) else os.path.join(_FORMATS_DIR, f"{format}.yml")
+        if not os.path.isfile(path):
             available = sorted(f[:-4] for f in os.listdir(_FORMATS_DIR) if f.endswith(".yml")) \
                 if os.path.isdir(_FORMATS_DIR) else []
             raise FileNotFoundError(
