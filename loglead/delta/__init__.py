@@ -15,7 +15,9 @@ which is what the name refers to.
 
 The data shape is a **log root**: a directory whose immediate subdirectories are
 **log folders** -- any set of logs that belong together, be it a test run, a
-day, or a release. The levels nest: log folder -> log file -> log line.
+day, or a release. The levels nest: log folder -> log file -> log line. Its files
+are read through whichever loader fits them: ``format="auto"`` detects per file,
+or name a family to pin one (see :func:`log_root.available_formats`).
 
 Three question types across four granularities:
 
@@ -37,7 +39,7 @@ Typical use::
 
     from loglead.delta import log_root, anomaly
 
-    df, n_folders = log_root.read_folders("/data/hadoop")
+    df, info = log_root.read_log_root("/data/hadoop")   # format="auto" by default
     df = EventLogEnhancer(df).normalize(regexs=masking.get_pattern("myllari_extended"))
     results, df = anomaly.anomaly_folder(df, target_folder="ALL", content_format="Words")
     print(results.sort("rank_sum", descending=True).head())
@@ -52,7 +54,8 @@ from .anomaly import (
     anomaly_folder,
     run_anomaly_detection,
 )
-from .log_root import prepare_content, prepare_files, prepare_folders, read_folders
+from .log_root import (available_formats, prepare_content, prepare_files, prepare_folders,
+                       read_folders, read_log_root, resolve_format)
 from .distance import (
     distance_file_content,
     distance_line_content,
@@ -69,7 +72,10 @@ __all__ = [
     "masking",
     "scoring",
     "visualize",
+    "read_log_root",
     "read_folders",
+    "available_formats",
+    "resolve_format",
     "prepare_folders",
     "prepare_files",
     "prepare_content",

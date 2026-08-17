@@ -78,6 +78,7 @@ def _write(session, df, analysis, level, **name_parts):
 def open_log_root(
     path: str,
     filename_pattern: str = "*.log",
+    format: str = "auto",
     mask: bool = True,
     mask_pattern: str = "myllari_extended",
     parsers: Optional[Sequence[str]] = None,
@@ -100,6 +101,15 @@ def open_log_root(
     Args:
         path: The log root directory. Its subdirectories are the log folders.
         filename_pattern: Glob applied inside each log folder.
+        format: Which loader reads the files. "auto" (the default) samples each
+            file and picks one, and the returned `detected_formats` says what it
+            chose -- check it, because a wrong guess is only visible there. Pin
+            one instead by naming a family: "raw" (any text, one event per line),
+            "json", "syslog", "logfmt", "access_log", "delimited". Add a shipped
+            spec after a slash for a known layout: "json/nginx_json",
+            "delimited/zeek", "access_log/combined", "syslog/rfc5424". Names are
+            exactly what `detected_formats` reports, so a detected format can be
+            handed straight back to pin it for every file.
         mask: Replace volatile tokens (ids, IPs, timestamps, hex) with
             placeholders. Almost always wanted, and required for any parser.
         mask_pattern: One of "myllari_extended", "myllari", "drain_loglead",
@@ -130,6 +140,7 @@ def open_log_root(
     session, info = STORE.open(
         path=path,
         filename_pattern=filename_pattern,
+        format=format,
         mask=mask,
         mask_pattern=mask_pattern,
         parsers=parsers or (),
@@ -146,9 +157,22 @@ def open_log_root(
     summary.update(info)
     folders = session.folders
     summary["folders"] = folders[:50]
+
+    notes = []
     if len(folders) > 50:
-        summary["notes"] = [f"{len(folders)} log folders total; first 50 listed. "
-                            "Use describe_log_root for the rest."]
+        notes.append(f"{len(folders)} log folders total; first 50 listed. "
+                     "Use describe_log_root for the rest.")
+    # "text/<format>" is timestamped text and a good outcome; a bare "text" is the fallback that
+    # matched nothing, which is the one case worth naming a format by hand for.
+    unmatched = summary.get("detected_formats", {}).get("text", 0)
+    if unmatched:
+        notes.append(f"{unmatched} file(s) matched no known format and were read as plain text, "
+                     f"one event per line. Pass format= explicitly if they are structured.")
+    if info.get("dropped_rows"):
+        notes.append(f"{info['dropped_rows']} row(s) dropped: null message or undecodable "
+                     f"characters.")
+    if notes:
+        summary["notes"] = notes
     return summary
 
 
@@ -972,7 +996,8 @@ _PREPROCESSING = {"remove_run_name_from_file_names": "strip_folder_id"}
 
 
 @tool
-def run_config(config_path: str, session_id: Optional[str] = None) -> dict:
+def run_config(config_path: str, session_id: Optional[str] = None,
+               format: str = "auto") -> dict:
     """Run an existing LogDelta YAML config, then leave the logs open.
 
     Reproduces a batch config in one call and hands back the `session_id`, so
@@ -982,6 +1007,9 @@ def run_config(config_path: str, session_id: Optional[str] = None) -> dict:
         config_path: Path to a LogDelta config.yml. Relative paths inside it
             resolve against the config file's own directory.
         session_id: Choose the handle for the session this opens.
+        format: As in open_log_root. A LogDelta config says nothing about the
+            format -- LogDelta reads every file as plain text -- so pass "raw"
+            to reproduce its numbers exactly; the default detects per file.
     """
     path = os.path.abspath(os.path.expanduser(config_path))
     if not os.path.isfile(path):
@@ -1022,6 +1050,7 @@ def run_config(config_path: str, session_id: Optional[str] = None) -> dict:
     output_folder = config.get("output_folder")
     session_info = open_log_root(
         path=resolve(input_folder),
+        format=format,
         mask=mask,
         mask_pattern=mask_pattern,
         parsers=parsers,

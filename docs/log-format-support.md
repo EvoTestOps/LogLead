@@ -367,7 +367,7 @@ reusing JsonLoader's field-semantics vocabulary as AccessLogLoader did. The pred
 is the mapping layer rather than the parsing held, with one addition this item did not anticipate:
 the loader's real question is *where the column names come from*, and there are three answers, so
 that is the `header` argument (`row`/`zeek`/`w3c`, decided per file, plus `none` and `auto`). The
-self-describing variants did turn out to be the cheapest win claimed — Zeek's header declares not
+self-describing variants did turn out to be the cheap win this section predicted — Zeek's header declares not
 only the names but the delimiter, the null markers **and** the column types, so `#types` is read as
 well and duration/byte counts reach `AnomalyDetector(numeric_cols=...)` as numbers with nothing
 configured. Shipped specs (`loglead/loaders/delimited_formats/*.yml`: `zeek`, `zeek_labeled`, `iis`,
@@ -483,7 +483,8 @@ section did not anticipate — a *dataset probe* recognizing the public datasets
 loader, from the label file and directory layout beside the log rather than from the log alone,
 because `HDFSLoader` needs its `anomaly_label.csv` and `HadoopLoader` its `abnormal_label.txt`. That
 is what makes auto-loading a labelled dataset yield a real `df_seq` instead of bare lines; a dataset
-whose labels are absent is deliberately not claimed, and falls through to the format probe. It
+whose labels are absent is deliberately not recognized as that dataset, and falls through to the
+format probe. It
 covers HDFS, Hadoop, ADFA, AWSCTD, Nezha, LO2, Profilence, BGL and Thunderbird/Spirit/Liberty.
 **Neither reference tool has this stage**, because neither has a reason to: lnav identifies a
 *format* so it can display a file, while LogLead identifies a *dataset* so it can attach labels.
@@ -511,8 +512,12 @@ Three things were measured rather than reasoned, and each contradicts the obviou
 The `m_timestamp`-mandatory question from §6 is answered the way `JsonLoader` answered it: per
 instance, `["m_message"]` only, since a plain-text fallback legitimately has no clock. §6's encoding
 requirement is met by `detections()`, which reports the undecodable-character count per file so that
-a mis-decoded file and a mis-detected format do not look alike. Not yet done: reaching `delta`/MCP,
-which is blocked on `read_folders()` consuming `orig_file_name`, a column only `RawLoader` produces.
+a mis-decoded file and a mis-detected format do not look alike. `delta`/MCP now reads through this
+detector too (§6, last bullet), which needed one addition here: `dataset_probe=False`, because the
+dataset probe hands a whole directory to a loader that returns a frame shaped for labels and
+sequences with no `file_name` column, and comparing log folders needs one row per line with the file
+it came from. The per-file probe still applies, so a BGL- or HDFS-shaped file inside a log folder is
+still read by its own loader.
 
 ### 7. Declarative format definitions (a format registry) — the real architectural lesson
 
@@ -581,12 +586,31 @@ decide once. Four of the six are now settled; the two that are not are called ou
   global, and detection is allowed to produce a timeless frame.
 - **Encoding.** ✅ *Settled.* Loaders still read `utf8-lossy`, and `AutoLoader.detections()` reports
   the `U+FFFD` count per file, so a mis-decoded file and a mis-detected format no longer look alike.
-- **Reach the MCP path.** ⚠️ **Open — and this is the one that makes all the other work invisible.**
-  `loglead/delta/log_root.py` still calls `RawLoader` with a glob and nothing else, so the 19 MCP
-  tools remain plain-text-only no matter what the loader layer can now read. The natural shape is a
-  format argument on `open_log_root` defaulting to `"auto"`. The blocker is small and specific:
-  `read_folders()` consumes an `orig_file_name` column that only `RawLoader` produces, and
-  `mcp/session.py`'s `BASE_COLUMNS` requires it downstream.
+- **Reach the MCP path.** ✅ *Settled: a `format` argument, defaulting to `"auto"`.*
+  `log_root.read_log_root()` resolves a format *name* through `LOG_ROOT_FORMATS` — a family
+  (`"json"`, `"syslog"`, `"delimited"`, `"logfmt"`, `"access_log"`, `"raw"`) or `"family/spec"`
+  (`"json/nginx_json"`, `"delimited/zeek"`, `"syslog/rfc5424"`) — and `open_log_root` passes it
+  through. Name-keyed rather than class-keyed for the same reason `masking.get_pattern()` is: the
+  value arrives from a model driving the MCP server. Four things the plan above did not anticipate:
+  - **The vocabulary is `AutoLoader`'s own.** What `detections()` reports as a file's format is what
+    you hand back to pin it, and `open_log_root` returns those counts as `detected_formats` — the
+    only way a caller can see that its JSON was read as plain text.
+  - **The `orig_file_name` blocker was not one.** `BASE_COLUMNS` was never read by anything; the
+    column is *rebuilt* in `read_log_root` from the prefix every loader already strips, in one line.
+    What the analyses actually require is `m_message` and `file_name`
+    (`log_root.REQUIRED_COLUMNS`), now checked at load time where the loader can still be named.
+  - **The dataset probe had to be turned off** (`AutoLoader(dataset_probe=False)`) — see §5 item 6.
+    Hadoop forces it rather than merely suggesting it: LogDelta's own demo log root keeps Hadoop's
+    `abnormal_label.txt` beside the `application_*` directories, so the probe recognizes the whole
+    root as the Hadoop dataset and hands it to `HadoopLoader`, whose frame has no `file_name`.
+  - **`format` is now the heaviest part of the parquet cache key**, since it decides which loader
+    read the files and therefore every column: the same logs read as `raw` and as `json` agree on
+    nothing but their paths.
+
+  Cost, measured on LogDelta's Hadoop demo root (978 files, 393,433 rows): `"raw"` 0.5 s,
+  `"auto"` 20 s, same row and folder counts either way, and `auto` additionally yields a real
+  `m_timestamp`. Detection is per file, and the session caches the result, so the 20 s is paid once
+  per log root.
 
 ---
 
@@ -607,7 +631,7 @@ decide once. Four of the six are now settled; the two that are not are called ou
 | LogLead's loader inventory | `loglead/loaders/__init__.py`; per-loader detail in `loglead/loaders/README.md` |
 | Which formats LogLead detects, and in what order | `loglead/loaders/auto.py` — `detect_dataset()` then `detect_format()`; `tests/log_file_detection.py` checks the choice against every dataset config |
 | Shipped format specs (13) | `loglead/loaders/json_formats/*.yml` (4), `loglead/loaders/access_log_formats/*.yml` (4), `loglead/loaders/delimited_formats/*.yml` (5) |
-| MCP path is still `RawLoader`-only | `loglead/delta/log_root.py` — the single `RawLoader(...)` call; `orig_file_name` in `loglead/mcp/session.py` `BASE_COLUMNS` |
+| Which formats `delta`/MCP can read | `loglead/delta/log_root.py` — `LOG_ROOT_FORMATS`, `available_formats()`, `resolve_format()`; the `format` argument on `open_log_root` in `loglead/mcp/server.py` |
 | `.gz` already works | Polars 1.38.1 decompresses transparently in both `read_csv` and `scan_csv` |
 
 JSON test-dataset candidates, their measured sizes, and the downloader/test-suite integration notes
@@ -666,23 +690,25 @@ entry added widens what `AutoLoader`'s generic pass recognizes on files nobody w
 
 ### 8.3 What to add next
 
-In order. Both are small and unlock disproportionate value. The third entry that stood here — §5
-item 3, delimited text with a header — is now built (`DelimitedLoader`), which completes the
-original shortlist; what it recommended held up, including doing the self-describing variants
-first, and the one thing it did not foresee is that a *generic* CSV needs less configuration than
-predicted (`Content`-style message columns are conventional enough to guess) and a *labelled* one
-needs more (the label column has to be kept out of the message).
+Two entries that stood here are now built. §5 item 3, delimited text with a header, is
+`DelimitedLoader`, which completes the original shortlist; what it recommended held up, including
+doing the self-describing variants first, and the one thing it did not foresee is that a *generic*
+CSV needs less configuration than predicted (`Content`-style message columns are conventional enough
+to guess) and a *labelled* one needs more (the label column has to be kept out of the message). The
+`delta`/MCP entry is done too — see §6's last bullet for what it cost, including the fact that its
+stated blocker was dead code.
 
-1. **Expose the format layer to `delta`/MCP** (§6, last bullet). *Not a format at all*, which is why
-   it is first: every loader built since this document was written is invisible through the 19 MCP
-   tools, because `log_root.py` hard-codes `RawLoader`. A format argument on `open_log_root`
-   defaulting to `"auto"` turns four delivered loaders and a detector into user-visible capability
-   for what is, mechanically, a small change — the blocker is one column (`orig_file_name`) that
-   only `RawLoader` currently produces. Nothing else on this list has that ratio.
-2. **Grow the generic timestamp list** (§6, second bullet). Nine patterns against lnav's 109, in one
+1. **Grow the generic timestamp list** (§6, second bullet). Nine patterns against lnav's 109, in one
    already-central place (`_GENERIC_TIMESTAMPS` in `auto.py`), consumed by the one code path that
    handles files no spec covers. Pure transcription from `time_formats.am`, bounded, and directly
-   measurable: the detection test already reports the match rate per file.
+   measurable: the detection test already reports the match rate per file. Reaching MCP raised the
+   value of this: on LogDelta's Hadoop demo root, 967 of 978 files land on one of the nine patterns
+   and the remaining 11 match none, so growing the list is now what makes an MCP session on unknown
+   logs arrive timestamped rather than blank.
+2. **A `detect_log_root` MCP tool**, if the format argument proves confusing in use. `open_log_root`
+   reports `detected_formats` as counts, which answers "what did you decide" but not "why" —
+   `AutoLoader.detections()` has the per-file rates and notes, and nothing exposes them. Cheap, and
+   only worth doing if the counts turn out not to be enough.
 Then, if the layered-log case shows up in practice, **§5 item 8 (`from <field>`)** — noting the
 design point that section already makes: it belongs in `EventLogEnhancer` producing `e_*` columns,
 not in a loader.
@@ -697,4 +723,8 @@ Superseded statements, kept visible so the diff is legible rather than silently 
 families now exist), §4's empty cells for logfmt, syslog and delimited-with-header, §6's
 "implemented twice already" for multi-line handling — it is three now, and consolidating them is
 still open — and, as of `DelimitedLoader`, this document's own repeated claim that LogLead "reads a
-CSV only inside `NezhaLoader`" and that item 3 is the last unbuilt piece of the shortlist.
+CSV only inside `NezhaLoader`" and that item 3 is the last unbuilt piece of the shortlist. As of the
+`format` argument, also: "the MCP tools can only read plain text", and the `orig_file_name` blocker
+that went with it, which was never real — `BASE_COLUMNS` was defined and never read, so nothing
+downstream required the column. Worth remembering as a method note: this document named a blocker
+from a constant's *name* without checking whether anything used it.

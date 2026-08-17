@@ -171,6 +171,12 @@ A typical investigation: score every log folder (`anomaly_folder_content`) → n
 each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
 about, with the full tables and interactive Plotly HTML written alongside.
 
+The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
+defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it
+chose per format. Pin it instead by naming a family — `"raw"`, `"json"`, `"syslog"`, `"logfmt"`,
+`"access_log"`, `"delimited"` — or a shipped spec after a slash, `"json/nginx_json"`,
+`"delimited/zeek"`, `"syslog/rfc5424"`.
+
 Directory names are often opaque ids, and that name labels every plot and result table, so
 `set_folder_names` (or `open_log_root(folder_names=...)`) gives them meaningful names such as
 `PageRank_MachineDown` or `FailingRunThu`. Nothing on disk is renamed.

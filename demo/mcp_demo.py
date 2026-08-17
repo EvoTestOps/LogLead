@@ -14,7 +14,12 @@ What it demonstrates, beyond "nothing crashes":
 Usage::
 
     uv run demo/mcp_demo.py [--log-root /path/to/logs] [--keep-cache]
-                                    [--folder-names names.json]
+                                    [--folder-names names.json] [--format auto]
+
+``--format`` is which loader reads the files: ``auto`` (the default) samples each file and picks
+one, ``raw`` reads every line as one event the way LogDelta does, and a family or ``family/spec``
+(``json``, ``syslog``, ``json/nginx_json``, ``delimited/zeek``, ...) pins one. On Hadoop, ``auto``
+detects log4j-timestamped text and so yields an ``m_timestamp`` column that ``raw`` does not.
 
 The default log root is LogDelta's Hadoop demo data. Get it with::
 
@@ -101,6 +106,11 @@ def main():
         "--folder-names", default=DEFAULT_FOLDER_NAMES,
         help="JSON object of {folder name: meaningful name} for this log_root.",
     )
+    parser.add_argument(
+        "--format", default="auto",
+        help="How to read the files: 'auto' (default, detect per file), 'raw', or a family or "
+             "family/spec such as 'json/nginx_json'. See loglead.delta.log_root.available_formats().",
+    )
     args = parser.parse_args()
 
     if not os.path.isdir(args.log_root):
@@ -116,7 +126,7 @@ def main():
 
     try:
         run_demo(args.log_root, keep_cache=args.keep_cache,
-                 folder_names_path=args.folder_names)
+                 folder_names_path=args.folder_names, format=args.format)
     finally:
         if args.keep_cache:
             print(f"\nArtifacts kept in {workdir}")
@@ -124,7 +134,7 @@ def main():
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def run_demo(log_root_path, keep_cache=False, folder_names_path=None):
+def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="auto"):
     # ---------------------------------------------------------------- load --
     banner("open_log_root -- read, mask, and parse once")
     names = load_folder_names(folder_names_path, log_root_path)
@@ -134,6 +144,10 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None):
     started = time.time()
     info = server.open_log_root(
         path=log_root_path,
+        # "auto" samples each file and builds the loader that reads it, so a log root of JSON,
+        # syslog or CSV logs arrives in columns rather than as one blob per line. Pass --format raw
+        # for the plain-text reading LogDelta does.
+        format=format,
         mask=True,
         mask_pattern="myllari_extended",
         parsers=["tip"],
@@ -149,6 +163,8 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None):
           f"{info['n_rows']:,} lines in {cold:.1f}s")
     print(f" parsers={info['parsers']}  enhanced={info['enhanced_columns']}")
     print(f" cache_hit={info['cache_hit']}")
+    # What detection chose, per format. The only place a wrong guess is visible.
+    print(f" format={info['format']}  detected={info['detected_formats']}")
 
     target = info["folders"][0]
     print(f" target log folder: {target}")
@@ -156,7 +172,9 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None):
     banner("open_log_root again -- served from the parquet cache")
     started = time.time()
     again = server.open_log_root(
-        path=log_root_path, mask=True, mask_pattern="myllari_extended",
+        # Every argument that shapes the frame has to match for the cache to be hit, format
+        # included -- it decides which loader ran and therefore every column.
+        path=log_root_path, format=format, mask=True, mask_pattern="myllari_extended",
         parsers=["tip"], file_name_normalizer="strip_folder_id", folder_names=names,
         session_id="demo2",
     )

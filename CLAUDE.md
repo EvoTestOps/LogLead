@@ -212,15 +212,16 @@ Loaders come in two shapes. Most are **dataset-specific**, one Python class per 
 `HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird / Spirit / Liberty
 supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop systems),
 `ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `LO2Loader`. Plus `RawLoader` — any
-plain log file, one event per line, no labels; the starting point for new/custom data, and the loader
-behind `loglead/delta/` and every MCP tool.
+plain log file, one event per line, no labels; the starting point for new/custom data, and what
+`loglead/delta/` and the MCP tools fall back to (`format="raw"`) when a log root should be read as
+plain text.
 
 `AutoLoader` (`loaders/auto.py`) sits above all of them: it samples a file, decides the format, and
 **builds one of the other loaders** — it never parses anything itself, which is what keeps the
 decision (`detect_format()`, importable on its own) separable from the reading. Two stages, most
 specific first: a **dataset probe** that recognizes a public dataset from the label file and
 directory layout *beside* the log (so `HDFSLoader` gets its `anomaly_label.csv` and `df_seq`
-survives — a dataset whose labels are missing is deliberately not claimed and falls through; where
+survives — a dataset whose labels are missing is deliberately not recognized and falls through; where
 the label is not a file at all the layout carries it, as with LO2's `correct/` test-case directory),
 then a
 **per-file format probe** ordered self-declared columns (Zeek `#separator`, W3C `#Fields:`) → JSON →
@@ -376,9 +377,25 @@ only as a *verb* (`run_config`, `uv run`) — and `loglead/loaders/lo2.py` has a
 of its own, which is a different pipeline entirely.
 
 The data shape here is a **log root**: a directory whose immediate subdirectories are *log folders*,
-loaded via `RawLoader` into a single event-level `df` with `folder` and `file_name` columns. There are
+loaded into a single event-level `df` with `folder` and `file_name` columns. There are
 no labels and no `df_seq`; comparison is always target-vs-baseline, where the baseline is the other
 log folders.
+
+**Which loader reads it** is `read_log_root(..., format=...)`, a *name* resolved through
+`LOG_ROOT_FORMATS` — `"auto"` (the default, `AutoLoader` per file), `"raw"`, a family (`"json"`,
+`"syslog"`, `"logfmt"`, `"access_log"`, `"delimited"`) or `"family/spec"` (`"json/nginx_json"`,
+`"delimited/zeek"`, `"syslog/rfc5424"`; `available_formats()` lists them all). Name-keyed, not
+class-keyed, because the value arrives from a model driving MCP — the same reason as
+`masking.get_pattern()`. The names *are* `AutoLoader.detections()`'s own format strings, so what
+detection reports can be handed straight back to pin it. Three things to know before touching this:
+`AutoLoader` is built with `dataset_probe=False` here (the probe hands a whole directory to a dataset
+loader, whose frame has no `file_name` — and LogDelta's Hadoop demo root really does keep
+`abnormal_label.txt` beside its log folders, so this is not hypothetical); `orig_file_name` is
+rebuilt from the strip prefix rather than taken from the loader, since only `RawLoader` produces it;
+and `REQUIRED_COLUMNS` (`m_message`, `file_name`) is checked right after loading, because a format
+that reads but maps nothing to the message would otherwise surface as empty results several analyses
+later. `read_folders()` is the older two-value wrapper (`(df, n_folders)`) kept for existing callers;
+`read_log_root()` returns `(df, info)` where `info` carries the detected-format counts.
 
 Three question types × four granularities, one function per cell:
 
@@ -408,9 +425,12 @@ Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp
 - `session.py` — `Session` holds one log root's enhanced frame and grows it in place;
   `Session.ensure_content()` adds only the missing column and keeps it. `SessionStore` mirrors each
   frame to a parquet cache keyed on the on-disk fingerprint (file count, total bytes, max mtime) plus
-  the preprocessing options (mask pattern, `file_name_normalizer`, `folder_names`/`keep_original`), so a restart
+  the preprocessing options (`format`, mask pattern, `file_name_normalizer`,
+  `folder_names`/`keep_original`), so a restart
   re-attaches in ~0.2s instead of re-reading. Anything that rewrites the frame **must** be in that
   key — a cache hit skips preprocessing entirely and would otherwise serve a wrongly-shaped frame.
+  `format` is the heaviest entry: it decides which loader ran and therefore every column, so the same
+  logs read as `raw` and as `json` share nothing but their paths.
   This module has no `mcp` dependency and is usable on its own — that is how
   `demo/mcp_demo.py` runs.
 - `server.py` — one tool per analysis, named exactly like the LogDelta config keys. The local `@tool`

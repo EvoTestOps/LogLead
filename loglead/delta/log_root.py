@@ -22,7 +22,8 @@ import polars as pl
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from ..enhancers import EventLogEnhancer
-from ..loaders import RawLoader
+from ..loaders import (AccessLogLoader, AutoLoader, DelimitedLoader, JsonLoader, LogfmtLoader,
+                       RawLoader, SyslogLoader)
 
 CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 
@@ -30,42 +31,194 @@ CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 #: resolved dynamically against :class:`EventLogEnhancer`.
 _PARSE_PREFIX = "Parse-"
 
+#: How a log root may be read, keyed by name. ``"auto"`` detects the format per
+#: file; every other entry pins one format family for the whole log root.
+#:
+#: Name-keyed rather than "pass a loader class", for the same reason
+#: :func:`masking.get_pattern` and :data:`FILE_NAME_NORMALIZERS` are: the value
+#: arrives from a caller who is frequently a language model driving the MCP
+#: server, and an allowlist is the only thing that makes that safe to accept.
+LOG_ROOT_FORMATS = {
+    "auto": AutoLoader,
+    "raw": RawLoader,
+    "json": JsonLoader,
+    "access_log": AccessLogLoader,
+    "delimited": DelimitedLoader,
+    "logfmt": LogfmtLoader,
+    "syslog": SyslogLoader,
+}
 
-def read_folders(root, filename_pattern="*.log", min_file_size=0):
+#: Columns every analysis in this package needs, whichever loader produced the frame.
+REQUIRED_COLUMNS = ("m_message", "file_name")
+
+
+def available_formats():
+    """Every accepted :func:`read_log_root` format name, sub-formats included."""
+    names = []
+    for family, loader in LOG_ROOT_FORMATS.items():
+        names.append(family)
+        if loader is SyslogLoader:
+            names += [f"{family}/{rfc}" for rfc in ("rfc3164", "rfc5424")]
+        elif hasattr(loader, "available_formats"):
+            names += [f"{family}/{spec}" for spec in loader.available_formats()]
+            if loader is DelimitedLoader:
+                names += [f"{family}/{style}" for style in ("row", "w3c")]
+    return sorted(names)
+
+
+def resolve_format(format="auto"):
+    """Turn a log root format name into ``(loader class, keyword arguments)``.
+
+    Accepts a family name from :data:`LOG_ROOT_FORMATS`, or ``"family/sub"``
+    naming one of that family's shipped format specs (``"json/nginx_json"``,
+    ``"delimited/zeek"``), one of ``DelimitedLoader``'s header styles
+    (``"delimited/w3c"``), or one syslog RFC (``"syslog/rfc5424"``).
+
+    The vocabulary is deliberately :class:`AutoLoader`'s own: what its
+    ``detections()`` reports as the format of a file is what you pass back here
+    to pin that choice for every file in the log root.
+    """
+    name = str(format or "auto")
+    family, _, sub = name.partition("/")
+    loader = LOG_ROOT_FORMATS.get(family)
+    if loader is None:
+        raise ValueError(
+            f"Unknown log root format {name!r}. Valid formats: "
+            f"{', '.join(available_formats())}."
+        )
+    if not sub:
+        return loader, {}
+
+    if loader is AutoLoader:
+        raise ValueError(
+            f"{name!r} is not a format: 'auto' means detect per file, so it takes no sub-format. "
+            f"Name the family you want to pin instead, e.g. 'json/nginx_json'."
+        )
+    if loader is RawLoader:
+        raise ValueError(f"{name!r} is not a format: 'raw' reads any text file as one event per "
+                         f"line and has nothing to select.")
+    if loader is LogfmtLoader:
+        raise ValueError(f"{name!r} is not a format: logfmt lines carry their own key names and "
+                         f"those names are conventional, so there are no logfmt specs to choose "
+                         f"between. Use 'logfmt'.")
+    if loader is SyslogLoader:
+        if sub not in ("auto", "rfc3164", "rfc5424"):
+            raise ValueError(f"Unknown syslog format {sub!r}. Valid: auto, rfc3164, rfc5424 - or "
+                             f"just 'syslog', which decides per file.")
+        return loader, {"format": sub}
+
+    specs = loader.available_formats()
+    if sub in specs:
+        # file_pattern is how a spec states which files it applies to, and the caller has already
+        # chosen its files with filename_pattern. Left in, a spec would silently refuse every file
+        # whose name it did not anticipate - the same override AutoLoader applies to a detected spec.
+        return loader, {"format": sub, "file_pattern": None}
+    # A Zeek or W3C file names its own columns, so DelimitedLoader can read one without a spec.
+    # Checked after the specs because 'zeek' is both, and the spec is the richer of the two - it
+    # adds the type casts and null markers on top of the header style.
+    if loader is DelimitedLoader and sub in ("row", "w3c"):
+        return loader, {"header": sub}
+    valid = [option for option in available_formats() if option.startswith(f"{family}/")]
+    raise ValueError(f"Unknown {family} format {sub!r}. "
+                     f"Valid: {', '.join(valid) or '(none installed)'} - or just {family!r}.")
+
+
+def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"):
     """Load every matching log file under ``root`` into one event-level frame.
 
     :param root: the log root. Its immediate subdirectories become log folders.
     :param filename_pattern: glob applied within each subdirectory.
     :param min_file_size: skip files of this size or smaller (bytes).
-    :returns: ``(df, n_folders)`` where ``df`` has columns ``m_message``,
-        ``file_name`` (relative to its log folder), ``orig_file_name`` and
-        ``folder``.
+    :param format: how to read the files -- a name from :func:`available_formats`.
+        ``"auto"`` detects per file, so a log root of JSON, syslog or CSV logs
+        arrives parsed into columns instead of as one blob per line.
+    :returns: ``(df, info)``. ``df`` always has ``m_message``, ``file_name``
+        (relative to its log folder), ``orig_file_name`` and ``folder``; every
+        other column depends on what the chosen loader could read. ``info``
+        reports the format asked for, what detection actually chose, and the
+        counts, so a wrong guess is visible rather than silently analyzed.
 
     Rows with null messages or a U+FFFD replacement character are dropped, so
-    ``df.height`` can be lower than the raw line count.
+    ``df.height`` can be lower than the raw line count; ``info["dropped_rows"]``
+    says how many.
     """
     root = os.path.abspath(os.path.expanduser(root))
     if not os.path.isdir(root):
         raise FileNotFoundError(f"Log root not found: {root}")
+    loader_class, kwargs = resolve_format(format)
+    if loader_class is AutoLoader:
+        # Stage 1 of detection recognizes a public dataset from the label file beside the logs and
+        # hands the whole directory to that dataset's own loader, which returns a frame shaped for
+        # labels and sequences with no file_name column at all -- nothing this package can compare
+        # log folders by. A log root is a set of log folders, not a dataset, so only the per-file
+        # probe applies. Hadoop forces the issue rather than merely suggesting it: LogDelta's demo
+        # log root keeps Hadoop's own abnormal_label.txt next to the application_* directories.
+        kwargs["dataset_probe"] = False
 
-    loader = RawLoader(
+    loader = loader_class(
         root,
         filename_pattern=filename_pattern,
         min_file_size=min_file_size,
         strip_full_data_path=root,
+        **kwargs,
     )
     df = loader.execute()
+
+    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Reading {root} as {format!r} produced no {', '.join(missing)} column, which every "
+            f"log folder comparison needs. Columns present: {', '.join(df.columns[:15])}. "
+            f"file_name comes from filename_pattern, so pass one; m_message means the format was "
+            f"read but nothing in it was the message."
+        )
+
+    raw_height = df.height
     df = df.filter(pl.col("m_message").is_not_null())  # lose lines with nulls
     df = df.filter(~pl.col("m_message").str.contains("�"))  # lose non-utf8 lines
 
     df = df.with_columns([
+        # Where the line came from on disk. Only RawLoader keeps this itself, and only when handed
+        # a prefix to strip, so it is rebuilt here from the prefix every loader was given.
+        pl.concat_str([pl.lit(root), pl.col("file_name")]).alias("orig_file_name"),
         # First path segment is the log folder
         pl.col("file_name").str.extract(r"^/([^/]+)", 1).alias("folder"),
         # The rest stays as the file name relative to its log folder
         pl.col("file_name").str.replace(r"^/[^/]+/", "", literal=False).alias("file_name"),
     ])
-    n_folders = df.select("folder").n_unique()
-    return df, n_folders
+    if df.select(pl.col("folder").is_null().any()).item():
+        raise ValueError(
+            f"Some rows of {root} have no log folder, meaning their file_name is not the path "
+            f"below the log root that stripping {root!r} should have left. This is a loader "
+            f"reporting file names differently, not bad data."
+        )
+
+    detected = {}
+    if isinstance(loader, AutoLoader):
+        table = loader.detections()
+        if table.height:
+            detected = dict(
+                table.group_by("format").len().sort("len", descending=True).iter_rows()
+            )
+    info = {
+        "format": str(format),
+        "detected_formats": detected,
+        "n_folders": df.select("folder").n_unique(),
+        "n_files": df.select("orig_file_name").n_unique(),
+        "n_rows": df.height,
+        "dropped_rows": raw_height - df.height,
+    }
+    return df, info
+
+
+def read_folders(root, filename_pattern="*.log", min_file_size=0, format="auto"):
+    """:func:`read_log_root` returning only ``(df, n_folders)``.
+
+    The two-value shape ``loglead.delta`` has always exported. Use
+    :func:`read_log_root` when the format actually chosen matters.
+    """
+    df, info = read_log_root(root, filename_pattern, min_file_size, format)
+    return df, info["n_folders"]
 
 
 def count_log_root_files(root, filename_pattern="*.log", min_file_size=0):

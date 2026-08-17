@@ -50,14 +50,14 @@ Two stages, most specific first:
    *next to* the log, not only from the log: HDFSLoader needs its anomaly_label.csv and
    HadoopLoader its abnormal_label.txt, and those live at a known place relative to the data. The
    sibling file both confirms the dataset and supplies the argument, so a dataset whose labels are
-   missing is deliberately *not* claimed - it falls through to stage 2 and loads unlabeled rather
-   than crashing or silently labelling everything normal.
+   missing is deliberately *not* recognized as that dataset - it falls through to stage 2 and loads
+   unlabeled rather than crashing or silently labelling everything normal.
 2. **Format probe, per file.** A file that *declares* its own columns first - Zeek's '#separator'
    and W3C's '#Fields:' are the most specific evidence in this file, since the format says so
    itself - then JSON, then web access log, then syslog, then logfmt, then a delimited file with a
    header row, then a generic timestamped-text pass, then plain text. Specific before generic,
    which is what stops a logfmt line whose value is an ISO timestamp from being read as generic
-   timestamped text, and what keeps a CSV of log lines from being claimed by the far weaker
+   timestamped text, and what keeps a CSV of log lines from being read by the far weaker
    header-row test before the named formats have had their turn. Each candidate is scored as a
    match rate over a sample of the file and the best one above min_match_rate wins - the rule
    SyslogLoader already uses to choose between the two syslog RFCs, generalized.
@@ -78,12 +78,24 @@ per file.
 - sample_lines (int): how many lines to look at per file. Defaults to 1000, as in SyslogLoader.
 - system (str, optional): 'TrainTicket' or 'WebShop', needed only when the Nezha dataset is
   detected - nothing on disk says which of the two a Nezha directory holds.
+- dataset_probe (bool): whether to do the stage 1 check, default True. On, AutoLoader first asks
+  whether the directory it was given is HDFS, Hadoop, LO2 or another dataset it has a loader for,
+  and if it is, that loader reads the whole directory and stage 2 never runs. Off, it skips the
+  question and looks at each file on its own.
+  Turn it off when you need to know which file each line came from. Those dataset loaders do not
+  say: they number events with a seq_id rather than recording a file name. Hadoop's frame has
+  seq_id and seq_id_sub, and NezhaLoader, the only one with a file_name column at all, puts just
+  the base name in it. loglead.delta.log_root sets False for this reason - it groups lines by
+  folder and file name, so it needs the path each line came from.
+  Only the question about the directory is skipped. Stage 2 still recognizes single files that
+  look like BGL or HDFS and reads them with those loaders, and those lines do get a file name,
+  because AutoLoader adds one when it reads file by file.
 
 Not implemented: JSON containers that wrap their records under a key ({"Records": [...]}), since
-the key name is not guessable. A delimited file with a header row is claimed but not mapped beyond
+the key name is not guessable. A delimited file with a header row is recognized but not mapped beyond
 its message column - which column holds the timestamp, and in what format, is not guessable either,
-so name a DelimitedLoader spec when that matters. A W3C file that carries no '#Fields:' of its own
-is not claimed at all: nothing in it says what its columns are.
+so name a DelimitedLoader spec when that matters. A W3C file that carries no '#Fields:' of its own is
+not recognized at all: nothing in it says what its columns are.
 """
 
 # How many lines of a file are looked at to decide its format. SyslogLoader's number, for the same
@@ -266,7 +278,8 @@ def detect_dataset(path, system=None):
     # below a run rather than beside the logs. The service logs are checked too, because LO2Loader
     # selects files by the doubled 'oauth2-oauth2-' token docker compose leaves in them (project
     # light-oauth2 + service oauth2-client -> light-oauth2-oauth2-client-1.log). A tree of
-    # correct/ directories without those is not something LO2Loader can read, so it is not claimed.
+    # correct/ directories without those is not something LO2Loader can read, so it is not detected
+    # as LO2.
     # light-oauth2-logs is the folder the LO2v2 archive unpacks into, checked for the same reason
     # ADFA-LD and CSV are above: the directory a user points at is usually the one they downloaded.
     for root in (path, os.path.join(path, "light-oauth2-logs")):
@@ -503,7 +516,7 @@ def _detect_delimited_header(sample, min_match_rate):
     """A header row, which is the weakest evidence in this file and so is tried nearly last.
 
     Two things are asked of the first line, and both were needed. Its cells have to *look like
-    names* - a header is names, not data - because a count-based test alone claims files that
+    names* - a header is names, not data - because a count-based test alone matches files that
     merely contain the delimiter: an IIS log's first line splits on ';' into 3 pieces at a 0.954
     "consistent" rate, and is not a CSV. And the rest of the sample has to carry *at least* as many
     delimiters as the header, not exactly as many, because RFC-4180 quoting puts commas inside
@@ -602,13 +615,14 @@ def detect_format(path, min_match_rate=0.5, sample_lines=_SAMPLE_LINES):
 class AutoLoader(BaseLoader):
     def __init__(self, filename, filename_pattern=None, min_file_size=0,
                  strip_full_data_path=None, min_match_rate=0.5, sample_lines=_SAMPLE_LINES,
-                 system=None):
+                 system=None, dataset_probe=True):
         self.filename_pattern = filename_pattern
         self.min_file_size = min_file_size
         self.strip_full_data_prefix = strip_full_data_path
         self.min_match_rate = min_match_rate
         self.sample_lines = sample_lines
         self.system = system
+        self.dataset_probe = dataset_probe
         # What was chosen for each path, for detections() and for the error messages.
         self._detections = {}
         # A RawLoader fallback has no clock, and that is a legitimate outcome rather than a defect,
@@ -619,7 +633,7 @@ class AutoLoader(BaseLoader):
     # Loading ---------------------------------------------------------------------------------
 
     def load(self):
-        dataset = detect_dataset(self.filename, self.system)
+        dataset = detect_dataset(self.filename, self.system) if self.dataset_probe else None
         if dataset is not None:
             self._detections = {self.filename: dataset}
             self._load_dataset(dataset)
@@ -764,10 +778,12 @@ class AutoLoader(BaseLoader):
                  "rate": d.rate, "sampled_lines": d.lines,
                  "replacement_chars": d.replacement_chars, "note": d.note}
                 for path, d in self._detections.items()]
-        return pl.DataFrame(rows) if rows else pl.DataFrame(
-            schema={"path": pl.String, "loader": pl.String, "format": pl.String,
-                    "rate": pl.Float64, "sampled_lines": pl.Int64,
-                    "replacement_chars": pl.Int64, "note": pl.String})
+        # The schema is given rather than inferred: 'note' is null for most files, and on a tree of
+        # more than infer_schema_length of them Polars decides the column is Null and then refuses
+        # the first real note it meets.
+        return pl.DataFrame(rows, schema={
+            "path": pl.String, "loader": pl.String, "format": pl.String, "rate": pl.Float64,
+            "sampled_lines": pl.Int64, "replacement_chars": pl.Int64, "note": pl.String})
 
     def preprocess(self):
         # Every child ran its own preprocess() as it was loaded; there is nothing format-specific

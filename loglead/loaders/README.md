@@ -68,11 +68,17 @@ Detection happens in two stages, most specific first:
    *next to* the log rather than only from the log itself, because those loaders need it:
    `HDFSLoader` needs its `anomaly_label.csv` and `HadoopLoader` its `abnormal_label.txt`, and the
    sibling file both confirms the dataset and supplies the argument. A dataset whose labels are
-   missing is deliberately **not** claimed — it falls through to stage 2 and loads unlabeled rather
+   missing is deliberately **not** recognized as that dataset — it falls through to stage 2 and loads unlabeled rather
    than crashing or silently marking everything normal. Covers HDFS, Hadoop, ADFA, AWSCTD, Nezha,
    LO2, Profilence, BGL and Thunderbird/Spirit/Liberty. Not every dataset keeps its labels in a
    file: LO2's label is the *name of the test-case directory* (`correct` vs the error injected), so
-   there the `correct/` directory is what the probe looks for.
+   there the `correct/` directory is what the probe looks for. **`dataset_probe=False`** skips this
+   check, and you need that when a line has to carry the file it came from. These dataset loaders
+   don't record one: they number events with a `seq_id` instead (Hadoop's frame has
+   `seq_id`/`seq_id_sub`; Nezha keeps only the base name of the file). That is why the log-folder
+   comparison in [`loglead/delta/`](../delta/) passes it. Only the check on the directory is skipped —
+   a single BGL- or HDFS-shaped file inside the tree is still recognized below, and does get a file
+   name.
 2. **Format probe, per file** — a file that declares its own columns (Zeek's `#separator`, W3C's
    `#Fields:`) → JSON → web access log → syslog → logfmt → a delimited file with a header row →
    generic timestamped text → plain text. Each candidate is scored as a match rate over a sample of
@@ -108,8 +114,10 @@ add_ano_col` pipeline, the `_split_and_unnest()` helper used by the positional-t
 The starting point for any log file that doesn't have (or doesn't need) a dedicated loader: one
 column, `m_message`, one row per line, no labels. Optional regex-based timestamp extraction
 (`timestamp_pattern` + `timestamp_format`) with several strategies for lines that don't match
-(`drop`/`keep`/`fill-lastseen`/`merge`). This is also the loader behind `loglead/delta/` and every
-MCP tool, since log-folder comparison works on arbitrary, unlabeled log trees.
+(`drop`/`keep`/`fill-lastseen`/`merge`). It is also what `loglead/delta/` and the MCP tools use when
+asked for `format="raw"`, and what `AutoLoader`'s generic and plain-text branches build — log-folder
+comparison works on arbitrary, unlabeled log trees, so plain text is always an acceptable answer
+there.
 
 ## Spec-driven format families
 
