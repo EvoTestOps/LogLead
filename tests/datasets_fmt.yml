@@ -1,8 +1,8 @@
 root_folder: '~/Datasets_logfmt'
 local_copy_folder: '~/Datasets'
 
-# logfmt - the key=value convention from Heroku that the Go ecosystem writes by default
-# (docs/log-format-support.md section 5 item 2), read by LogfmtLoader.
+# logfmt - the key=value convention from Heroku that the Go ecosystem writes by default,
+# read by LogfmtLoader.
 #
 # There is no curated logfmt research corpus the way there is for HDFS or BGL, so the data here is
 # Grafana Labs' own production logs, committed to grafana/loki as the test data for its Drain

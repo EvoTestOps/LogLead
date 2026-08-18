@@ -1,8 +1,8 @@
 root_folder: '~/Datasets_syslog'
 local_copy_folder: '~/Datasets'
 
-# Syslog - RFC 3164, the BSD format every Linux box and appliance still writes
-# (docs/log-format-support.md section 5 item 5), read by SyslogLoader.
+# Syslog - RFC 3164, the BSD format every Linux box and appliance still writes,
+# read by SyslogLoader.
 #
 # No labels. The labelled syslog data that exists is the AIT Log Data Set (v1.1 is 3.4 GB zipped,
 # v2.1 is 137 GB) and the AIT CAM-LDS, and in both the labels are separate ground-truth files

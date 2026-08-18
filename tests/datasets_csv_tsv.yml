@@ -1,7 +1,7 @@
 root_folder: '~/Datasets_csv_tsv'
 local_copy_folder: '~/Datasets'
 
-# Delimited text with a header - docs/log-format-support.md section 5 item 3 - read by
+# Delimited text with a header - CSV, TSV, Zeek and W3C/IIS - read by
 # DelimitedLoader. Five entries covering the three places the column names can come from, since
 # that, rather than the parsing, is what this family makes hard:
 #

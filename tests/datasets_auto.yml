@@ -1,8 +1,7 @@
 root_folder: '~/Datasets_auto'
 local_copy_folder: '~/Datasets'
 
-# AutoLoader - detect the format, then build the loader that reads it
-# (docs/log-format-support.md section 5 item 6), read by AutoLoader.
+# AutoLoader - detect the format, then build the loader that reads it.
 #
 # There is no "auto-detection dataset" to download, because detection is not a format: what has to
 # be tested is that AutoLoader, pointed at a corpus, reproduces exactly what the named loader
@@ -12,8 +11,8 @@ local_copy_folder: '~/Datasets'
 # picked the wrong loader, which is precisely the failure this config exists to catch.
 #
 # The last entry is the one that is not a copy. It downloads three unrelated corpora into a single
-# folder, which is the case docs/log-format-support.md calls the normal one rather than the
-# exception: a log folder holding several formats at once. AutoLoader has to detect per file, build
+# folder, which is the normal case rather than the exception: a log folder holding several formats
+# at once. AutoLoader has to detect per file, build
 # three different loaders and stack their output into one frame, and its expected_length is the sum
 # of the three individual ones (56,100 + 787,859 + 51,462).
 #

@@ -15,7 +15,7 @@ __all__ = ['DelimitedLoader']
 DelimitedLoader Class
 
 One configurable loader for delimited text that names its own columns - CSV, TSV and the
-self-describing header formats (docs/log-format-support.md section 5 item 3). This is how exported
+self-describing header formats. This is how exported
 observability data usually arrives: SIEM and audit exports, Zeek, W3C/IIS, and the
 '*_structured.csv' files loghub-style datasets ship as their already-parsed form.
 

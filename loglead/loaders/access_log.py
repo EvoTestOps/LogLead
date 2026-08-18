@@ -15,7 +15,7 @@ AccessLogLoader Class
 
 One configurable loader for web access logs - Apache/nginx Common and Combined Log Format and the
 endless site-specific variations of them - instead of a Python class per variant. These formats are
-positional text, so each one is a single regex (docs/log-format-support.md section 5 item 4); what
+positional text, so each one is a single regex; what
 differs between them is only *which* regex and which capture means what, so both are configuration.
 
 This is the second spec-driven loader, after JsonLoader, and it deliberately reuses that loader's

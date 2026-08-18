@@ -32,7 +32,7 @@ AutoLoader Class
 
 The loader for when you do not know which loader you need. It looks at a file, decides what format
 it is in, and builds the loader that reads that format - so `AutoLoader(filename=...).execute()`
-works on anything, and tells you what it decided (docs/log-format-support.md section 5 item 6).
+works on anything, and tells you what it decided.
 
     AutoLoader(filename="mystery.log").execute()                     # one file
     AutoLoader(filename="logs", filename_pattern="*.log").execute()  # a tree, detected per file
@@ -41,7 +41,7 @@ works on anything, and tells you what it decided (docs/log-format-support.md sec
 
 Detection returns a **loader class and its arguments**, never a parsed frame: the spec-driven
 loaders already know how to read their formats, and detection's whole job is to pick one of them
-and name a format spec (docs/log-format-json-loader.md section 2). That is also why detect_format()
+and name a format spec. That is also why detect_format()
 is importable on its own - the decision is inspectable without loading anything.
 
 Two stages, most specific first:

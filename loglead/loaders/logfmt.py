@@ -15,7 +15,7 @@ and is what Grafana, Loki, Prometheus, Docker, Consul and most of the Go ecosyst
 carries its own field names, so unlike an access log there is no layout to configure and unlike JSON
 there is usually no mapping to configure either: the key names are conventional, so `ts`/`time`/
 `timestamp`/`t` become m_timestamp, `msg`/`message` becomes m_message and `level`/`lvl`/`severity`
-becomes level, with no spec file involved (docs/log-format-support.md section 5 item 2).
+becomes level, with no spec file involved.
 
     LogfmtLoader(filename="app.log").execute()                          # zero configuration
     LogfmtLoader(filename="logs", filename_pattern="*.txt").execute()   # a tree of files

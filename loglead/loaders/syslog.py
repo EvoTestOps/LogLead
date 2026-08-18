@@ -14,7 +14,7 @@ SyslogLoader Class
 
 One loader for syslog - RFC 3164 (the old BSD format, still what almost every Linux box and network
 device writes) and RFC 5424 (the structured successor). It is the substrate of Unix and appliance
-logging and lnav treats it as a core format (docs/log-format-support.md section 5 item 5).
+logging, and lnav treats it as a core format.
 
 Unlike the web access logs of AccessLogLoader, syslog is not one layout per site: there are two,
 both defined by an RFC, so they are built in and named rather than kept in spec files. Which one a
@@ -36,7 +36,7 @@ the one place syslog carries a severity at all - the BSD format's message text h
 - strip_full_data_path (str, optional): prefix removed from 'file_name'.
 - format (str): 'auto' (default), 'rfc3164' or 'rfc5424'. 'auto' tries both on the first lines of
   each file and keeps whichever matches more of them - per file, because a log directory holding
-  two formats is normal rather than exceptional (docs/log-format-support.md section 5 item 6).
+  two formats is normal rather than exceptional.
 - pattern (str, optional): a regex with named captures, used instead of the built-in ones. The
   escape hatch for the vendor variants that call themselves syslog and are not. Recognized capture
   names: pri, timestamp, host, app_name, procid, msgid, structured_data, message.

@@ -321,3 +321,18 @@ whether the file name starts with `success`. Dataset: **Profilence** — not a p
 the "Not open dataset" comment in the loader itself); included because the rest of the pipeline
 (enhancers, anomaly detectors) is exercised against it internally, not because the data is
 downloadable.
+
+## Known gaps
+
+Two things worth knowing before adding a loader, both cheap to improve and neither a bug:
+
+- **The generic timestamp list is short.** `_GENERIC_TIMESTAMPS` in [`auto.py`](auto.py) holds 9
+  pattern/format pairs, and it is the only thing standing between an unrecognized file and being
+  read as plain text with no clock. lnav ships 109. Adding entries is pure transcription and each
+  one widens what detection gets from a file nobody wrote a spec for.
+- **Multi-line merging is implemented three times**, with no shared code:
+  `RawLoader.missing_timestamp_action`, `HadoopLoader._merge_multiline_entries` and
+  `SyslogLoader.multiline`. They answer the same question — a line that does not start a new record
+  belongs to the previous one — and `SyslogLoader`'s is the most developed, since it also decides
+  *where* the merged text lands (`merge-message` feeds it to `e_words`/`e_chars_len`;
+  `merge-add-column` parks it in `trace`). That is the one to generalize from.

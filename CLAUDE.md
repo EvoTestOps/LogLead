@@ -243,8 +243,9 @@ whole tree to one loader; only a genuinely mixed folder pays for one loader per 
 `diagonal_relaxed`.
 
 The newer ones are **spec-driven**: one class per *format family*, configured by a YAML spec rather
-than subclassed per dataset (the reasoning is in `docs/log-format-support.md` §7 and
-`docs/log-format-json-loader.md`). Their keyword arguments are exactly the spec keys, so a spec file
+than subclassed per dataset — a format then costs a `.yml` file rather than a Python class, which is
+what keeps five families covering what would otherwise be dozens of loaders. Their keyword arguments
+are exactly the spec keys, so a spec file
 is a serialized constructor call and the two forms cannot drift; `format=` takes either a shipped
 spec name or a path to your own file.
 
@@ -271,7 +272,7 @@ spec name or a path to your own file.
 `LogfmtLoader` (`loaders/logfmt.py`) is a fourth family loader but has **no spec directory**, on
 purpose: logfmt lines carry their own key names and the names are conventional, so the mapping the
 other three need as configuration is just `ts|timestamp|time|t` → `m_timestamp`, `msg|message` →
-`m_message`, `level|lvl|severity` → `level` (docs/log-format-support.md §5 item 2). The kwargs for
+`m_message`, `level|lvl|severity` → `level`. The kwargs for
 overriding those exist and read the same as the others. Each key becomes its own column, so a
 tree of files lands wide-and-sparse the way heterogeneous JSON does; candidate keys are *coalesced*
 rather than first-wins, because one file routinely mixes `t=` and `ts=` lines from two components.
