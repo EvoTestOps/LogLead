@@ -22,6 +22,11 @@ You might want consider implementing a logfile-specific loader for better functi
 - timestamp_pattern (str, optional): Regex pattern for identifying timestamps within each log message, required if timestamp processing is desired.
 - missing_timestamp_action (str, optional): Action to take when timestamps are missing ('drop', 'merge', 'keep', 'fill-lastseen').
 - timestamp_format (str, optional): Format for parsing timestamps, required if timestamp_pattern is specified.
+- strict (bool, optional): Whether a value the timestamp_pattern extracted but timestamp_format cannot
+  parse is an error. True (the default) raises, which is right when you wrote the pattern yourself and
+  a value it cannot parse means the pattern is wrong. False turns such a value into a null instead,
+  which is what a caller that guessed the pattern - AutoLoader's generic branch - needs: on a
+  10-million-line log a single malformed date should not lose the whole load.
 
 Key Methods:
 1. load(): Loads data files based on the specified filename and filename_pattern, applying filtering by file size. If nested directory patterns are specified, only files that match the pattern and minimum size are loaded.
@@ -38,16 +43,18 @@ Timestamp Handling Strategies:
 
 
 class RawLoader(BaseLoader):
-    def __init__(self, filename, filename_pattern=None, min_file_size=0, strip_full_data_path=None, 
-        timestamp_pattern=None, timestamp_format=None, missing_timestamp_action='keep',date_from_files=False):
+    def __init__(self, filename, filename_pattern=None, min_file_size=0, strip_full_data_path=None,
+        timestamp_pattern=None, timestamp_format=None, missing_timestamp_action='keep',date_from_files=False,
+        strict=True):
 
         self.min_file_size = min_file_size
         self.filename_pattern = filename_pattern
         self.strip_full_data_prefix = strip_full_data_path
         self.timestamp_pattern = timestamp_pattern  # Optional parameter for timestamp extraction
         self.missing_timestamp_action = missing_timestamp_action  # Options: 'drop', 'merge', 'keep' 'fill-lastseen'
-        self.timestamp_format = timestamp_format # Optional parameter for timestamp format 
+        self.timestamp_format = timestamp_format # Optional parameter for timestamp format
         self.timestamp_date_from_files = date_from_files
+        self.strict = strict  # Whether an unparseable extracted timestamp raises or becomes null
         super().__init__(filename)
            
     def load(self):
@@ -150,7 +157,7 @@ class RawLoader(BaseLoader):
         
         #parse the string timestamp to actual timestamp
         self.df = self.df.with_columns(
-            pl.col("timestamp_str").str.strptime(pl.Datetime, self.timestamp_format, strict=True).alias("m_timestamp")
+            pl.col("timestamp_str").str.strptime(pl.Datetime, self.timestamp_format, strict=self.strict).alias("m_timestamp")
         ).drop("timestamp_str")
         # Reorder columns to have 'm_timestamp' as the first column
         self.df = self.df.select(["m_timestamp"] + [col for col in self.df.columns if col != "m_timestamp"])
@@ -165,7 +172,7 @@ class RawLoader(BaseLoader):
         elif self.missing_timestamp_action == 'fill-lastseen':
             # Fill missing timestamps with the last seen valid timestamp
             self.df = self.df.with_columns(
-                pl.col("m_timestamp").fill_null(strategy='backward')
+                pl.col("m_timestamp").fill_null(strategy='forward')
             )
 
         elif self.missing_timestamp_action == 'merge':

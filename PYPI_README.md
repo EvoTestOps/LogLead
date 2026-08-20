@@ -47,17 +47,20 @@ Or with `pip` (after cloning the repo):
 ```
 python downloader/download_data.py
 ```
-If you've cloned the repo and want to run the test suite too, point it at [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) instead, which also controls what gets loaded and how it's used in testing:
+If you've cloned the repo and want to run the test suite too, point it at one of the
+[tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead — e.g.
+[tests/datasets_mid_labels.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets_mid_labels.yml),
+the one `tests/main.py` uses by default — which also controls what gets loaded and how it's used in testing:
 ```
-uv run downloader/download_data.py --config tests/datasets.yml
+uv run downloader/download_data.py --config tests/datasets_mid_labels.yml
 ```
 Or with `pip`:
 ```
-python downloader/download_data.py --config tests/datasets.yml
+python downloader/download_data.py --config tests/datasets_mid_labels.yml
 ```
 **Disk space:** downloading everything in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) transfers roughly 7 GB and the datasets expand to about 104 GB once unzipped. Make sure you have **at least ~110 GB free** before running the full downloader. The three supercomputer logs — Liberty, Spirit, and Thunderbird — account for most of it, at 30-38 GB each once unzipped.
 
-If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) if you're using `--config tests/datasets.yml`) and set `download: false` for datasets you don't need.
+If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or the relevant `tests/datasets_*.yml` if you're using `--config tests/datasets_*.yml`) and set `download: false` for datasets you don't need.
 
 | Dataset | Download size | Unzipped size |
 |---|---|---|

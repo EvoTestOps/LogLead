@@ -1,1 +1,1 @@
-recursive-include loglead *.ini *.md LICENSE
+recursive-include loglead *.ini *.md *.yml LICENSE

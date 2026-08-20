@@ -77,5 +77,11 @@ Homepage = "https://github.com/EvoTestOps/LogLead"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+# Format specs read at runtime by JsonLoader(format=...) and AccessLogLoader(format=...). Neither
+# directory has an __init__.py - they are data directories, not subpackages - so the patterns are
+# relative to their parent package.
+"loglead.loaders" = ["json_formats/*.yml", "access_log_formats/*.yml"]
+
 [tool.setuptools.packages.find]
 include = ["loglead*"]

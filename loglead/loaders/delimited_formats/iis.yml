@@ -1,0 +1,34 @@
+name: iis
+description: >
+  Microsoft IIS in W3C extended format: a '#Fields:' directive rather than a header row, space
+  separated, re-declared at every log rotation - so a file can open with data and name its columns
+  only later, which is why the directive is looked for through the file's first lines rather than
+  on line one.
+
+  columns is the fallback for a file that carries no directive at all, which rotation and
+  concatenation routinely produce. It is IIS's own default field set (the one W3SVC logs unless a
+  site is reconfigured); the loader checks it against the file's actual width and refuses rather
+  than misaligning the columns if a site logged a different set.
+
+header: w3c
+
+columns: [date, time, s-ip, cs-method, cs-uri-stem, cs-uri-query, s-port, cs-username, c-ip,
+          cs(User-Agent), cs(Referer), sc-status, sc-substatus, sc-win32-status, time-taken]
+
+# W3C splits the timestamp into two columns, so both are named and joined with a space.
+timestamp_field: [date, time]
+timestamp_formats:
+  - "%Y-%m-%d %H:%M:%S"
+
+# No column is the message, so render one. The query string is in it deliberately: on an IIS log it
+# is where an attack is visible, and sc-status is what makes one worth scoring. Both stay their own
+# columns as well, sc-status typed as a number by the reader.
+line_format: "{cs-method} {cs-uri-stem} {cs-uri-query} {sc-status}"
+
+seq_id_field: c-ip
+extra_fields: keep
+
+sample:
+  - '#Software: Microsoft Internet Information Services 10.0'
+  - '#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status time-taken'
+  - '2021-03-09 22:17:03 127.0.0.1 GET /PowerShell/ &CorrelationID=<empty>; 443 - 127.0.0.1 AMProbe/Local/ClientAccess - 401 111 0 32'

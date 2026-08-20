@@ -1,6 +1,8 @@
 #This file demonstrates working with RawLoader when you want get timestamps.
 #This also exspl
 
+import os
+
 import polars as pl
 from loglead.loaders import RawLoader
 from dotenv import load_dotenv, find_dotenv

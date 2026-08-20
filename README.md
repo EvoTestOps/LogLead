@@ -7,6 +7,30 @@ Currently, it features nearly 1,000 unique anomaly detection combinations, encom
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
+**Don't know which loader you need?** [`AutoLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/auto.py) samples a file, works out its format, and builds the loader that reads it — JSON, web access log, syslog, logfmt, generic timestamped text, or plain text as the fallback. It also recognizes the public datasets that have their own loader (HDFS, Hadoop, ADFA, AWSCTD, Nezha, BGL, Thunderbird) from the label file sitting *beside* the log, so an auto-loaded dataset keeps its anomaly labels and its sequence-level frame:
+
+```python
+AutoLoader(filename="mystery.log").execute()                     # one file
+AutoLoader(filename="logs", filename_pattern="*.log").execute()  # a tree, detected per file
+loader.detections()                                              # what it chose, and how sure
+```
+
+Detection is per file, because a folder holding several formats is the normal case rather than the exception — those get read by different loaders and stacked into one frame. Nothing is ever refused: an unrecognized file is read as plain text and said so. See [demo/AutoLoader_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/AutoLoader_samples.py), whose first two sections need no download.
+
+**JSON logs** are supported by a single configurable [`JsonLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/json.py) rather than a class per dataset, because reading JSON is one Polars call — what actually differs between JSON logs is only the *mapping*: which key is the timestamp, which is the message, which correlates records. That mapping is configuration, so a format spec is nothing more than a serialized call:
+
+```python
+JsonLoader(filename="access.json", timestamp_field="time", message_field="request").execute()
+JsonLoader(filename="access.json", format="nginx_json").execute()       # shipped spec
+JsonLoader(filename="access.json", format="./my_format.yml").execute()  # your own, no fork needed
+```
+
+It handles NDJSON, `[...]` arrays and wrapped `{"Records": [...]}` containers, keys that differ from record to record, nested objects addressed JSON-pointer style (`log/logger`), epoch or string timestamps, and whole directory trees. Numeric fields stay numeric, so they are ready for `numeric_cols` without a cast. Shipped specs live in [`loglead/loaders/json_formats/`](https://github.com/EvoTestOps/LogLead/tree/main/loglead/loaders/json_formats); `JsonLoader.available_formats()` lists them.
+
+**Prediction from the log's own fields.** Anomaly detection is usually run over the message text, but most logs also arrive with structured fields — Thunderbird has `component`, `userid`, `location`; BGL has `type`, `level`; a JSON log has its keys — and those predict anomalies on their own. Pass them as `categorical_cols` and `AnomalyDetector` one-hot encodes them into the same matrix the text representations use; on Thunderbird that alone reaches F1 0.75 with no message text at all. For sequence-labeled data, [`SequenceEnhancer.category_counts()`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/enhancers/sequence.py) counts each value per sequence instead ("how many WARN lines does this block have"), which yields numbers for `numeric_cols`. Both are demonstrated in the two demos below.
+
+Choosing which columns to use is its own trap, so [`loglead.select_predictors()`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/column_analyzer.py) profiles a dataframe and picks them, rejecting the label and anything derived from it, identifiers, constants and near-constants. It matters: Thunderbird's `label` column *is* the target (`anomaly == label != "-"`), and BGL's `time` has one distinct value per row — both look like ideal predictors if you only count nulls.
+
 ## Installing LogLead
 
 Install with [`uv`](https://docs.astral.sh/uv/):
@@ -49,17 +73,20 @@ Or with `pip` (after cloning the repo):
 ```
 python downloader/download_data.py
 ```
-If you've cloned the repo and want to run the test suite too, point it at [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) instead, which also controls what gets loaded and how it's used in testing:
+If you've cloned the repo and want to run the test suite too, point it at one of the
+[tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead — e.g.
+[tests/datasets_mid_labels.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets_mid_labels.yml),
+the one `tests/main.py` uses by default — which also controls what gets loaded and how it's used in testing:
 ```
-uv run downloader/download_data.py --config tests/datasets.yml
+uv run downloader/download_data.py --config tests/datasets_mid_labels.yml
 ```
 Or with `pip`:
 ```
-python downloader/download_data.py --config tests/datasets.yml
+python downloader/download_data.py --config tests/datasets_mid_labels.yml
 ```
 **Disk space:** downloading everything in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) transfers roughly 7 GB and the datasets expand to about 104 GB once unzipped. Make sure you have **at least ~110 GB free** before running the full downloader. The three supercomputer logs — Liberty, Spirit, and Thunderbird — account for most of it, at 30-38 GB each once unzipped.
 
-If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or [tests/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets.yml) if you're using `--config tests/datasets.yml`) and set `download: false` for datasets you don't need.
+If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or the relevant `tests/datasets_*.yml` if you're using `--config tests/datasets_*.yml`) and set `download: false` for datasets you don't need.
 
 | Dataset | Download size | Unzipped size |
 |---|---|---|
@@ -91,6 +118,7 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Description**: This demo presents a Thunderbird supercomputer log, labeled at the line (event) level. A first column marked with “-” indicates normal behavior, while other markings represent anomalies.
 - **Log Snapshot**: View the log [here](https://github.com/logpai/loghub/blob/master/Thunderbird/Thunderbird_2k.log_structured.csv).
 - **Dataset**: The demo includes a parquet file containing a subset of 263,408 log events, with 21,955 anomalies.
+- **Predictors shown**: event lengths, words, Drain parsing, and — since Thunderbird lines carry `component`, `userid`, `month`, `day`, `date` — prediction from those categorical fields alone, with no message text.
 - **Screencast**: For an overview of the demo, watch our [5-minute screencast on YouTube](https://www.youtube.com/watch?v=8stdbtTfJVo).
 ### Hadoop Distributed File System (HDFS) Log Demo
 
@@ -99,6 +127,7 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Log Snapshot**: View the log [here](https://github.com/logpai/loghub/blob/master/HDFS/HDFS_2k.log_structured.csv).
 - **Anomaly Labels**: Provided in a separate file.
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
+- **Predictors shown**: sequence length and duration, words, PL-IPLoM parsing, and per-sequence counts of the `level`/`component` fields — the sequence-level counterpart of the categorical prediction in the Thunderbird demo, since HDFS labels sit on sequences while those fields sit on events.
 
 ## MCP server
 
@@ -141,6 +170,12 @@ A typical investigation: score every log folder (`anomaly_folder_content`) → n
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
 each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
 about, with the full tables and interactive Plotly HTML written alongside.
+
+The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
+defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it
+chose per format. Pin it instead by naming a family — `"raw"`, `"json"`, `"syslog"`, `"logfmt"`,
+`"access_log"`, `"delimited"` — or a shipped spec after a slash, `"json/nginx_json"`,
+`"delimited/zeek"`, `"syslog/rfc5424"`.
 
 Directory names are often opaque ids, and that name labels every plot and result table, so
 `set_folder_names` (or `open_log_root(folder_names=...)`) gives them meaningful names such as
@@ -219,9 +254,11 @@ LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detec
 * 2: [Nezha](https://github.com/IntelligentDDS/Nezha) has data from two systems [TrainTicket](https://github.com/FudanSELab/train-ticket) and [Google Cloud Webshop demo](https://github.com/GoogleCloudPlatform/microservices-demo). It is the first dataset of microservice-based systems. Like other traditional log datasets it has Log data but additionally there are Traces and Metrics.
 * 2: [ADFA](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) and [AWSCTD](https://github.com/DjPasco/AWSCTD) are two datasets designed for intrusion detection.  
 
+Beyond those, the [`JsonLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/json.py) reads any JSON log from a format spec instead of a bespoke class (see above), [`ProLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/pro.py) and [`LO2Loader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/lo2.py) cover further formats.
+
 **Enhancer:** This module extracts additional data from logs. The enhancement takes place directly within the dataframes, where new columns are added as a result of the enhancement process. For example, log parsing, the creation of tokens from log messages, and measuring log sequence lengths are all considered forms of log enhancement. Enhancement can happen at the event level or be aggregated to the sequence level. Some of the enhancers available: Event Length (chracters, words, lines), Sequence Length, Sequence [Duration](https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Duration.html), following "NLP" enhancers: [Regex](https://crates.io/crates/regex), [Words](https://en.wikipedia.org/wiki/Bag-of-words_model), [Character n-grams](https://en.wikipedia.org/wiki/N-gram). Log parsers: [Drain](https://github.com/logpai/Drain3), [LenMa](https://github.com/keiichishima/templateminer), [Spell](https://github.com/bave/pyspell), [IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/iplom), [AEL](https://github.com/EvoTestOps/LogLead/tree/main/parsers/AEL), [Brain](https://github.com/EvoTestOps/LogLead/tree/main/parsers/Brain), [Fast-IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/fast_iplom),  [Tipping](https://pypi.org/project/tipping/), and [BERT](https://github.com/google-research/bert). [NextEventPrediction](https://arxiv.org/abs/2202.09214) including its probablities and perplexity. Next event prediction can be computed on top of any of the parser output. 
 
-**Anomaly Detector:** This module uses the enhanced log data to perform Anomaly Detection. It is mainly using SKlearn at the moment but there are few customer algorithms as well. LogLead has been integrated and tested with following models: 
+**Anomaly Detector:** This module uses the enhanced log data to perform Anomaly Detection. It is mainly using SKlearn at the moment but there are few customer algorithms as well. Predictors can be a tokenized/parsed representation of the message (`item_list_col`), numeric columns (`numeric_cols`), embeddings (`emb_list_col`), or the log's own categorical fields (`categorical_cols`, one-hot encoded) — and these can be combined, since they all land in the same sparse matrix. LogLead has been integrated and tested with following models: 
 * Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [Support Vector Machine](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [eXtreme Gradient Boosting](https://en.wikipedia.org/wiki/XGBoost)
 * Unsupervised (4): [One-class SVM](https://en.wikipedia.org/wiki/Support_vector_machine#One-class_SVM), [Local Outlier Factor](https://en.wikipedia.org/wiki/Local_outlier_factor), [Isolation Forest](https://en.wikipedia.org/wiki/Isolation_forest), [K-Means](https://en.wikipedia.org/wiki/K-means_clustering)
 * Custom Unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) counts amount words or character n-grams that are novel in test set. [Rarity Model](https://github.com/EvoTestOps/LogLead/blob/main/loglead/RarityModel.py), scores seen words or character n-grams based on their rarity in training set. See our public [preprint](https://arxiv.org/abs/2312.01934) for more details

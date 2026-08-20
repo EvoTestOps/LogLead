@@ -1,0 +1,33 @@
+root_folder: '~/Datasets_logfmt'
+local_copy_folder: '~/Datasets'
+
+# logfmt - the key=value convention from Heroku that the Go ecosystem writes by default,
+# read by LogfmtLoader.
+#
+# There is no curated logfmt research corpus the way there is for HDFS or BGL, so the data here is
+# Grafana Labs' own production logs, committed to grafana/loki as the test data for its Drain
+# implementation. That makes it real logfmt from four different services rather than a generator's
+# output, and it lands in the same place LogLead already works: Drain template mining.
+#
+# The four files do not share a key set - grafana-ruler alone mixes `t=`/`ts=` and
+# `logger=`/`caller=` lines from two components - which is the point of loading them as one
+# dataset: it is what a logfmt loader has to survive.
+
+datasets:
+  - name: logfmt
+    loader: logfmt
+    filename_pattern: "*.txt"
+    urls:
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/grafana-ruler.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/agent-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/distributor-logfmt.txt
+      - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/ingester-logfmt.txt
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [level, caller]   # msg/logger are text, traceID and orgID are ids
+    expected_length: 56100
+    reduction_fraction: 1.0

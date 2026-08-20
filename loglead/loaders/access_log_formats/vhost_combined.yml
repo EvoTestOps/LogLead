@@ -1,0 +1,23 @@
+name: vhost_combined
+description: >
+  Combined Log Format prefixed with the virtual host, as Apache's "vhost_combined" and Debian's
+  default multi-site layout write it. The extra leading field is what distinguishes it, and it is
+  a useful sequence id on its own when one file holds several sites.
+
+log_format: >-
+  $vhost $remote_addr $ident $remote_user [$time_local] "$request" $status $body_bytes_sent
+  "$http_referer" "$http_user_agent"
+
+timestamp_field: time_local
+timestamp_formats:
+  - "%d/%b/%Y:%H:%M:%S %z"
+
+line_format: "{vhost} {remote_addr} {request} {status}"
+
+request_field: request
+numeric_fields: [status, body_bytes_sent]
+seq_id_field: remote_addr
+extra_fields: keep
+
+sample:
+  - 'www.example.com:80 127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326 "http://www.example.com/start.html" "Mozilla/4.08 [en] (Win98; I ;Nav)"'

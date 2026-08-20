@@ -1,0 +1,24 @@
+name: combined
+description: >
+  Combined Log Format - CLF plus referrer and user agent. Apache's "combined" and nginx's default
+  log_format, byte-identical between the two servers, and the most common log layout on the
+  internet. Use this one unless the site added fields of its own.
+
+log_format: >-
+  $remote_addr $ident $remote_user [$time_local] "$request" $status $body_bytes_sent
+  "$http_referer" "$http_user_agent"
+
+timestamp_field: time_local
+timestamp_formats:
+  - "%d/%b/%Y:%H:%M:%S %z"
+
+line_format: "{remote_addr} {request} {status}"
+
+request_field: request
+numeric_fields: [status, body_bytes_sent]
+seq_id_field: remote_addr
+extra_fields: keep
+
+sample:
+  - '127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326 "http://www.example.com/start.html" "Mozilla/4.08 [en] (Win98; I ;Nav)"'
+  - '66.249.66.194 - - [22/Jan/2019:03:56:18 +0330] "GET /filter/b41 HTTP/1.1" 200 34277 "-" "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"'

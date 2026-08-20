@@ -1,0 +1,19 @@
+root_folder: '~/Datasets_access_log'
+local_copy_folder: '~/Datasets'
+
+datasets:
+  - name: access_log
+    loader: access_log
+    format: combined_xff
+    log_file: access.log
+    local_archive: '~/kaggle/archive.zip'
+    source_url: https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [status, body_bytes_sent, e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [method, protocol]   # path/remote_addr/http_user_agent are ids, not categories
+    expected_length: 10365152
+    reduction_fraction: 0.01

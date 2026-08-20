@@ -1,0 +1,61 @@
+root_folder: '~/Datasets'
+
+# LO2v2 - Light-OAuth2 microservice logs, read by LO2Loader.
+#
+# Rooted straight at ~/Datasets rather than a root of its own with local_copy_folder: the unpacked
+# logs are tens of GB and copying them into a second root to run one test is not worth the disk.
+# Same reasoning as datasets_mid_labels.yml and datasets_super_comp_labels.yml.
+#
+# This is the *reduced* log set from the LO2v2 Zenodo record (light-oauth2-logs.zip), i.e. the data
+# the paper's own log analysis section used, not the 65.6 GB full dataset.
+#
+# Version 2, not version 1, on purpose. In LO2v1 every run executed the "correct" test first and in
+# a fixed order, so service startup logs landed only in correct tests - a DecisionTree could reach
+# F1 0.976 on the Token service by learning "registered for" and "status.yml", which is leakage
+# rather than anomaly detection. LO2v2 shuffles the test order, and the same analysis drops to
+# 0.623. Do not add LO2v1 back alongside it.
+
+datasets:
+  - name: lo2
+    loader: lo2
+    url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    # light-oauth2-logs.zip unpacks one level deep; the loader wants the folder that directly
+    # holds the oauth2_logs_LO2_run_* directories.
+    folder: light-oauth2-logs
+    # LO2Loader samples which test cases it reads, and by default picks the error test per run at
+    # random - which would make expected_length differ every run. single_error_type pins one error
+    # type across all runs instead, so each run contributes exactly "correct" + that error and the
+    # row count is reproducible. It also forces dup_errors=True and errors_per_run=1 in the loader.
+    single_error_type: access_token_client_secret_wrong_401
+    single_service: ''          # '' = every oauth2 service; or client/code/key/refresh-token/...
+    # What select_predictors() picked when profiling this frame, pinned so the run is reproducible.
+    # Everything else it rejected for a reason worth keeping: seq_len, eve_len_over1, eve_len_avg,
+    # e_words_len, e_trigrams_len and e_event_id_len are all 93-100% unique, i.e. per-sequence
+    # fingerprints rather than features (a sequence here is a whole service log file, so its own
+    # length nearly identifies it); nep_prob_nmax_max is constant.
+    predictor_cols:
+      numeric: [nep_abs_min, nep_abs_max, eve_len_min, eve_len_max, eve_len_med]
+      # _create_df_seq() drops test_case and service, so df_seq carries no categorical field of
+      # its own - the same situation as hdfs. duration_sec is left out as well: it is the axis
+      # LO2v1 leaked on (correct tests ran 60s, error tests 10s), and while v2 randomizes duration
+      # to 20-180s, pinning it would tie this test to that randomization continuing to hold.
+      categorical: []
+    # Above the 115 runs on disk on purpose. The loader takes the first n_runs *directories* that
+    # os.listdir yields, so any smaller number would make the row count depend on directory order,
+    # which differs between machines unpacking the same archive. Reading every run removes that.
+    # (The archive also ships a "prerun results" folder among the runs; it holds no logs, so it
+    # costs one iteration and contributes nothing.)
+    n_runs: 200
+    # 1582 log files -> 2,854,867 events. Two runs (1739430001, 1739710801) contribute nothing:
+    # they lack this error type, and a run missing the pinned error is skipped whole, correct test
+    # case included. Both are among the three runs the LO2v2 paper reports as having had Locust
+    # connection failures, so their being short is the dataset's own known state, not a load bug.
+    expected_length: 2854867
+    # Sequences, not events, are what gets sampled (reduce_dataframes samples df_seq with a fixed
+    # seed and filters df to match), so this leaves ~316 sequences - enough for a 50% split to see
+    # both classes, and it keeps the parsing stages a few minutes rather than half an hour.
+    reduction_fraction: 0.2
