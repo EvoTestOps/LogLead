@@ -15,6 +15,10 @@ from .hadoop import HadoopLoader
 from .hdfs import HDFSLoader
 from .json import JsonLoader
 from .lo2 import LO2Loader
+# line_policy's 'indent' test, for scoring a sample of a file rather than a frame. Imported rather
+# than restated for the same reason as the logfmt grammar below - the detector's idea of where an
+# event begins must be the one the loader it builds will use.
+from .line_policy import starts_event
 # The logfmt pair grammar and its conventional key names are the detector's logfmt test and its
 # fallback JSON field mapping. Importing them rather than restating them is the point: a detector
 # that recognizes a format differently from the loader that reads it is worse than no detector.
@@ -228,6 +232,27 @@ def _rate(sample, regex):
     if not len(sample):
         return 0.0
     return float(sample.str.contains(regex).sum()) / len(sample)
+
+
+def _rate_events(sample, regex):
+    """_rate, but over the lines that could start an event rather than over every line.
+
+    A stack trace is one event however many lines it prints, so scoring per line asks the wrong
+    question: it makes a file *less* recognizable the more of it is one exception. Measured on
+    LogDelta's Hadoop demo root, container_1445144423722_0020_01_000001.log is 58,831 lines of
+    which 54,615 are indented trace - 7% of its lines carry a timestamp, so a per-line score
+    abandons the format and reads the file as plain text with no clock at all. Eleven files there
+    fail that way, and being the files with the most crashes in them, they are the ones an analysis
+    is least able to afford losing. Over event-start lines the same file scores 94%.
+
+    Only the generic timestamped-text pass uses this. The named formats keep the plain per-line
+    rate: an indented line in pretty-printed JSON is part of the record too, but there the record
+    boundary is the format's own business and it has a parser that knows it.
+    """
+    candidates = sample.filter(starts_event(sample))
+    if not len(candidates):
+        return 0.0
+    return float(candidates.str.contains(regex).sum()) / len(candidates)
 
 
 # Stage 1: is this a public dataset with its own loader? ----------------------------------------
@@ -558,12 +583,18 @@ def _detect_delimited_header(sample, min_match_rate):
 
 
 def _detect_generic(sample, min_match_rate):
+    """Text with a timestamp on it, which is the last thing tried before giving up on the format.
+
+    Scored over lines that could start an event, and read with the continuation lines folded back
+    into the event that printed them - see _rate_events(), and missing_timestamp_action in
+    RawLoader for the other five things that could be done with them instead.
+    """
     for pattern, chrono in _GENERIC_TIMESTAMPS:
-        rate = _rate(sample, pattern)
+        rate = _rate_events(sample, pattern)
         if rate >= min_match_rate:
             return Detection(RawLoader,
                              {"timestamp_pattern": pattern, "timestamp_format": chrono,
-                              "strict": False, "missing_timestamp_action": "keep"},
+                              "strict": False, "missing_timestamp_action": "merge-message"},
                              format=f"text/{chrono}", rate=rate, lines=len(sample))
     return None
 

@@ -194,6 +194,12 @@ class SessionStore:
 
     # -- cache keying ------------------------------------------------------ #
 
+    # Bumped whenever a change to LogLead itself makes the same inputs produce a different frame,
+    # since nothing else in the key would notice. 2: AutoLoader's generic text branch began folding
+    # continuation lines into the event that printed them, so a log with stack traces in it now has
+    # fewer rows than the cached copy of it does.
+    _PREPROCESSING_VERSION = "2"
+
     def _cache_key(self, root, filename_pattern, mask_pattern, file_name_normalizer,
                    min_file_size, folder_names=None, keep_original_folder_name=True,
                    format="auto"):
@@ -219,7 +225,7 @@ class SessionStore:
             str(root), filename_pattern, mask_pattern or "", file_name_normalizer,
             str(min_file_size), str(n_files), str(total_bytes), f"{max_mtime:.0f}",
             json.dumps(folder_names or {}, sort_keys=True), str(keep_original_folder_name),
-            format,
+            format, self._PREPROCESSING_VERSION,
         ])
         digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
         return digest, n_files

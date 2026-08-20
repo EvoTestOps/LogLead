@@ -242,7 +242,7 @@ full download via [Zenodo](https://zenodo.org/records/8196385/files/HDFS_v1.zip?
 
 A tree of `application_*/container_*/*.log` files, sequence-labeled at the application-id level;
 handles multi-line entries (e.g. stack traces) by merging continuation lines into their parent
-event. Dataset: **Hadoop** —
+event (via [`line_policy.py`](line_policy.py), `merge-message`). Dataset: **Hadoop** —
 [github.com/logpai/loghub/tree/master/Hadoop](https://github.com/logpai/loghub/tree/master/Hadoop),
 full download via [Zenodo](https://zenodo.org/records/8196385/files/Hadoop.zip?download=1).
 
@@ -322,17 +322,33 @@ the "Not open dataset" comment in the loader itself); included because the rest 
 (enhancers, anomaly detectors) is exercised against it internally, not because the data is
 downloadable.
 
-## Known gaps
+## Multi-line events
 
-Two things worth knowing before adding a loader, both cheap to improve and neither a bug:
+One log event is not always one line. `line_policy.py` holds the shared answer, and every loader
+that reads text goes through it — `RawLoader.missing_timestamp_action`,
+`SyslogLoader.multiline` and `HadoopLoader` are three keywords onto one implementation, not three
+implementations. It splits a question that used to be asked as one:
+
+- **Which lines start an event?** `event_start('parsed')` — the loader got a value out of the line;
+  `event_start('pattern')` — the line matches a regex; `event_start('indent')` — the line does not
+  begin with whitespace and is not blank. They are Polars expressions, so they combine with `|`.
+  `'indent'` is the one that needs no knowledge of the format, which is why `AutoLoader` scores its
+  generic timestamped-text pass with it (`starts_event()`, the same test over a sample rather than
+  a frame). Scoring per *line* instead asks the wrong question: it makes a file less recognizable
+  the more of it is one exception, and on LogDelta's Hadoop demo root that cost eleven files their
+  format — the eleven with the most crashes in them.
+- **What happens to the lines that did not?** Six policies, and every one is in use somewhere:
+  `drop`, `keep`, `fill-lastseen` (the line stays its own event and only borrows the clock),
+  `merge-message` (the trace reaches `e_words`/`e_chars_len`), `merge-add-column` (it is parked in
+  `trace` instead, and `merge` is the old name for this), `raise`.
+
+Everything groups **per file**: a running count over a whole multi-file frame lets a file whose
+first line is a continuation attach it to the last event of the previous, unrelated file, and makes
+a forward-filled timestamp cross the same boundary. Do not reimplement any of this in a new loader.
+
+## Known gaps
 
 - **The generic timestamp list is short.** `_GENERIC_TIMESTAMPS` in [`auto.py`](auto.py) holds 9
   pattern/format pairs, and it is the only thing standing between an unrecognized file and being
   read as plain text with no clock. lnav ships 109. Adding entries is pure transcription and each
   one widens what detection gets from a file nobody wrote a spec for.
-- **Multi-line merging is implemented three times**, with no shared code:
-  `RawLoader.missing_timestamp_action`, `HadoopLoader._merge_multiline_entries` and
-  `SyslogLoader.multiline`. They answer the same question — a line that does not start a new record
-  belongs to the previous one — and `SyslogLoader`'s is the most developed, since it also decides
-  *where* the merged text lands (`merge-message` feeds it to `e_words`/`e_chars_len`;
-  `merge-add-column` parks it in `trace`). That is the one to generalize from.

@@ -5,6 +5,7 @@ import re
 
 import polars as pl
 
+from . import line_policy
 from .base import BaseLoader
 
 __all__ = ['SyslogLoader']
@@ -57,9 +58,10 @@ the one place syslog carries a severity at all - the BSD format's message text h
 - multiline (str): what to do with lines that do not match the format. In syslog such a line is
   almost never garbage - it is the second and later lines of one event, a Java stack trace or a
   macOS constraint dump - so the question is not whether to tolerate it but where it belongs.
-  'keep' and 'drop' are named as in RawLoader's missing_timestamp_action, which asks the same
-  question; the two merges say where they put the text rather than borrowing that loader's plain
-  'merge', because here there are two of them:
+  The choices are loglead.loaders.line_policy's policies, shared with RawLoader and HadoopLoader
+  since all three ask this same question; the two merges say where they put the text rather than
+  using RawLoader's older plain 'merge', because there are two of them ('merge' is accepted as an
+  alias for 'merge-add-column', which is what it always did):
     'merge-message' (default) - one row per event, with the continuation lines appended to
         m_message itself. This is the reading that follows the format: m_message is the
         unstructured tail of the event, and the event does not end until the next timestamp does.
@@ -71,6 +73,10 @@ the one place syslog carries a severity at all - the BSD format's message text h
         every fragment becomes its own parser template.
     'drop' - remove them. Loses log content rather than noise; there when the fragments are not
         wanted at all.
+    'fill-lastseen' - each line stays its own row, as with 'keep', but takes the timestamp of the
+        event above it. Not a merge: nothing is joined and no row disappears, the fragments just
+        stop being undated. Useful when every line has to stay countable but the frame still has
+        to sort by time.
     'raise' - treat a non-matching line as an error and fail.
   The two merges differ less than they look, and not where you would expect. Every parse_* method
   reads e_message_normalized, and EventLogEnhancer.normalize() keeps only the first line of
@@ -119,10 +125,6 @@ _RFC3164_FORMAT = "%Y %b %e %H:%M:%S"
 _NIL = "-"
 
 _RAW = "_syslog_raw_line"
-_GROUP = "_syslog_event"
-_TEXT = "_syslog_text"
-
-_MULTILINE = ("merge-message", "merge-add-column", "keep", "drop", "raise")
 
 # How many lines of a file are looked at to decide which RFC it is written in.
 _SAMPLE_LINES = 1000
@@ -138,8 +140,7 @@ class SyslogLoader(BaseLoader):
             raise ValueError(f"format must be 'auto', 'rfc3164' or 'rfc5424', got {format!r}")
         if extra_fields not in ("keep", "drop"):
             raise ValueError(f"extra_fields must be 'keep' or 'drop', got {extra_fields!r}")
-        if multiline not in _MULTILINE:
-            raise ValueError(f"multiline must be one of {', '.join(_MULTILINE)}, got {multiline!r}")
+        multiline = line_policy.normalize_policy(multiline, "multiline")
         if pattern and "timestamp" not in re.compile(pattern).groupindex:
             # Every downstream step keys off it, and it is also how an unmatched line is spotted.
             raise ValueError("pattern needs a (?P<timestamp>...) capture; the rest are optional")
@@ -259,59 +260,31 @@ class SyslogLoader(BaseLoader):
                 f"not bad data. First line that did not match: {example}")
         if self.multiline == "raise":
             raise ValueError(f"{count} of {total} lines did not match syslog format(s) {used}. "
-                             f"Use multiline='merge-message', 'merge-add-column', 'keep' or "
-                             f"'drop' to tolerate them, which is normal for multi-line messages. "
+                             f"Use multiline='merge-message', 'merge-add-column', 'keep', "
+                             f"'drop' or 'fill-lastseen' to tolerate them, which is normal for "
+                             f"multi-line messages. "
                              f"First one: {example}")
-        if self.multiline == "drop":
-            self.df = self.df.filter(~mask)
-            outcome = "dropped"
-        elif self.multiline in ("merge-message", "merge-add-column"):
-            into_message = self.multiline == "merge-message"
-            self._merge_continuations(into_message)
-            target = "m_message" if into_message else "an added 'trace' column"
-            outcome = f"merged into {target}, leaving {len(self.df)} events"
-        else:
-            outcome = "kept unparsed as their own rows"
+        # Everything except the raise, whose message is better for naming the formats that were
+        # tried, is line_policy's job. 'message' is the capture; a line that did not match has
+        # none, so the raw line is what there is to merge.
+        text = pl.coalesce([pl.col("message"), pl.col(_RAW)]) \
+            if "message" in self.df.columns else pl.col(_RAW)
+        before = len(self.df)
+        self.df = line_policy.to_events(
+            self.df, pl.col("timestamp").is_not_null(), policy=self.multiline,
+            text_column="message", text=text, timestamp_column="timestamp",
+            partition_by="file_name")
+        outcome = {
+            "drop": "dropped",
+            "keep": "kept unparsed as their own rows",
+            "fill-lastseen": "kept as their own rows, with the timestamp of the event above",
+            "merge-message": f"merged into m_message, leaving {len(self.df)} of {before} events",
+            "merge-add-column": f"merged into an added 'trace' column, leaving {len(self.df)} "
+                                f"of {before} events",
+        }[self.multiline]
         print(f"SyslogLoader: {count} of {total} lines ({count / total:.3%}) did not match "
               f"{used} and were {outcome} - usually continuation lines of multi-line messages. "
               f"First one: {example}")
-
-    def _merge_continuations(self, into_message):
-        """Fold each event's continuation lines back into the row that started it.
-
-        The group is a running count of matched lines, so every unmatched line joins the event
-        above it. It is counted **per file**: a plain cumulative sum would let a file whose first
-        lines are continuations attach them to the last event of the previous file, which is the
-        one thing a multi-file merge has to get right.
-        """
-        text = pl.coalesce([pl.col("message"), pl.col(_RAW)]) \
-            if "message" in self.df.columns else pl.col(_RAW)
-        event = pl.col("timestamp").is_not_null().cum_sum()
-        partition = ["file_name"] if "file_name" in self.df.columns else []
-        frame = self.df.with_columns(
-            text.alias(_TEXT), (event.over("file_name") if partition else event).alias(_GROUP))
-
-        carried = [c for c in self.df.columns if c not in partition + ["message"]]
-        aggregations = [pl.col(c).first().alias(c) for c in carried]
-        if into_message:
-            # The event's text does not end until the next timestamp does, so all of it is the
-            # message.
-            aggregations.append(pl.col(_TEXT).str.join("\n").alias("message"))
-        else:
-            # first()/slice(1) rather than a filter on "did it match", so that a continuation with
-            # no event above it keeps its own first line as the message instead of vanishing.
-            aggregations.append(pl.col(_TEXT).first().alias("message"))
-            aggregations.append(pl.col(_TEXT).slice(1).str.join("\n").alias("trace"))
-
-        merged = frame.group_by(partition + [_GROUP], maintain_order=True).agg(aggregations)
-        if not into_message:
-            # An event with no continuation lines has no trace, rather than an empty one.
-            merged = merged.with_columns(
-                pl.when(pl.col("trace") == "").then(None).otherwise(pl.col("trace")).alias("trace"))
-        columns = list(self.df.columns)
-        if "message" not in columns:
-            columns.append("message")
-        self.df = merged.select(columns + ([] if into_message else ["trace"]))
 
     # Mapping ---------------------------------------------------------------------------------
 

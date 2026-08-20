@@ -216,6 +216,17 @@ plain log file, one event per line, no labels; the starting point for new/custom
 `loglead/delta/` and the MCP tools fall back to (`format="raw"`) when a log root should be read as
 plain text.
 
+**Multi-line events** are `loaders/line_policy.py`, one implementation behind three keywords
+(`RawLoader.missing_timestamp_action`, `SyslogLoader.multiline`, and `HadoopLoader`, which does not
+expose one). It separates *which lines start an event* (`event_start('parsed'|'pattern'|'indent')`,
+Polars expressions that combine with `|`) from *what happens to the rest* (six policies: `drop`,
+`keep`, `fill-lastseen`, `merge-message`, `merge-add-column`, `raise`; `merge` is RawLoader's old
+name for `merge-add-column`). Those two used to be welded together per loader, which is why `merge`
+meant "into a trace column" in one loader and "into the message" in another. Everything groups
+**per file** — a running count over a whole multi-file frame attaches a file's leading continuation
+to the *previous* file's last event, and forward-fills a timestamp across the same boundary — so a
+new loader should call this rather than write its own. See `loaders/README.md` §Multi-line events.
+
 `AutoLoader` (`loaders/auto.py`) sits above all of them: it samples a file, decides the format, and
 **builds one of the other loaders** — it never parses anything itself, which is what keeps the
 decision (`detect_format()`, importable on its own) separable from the reading. Two stages, most
@@ -236,6 +247,15 @@ not** be anchored at `^` (real Grafana output puts free text before the pairs �
 header-row test asks for **at least** as many delimiters as the header rather than exactly as many,
 plus header cells that look like names, since RFC-4180 quoting puts commas inside fields (an
 exact-count test scores 1.000 on loghub's Apache CSV and 0.000 on its Hadoop one).
+The **generic timestamped-text pass alone** scores over lines that could *start* an event rather
+than over every line (`line_policy.starts_event()`), and reads with `missing_timestamp_action=
+"merge-message"` so the continuation lines are folded back into the event that printed them. Both
+halves are the same fact: a stack trace is one event however many lines it prints, so a per-line
+score makes a file *less* recognizable the more of it is one exception — on LogDelta's Hadoop demo
+root that lost eleven files their format at 7-38% when the same files score 75-96% per event, and
+they were the eleven with the most crashes in them. The named formats keep the plain per-line rate,
+since an indented line in pretty-printed JSON belongs to a record whose boundary that format's own
+parser already knows.
 `AutoLoader` normalizes `m_timestamp` to naive microseconds afterwards, since Polars takes the time
 unit from the format string and a `%3f` pattern otherwise yields a frame that silently refuses to
 `pl.concat` with every other loader's output. When every file in a tree agrees it delegates the
@@ -427,8 +447,9 @@ Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp
   `Session.ensure_content()` adds only the missing column and keeps it. `SessionStore` mirrors each
   frame to a parquet cache keyed on the on-disk fingerprint (file count, total bytes, max mtime) plus
   the preprocessing options (`format`, mask pattern, `file_name_normalizer`,
-  `folder_names`/`keep_original`), so a restart
-  re-attaches in ~0.2s instead of re-reading. Anything that rewrites the frame **must** be in that
+  `folder_names`/`keep_original`) and a `_PREPROCESSING_VERSION`, so a restart
+  re-attaches in ~0.2s instead of re-reading. Bump that version whenever a change inside LogLead
+  makes the same inputs produce a different frame — nothing else in the key would notice. Anything that rewrites the frame **must** be in that
   key — a cache hit skips preprocessing entirely and would otherwise serve a wrongly-shaped frame.
   `format` is the heaviest entry: it decides which loader ran and therefore every column, so the same
   logs read as `raw` and as `json` share nothing but their paths.

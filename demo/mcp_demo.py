@@ -186,20 +186,24 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
         banner("set_folder_names -- rename after opening, nothing re-read")
         before = again["folders"][0]
         started = time.time()
-        # keep_original_folder_name=False: the log folder simply becomes the
-        # given name, for when the directory name carries nothing worth keeping.
+        # keep_original_folder_name=False: the log folder simply *is* the given name, for when the
+        # directory id is noise in a plot legend rather than information. It replaces the directory
+        # name outright, so the names have to be unique - and the JSON's are not, since four of its
+        # folders are all "PageRank_MachineDown". Disambiguating them is the caller's job, which is
+        # the whole reason this flag defaults to True.
+        short_names = ("PageRank_Normal", "PageRank_MachineDown_A", "PageRank_MachineDown_B")
         renamed = server.set_folder_names(
             "demo2",
-            {folder: f"Folder{i}" for i, folder in enumerate(sorted(names)[:3])},
+            dict(zip(sorted(names)[:3], short_names)),
             keep_original_folder_name=False,
         )
         print(f" {renamed['named']} named, {renamed['unnamed']} left alone"
               f" in {time.time() - started:.2f}s")
         print(f"   before: {before}")
-        print(f"   after:  {[f for f in renamed['folders'] if f.startswith('Folder')][:3]}")
+        print(f"   after:  {[f for f in renamed['folders'] if f in short_names]}")
         # Names always apply to the directory name, so this replaces the mapping
         # from the JSON file rather than stacking onto it.
-        assert "Folder0" in renamed["folders"], "keep_original=False should give a bare name"
+        assert short_names[0] in renamed["folders"], "keep_original=False should give a bare name"
 
     server.close_log_root("demo2")
 

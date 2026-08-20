@@ -2,6 +2,7 @@ import polars as pl
 import glob
 import os
 import warnings
+from . import line_policy
 from .base import BaseLoader
 
 __all__ = ['RawLoader']
@@ -20,7 +21,8 @@ You might want consider implementing a logfile-specific loader for better functi
 - min_file_size (int, optional): Minimum file size (in bytes) required for files to be loaded, filtering out small or empty files.
 - strip_full_data_path (str, optional): Prefix to be removed from file paths shown in the dataframe.
 - timestamp_pattern (str, optional): Regex pattern for identifying timestamps within each log message, required if timestamp processing is desired.
-- missing_timestamp_action (str, optional): Action to take when timestamps are missing ('drop', 'merge', 'keep', 'fill-lastseen').
+- missing_timestamp_action (str, optional): Action to take when timestamps are missing. See
+  Timestamp Handling Strategies below. Defaults to 'keep'.
 - timestamp_format (str, optional): Format for parsing timestamps, required if timestamp_pattern is specified.
 - strict (bool, optional): Whether a value the timestamp_pattern extracted but timestamp_format cannot
   parse is an error. True (the default) raises, which is right when you wrote the pattern yourself and
@@ -35,10 +37,24 @@ Key Methods:
 4. check_mandatory_columns(): Placeholder method for checking mandatory columns, which is intentionally left empty as there are no required columns in this loader.
 
 Timestamp Handling Strategies:
+
+A line the timestamp_pattern found nothing on is usually the second or later line of a multi-line
+event - a stack trace, a printed query, a banner - rather than a broken line, so there is no one
+right answer and all six are offered. They are loglead.loaders.line_policy's policies, shared with
+SyslogLoader and HadoopLoader, and they group per file: a file whose first line is a continuation
+cannot attach it to the previous file's last event, nor borrow its timestamp.
+
 - 'drop': Removes rows without timestamps.
-- 'keep': Retains rows without timestamps.
-- 'fill-lastseen': Replaces missing timestamps with the most recent valid timestamp.
-- 'merge': Groups and merges multi-line log entries without timestamps, creating a single entry with the earliest timestamp for the group.
+- 'keep': Retains rows without timestamps. The default, and what to use when every line must stay
+  countable in its own right.
+- 'fill-lastseen': Keeps the row and gives it the last seen valid timestamp. Not a merge - the line
+  stays its own event, it only borrows the clock.
+- 'merge-message': Folds the lines into the message of the event above, so a stack trace reaches
+  e_words/e_trigrams/e_chars_len along with the line that raised it.
+- 'merge-add-column': Folds them into an added 'trace' column instead, leaving m_message the first
+  line only. Spelled 'merge' before this policy set was shared, and that name still works.
+- 'raise': Refuses to guess. Useful while writing a timestamp_pattern, where an unmatched line
+  means the pattern is wrong rather than that the log is multi-line.
 """
 
 
@@ -51,7 +67,10 @@ class RawLoader(BaseLoader):
         self.filename_pattern = filename_pattern
         self.strip_full_data_prefix = strip_full_data_path
         self.timestamp_pattern = timestamp_pattern  # Optional parameter for timestamp extraction
-        self.missing_timestamp_action = missing_timestamp_action  # Options: 'drop', 'merge', 'keep' 'fill-lastseen'
+        # Checked here rather than where it is used: a typo used to fall through the elif chain and
+        # behave as 'keep' without saying so.
+        self.missing_timestamp_action = line_policy.normalize_policy(
+            missing_timestamp_action, "missing_timestamp_action")
         self.timestamp_format = timestamp_format # Optional parameter for timestamp format
         self.timestamp_date_from_files = date_from_files
         self.strict = strict  # Whether an unparseable extracted timestamp raises or becomes null
@@ -162,43 +181,13 @@ class RawLoader(BaseLoader):
         # Reorder columns to have 'm_timestamp' as the first column
         self.df = self.df.select(["m_timestamp"] + [col for col in self.df.columns if col != "m_timestamp"])
 
-        if self.missing_timestamp_action == 'drop':
-            # Drop rows without a timestamp
-            self.df = self.df.filter(pl.col("m_timestamp").is_not_null())
-        elif self.missing_timestamp_action == 'keep':
-            # Keep rows without a timestamp, timestamp will be None
-            pass
-        
-        elif self.missing_timestamp_action == 'fill-lastseen':
-            # Fill missing timestamps with the last seen valid timestamp
-            self.df = self.df.with_columns(
-                pl.col("m_timestamp").fill_null(strategy='forward')
-            )
-
-        elif self.missing_timestamp_action == 'merge':
-            # Create a flag indicating if the row starts with a timestamp
-            self.df = self.df.with_columns(
-                pl.col("m_timestamp").is_not_null().cast(pl.Boolean).fill_null(False).alias("flag")
-            )
-
-            # Create groups by taking a cumulative sum over the flag
-            self.df = self.df.with_columns(pl.col("flag").cum_sum().alias("group"))
-            # Define the columns for aggregation, including file_name if it exists
-            aggregation_columns = [
-                pl.col("m_timestamp").first().alias("m_timestamp"),
-                pl.col("m_message").first().alias("m_message"),
-                pl.col("m_message").filter(pl.col("m_timestamp").is_null()).str.concat("\n").alias("trace")
-            ]
-
-            # Include 'filename' column if it exists in the DataFrame
-            if "file_name" in self.df.columns:
-                aggregation_columns.append(pl.col("file_name").first().alias("file_name"))
-
-            # Perform the aggregation
-            merged_df = self.df.group_by("group", maintain_order=True).agg(aggregation_columns)
-
-            # Drop the 'group' column
-            self.df = merged_df.drop("group")
+        # A line the pattern found no timestamp on is a continuation of the line above it far more
+        # often than it is garbage, so what to do with it is a policy rather than an error. All six
+        # answers live in line_policy, shared with SyslogLoader and HadoopLoader.
+        self.df = line_policy.to_events(
+            self.df,
+            line_policy.event_start("parsed", column="m_timestamp"),
+            policy=self.missing_timestamp_action)
 
     #No mandatory columns either. 
     def check_mandatory_columns(self):
