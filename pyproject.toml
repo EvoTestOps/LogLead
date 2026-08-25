@@ -59,6 +59,11 @@ dependencies = [
 "scikit-optimize>=0.10.1" #f1-score optimzer
 ]
 
+[project.optional-dependencies]
+iplom_llm = [
+    "iplom-llm-parser @ git+https://github.com/EvoTestOps/iplom-llm-parser@v0.1.0 ; python_version >= '3.11'",
+]
+
 [project.urls]
 Homepage = "https://github.com/EvoTestOps/LogLead"
 
