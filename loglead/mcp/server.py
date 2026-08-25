@@ -557,9 +557,52 @@ def distance_line_content(
 # --------------------------------------------------------------------------- #
 
 _ANOMALY_NOTE = (
-    "Detector scores are on incomparable scales; sort by rank_sum. "
+    "Rank by rank_sum, not by any single detector. Each detector is on its own scale "
+    "(a cluster distance, a shifted decision function, two raw counts), and any one of "
+    "them can be badly distorted, so one high detector score is weak evidence on its own. "
+    "rank_sum is the sum of the per-detector ranks: with all four detectors it starts at "
+    "4 -- the row ranked least anomalous by every detector -- and higher is more anomalous. "
+    "Prefer it to zscore_sum, which a single distorted detector can dominate. rank_sum "
+    "orders rows within this result only: its size grows with the number of rows, so do "
+    "not compare one across calls or read it as an absolute score. "
     "There are no labels here, so these are suspicion rankings, not verdicts."
 )
+
+_SUBSET_NOTE = (
+    "Only {count} of the 4 detectors ran ({names}), so rank_sum here combines {count} of "
+    "them instead of 4 and is a weaker, differently-scaled ranking -- not comparable with a "
+    "4-detector rank_sum. "
+    "Re-run with detectors unset to add {missing} unless you have a specific reason to "
+    "exclude them."
+)
+
+#: One detector makes rank_sum a relabelling of that detector, not a combination.
+_SINGLE_DETECTOR_NOTE = (
+    "With one detector, rank_sum is simply that detector's rank, so it carries none of "
+    "the cross-detector agreement it is there to provide."
+)
+
+
+def _anomaly_notes(detectors, *extra):
+    """Standing anomaly guidance, plus a warning if the caller narrowed the detectors.
+
+    Models driving these tools tend to read a single detector's score as a finding
+    and to narrow ``detectors`` to save time, which is exactly what rank_sum exists
+    to prevent -- so the result says so whenever it happens, rather than only in a
+    docstring the model saw once.
+    """
+    notes = [_ANOMALY_NOTE]
+    used = anomaly.DEFAULT_DETECTORS if detectors is None else list(detectors)
+    missing = [name for name in anomaly.DEFAULT_DETECTORS if name not in used]
+    if missing:
+        notes.append(_SUBSET_NOTE.format(
+            count=len(used), names=", ".join(used) or "none",
+            missing=", ".join(missing),
+        ))
+        if len(used) == 1:
+            notes.append(_SINGLE_DETECTOR_NOTE)
+    notes.extend(extra)
+    return notes
 
 
 @tool
@@ -578,8 +621,10 @@ def anomaly_folder_filename(
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
             Each target is scored against its own baseline of comparison folders.
         comparison_folders: The baseline. "ALL", a list, an int N, or "Prefix*".
-        detectors: Subset of ["KMeans", "IsolationForest", "RarityModel",
-            "OOVDetector"]. Defaults to all four.
+        detectors: Leave unset. All four of ["KMeans", "IsolationForest",
+            "RarityModel", "OOVDetector"] then run and rank_sum combines them,
+            which is what makes the ranking trustworthy. Narrowing this weakens
+            rank_sum; do it only to answer a question about one detector.
         detector_params: Per-detector overrides, e.g.
             {"KMeans": {"n_clusters": 3}, "RarityModel": {"threshold": 100}}.
         max_rows: Rows returned inline.
@@ -596,7 +641,7 @@ def anomaly_folder_filename(
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
          "detectors": detectors, "detector_params": detector_params},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=[_ANOMALY_NOTE],
+        notes=_anomaly_notes(detectors),
     )
 
 
@@ -622,7 +667,8 @@ def anomaly_folder_content(
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
         comparison_folders: The baseline. Point this at known-good folders when you
             have them, e.g. "PageRank_Normal*".
-        detectors: Subset of the four detectors. Defaults to all.
+        detectors: Leave unset so all four run -- rank_sum is only trustworthy
+            when it combines all of them. Narrowing this weakens the ranking.
         mask: Use masked text. Requires a session opened with mask=True.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
@@ -647,7 +693,7 @@ def anomaly_folder_content(
          "detectors": detectors, "mask": mask, "content_format": content_format,
          "vectorizer": vectorizer, "detector_params": detector_params},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=[_ANOMALY_NOTE],
+        notes=_anomaly_notes(detectors),
     )
 
 
@@ -673,7 +719,8 @@ def anomaly_file_content(
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
         comparison_folders: The baseline.
         target_files: "ALL", a list, an int N, or a "name*" wildcard.
-        detectors: Subset of the four detectors. Defaults to all.
+        detectors: Leave unset so all four run -- rank_sum is only trustworthy
+            when it combines all of them. Narrowing this weakens the ranking.
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
@@ -698,7 +745,7 @@ def anomaly_file_content(
          "content_format": content_format, "vectorizer": vectorizer,
          "detector_params": detector_params},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=[_ANOMALY_NOTE],
+        notes=_anomaly_notes(detectors),
     )
 
 
@@ -728,15 +775,19 @@ def anomaly_line_content(
         comparison_folders: The baseline.
         target_files: Which files to score. Narrow this -- one plot and one
             table are produced per file.
-        detectors: Subset of the four detectors. Defaults to all.
+        detectors: Leave unset so all four run -- rank_sum is only trustworthy
+            when it combines all of them. Narrowing this weakens the ranking.
         mask: Use masked text for scoring; the returned text is always raw.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         detector_params: Per-detector keyword overrides.
         max_rows: Top-scoring lines returned per file.
-        sort_by: Score column to rank lines by -- "rank_sum", or a single
-            detector such as "RM_pred_ano_proba", or
-            "moving_avg_100_RM_pred_ano_proba" to find suspicious *regions*.
+        sort_by: Score column to rank lines by. Keep "rank_sum" -- a single
+            detector column such as "RM_pred_ano_proba" ranks by that detector
+            alone and is for investigating one detector, not for finding the
+            worst lines. "moving_avg_100_RM_pred_ano_proba" and its siblings are
+            the exception worth reaching for: they find suspicious *regions*
+            rather than single lines.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
@@ -787,11 +838,11 @@ def anomaly_line_content(
                    "detector_params": detector_params},
         "n_files": len(files),
         "files": files,
-        "notes": [
-            _ANOMALY_NOTE,
+        "notes": _anomaly_notes(
+            detectors,
             "A single high line is often noise; a sustained rise in "
             "moving_avg_100_* marks the region where it went wrong.",
-        ],
+        ),
     }
 
 

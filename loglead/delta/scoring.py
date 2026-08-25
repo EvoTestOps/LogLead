@@ -7,7 +7,13 @@ meaningless, so results get combined two ways:
 
 * ``zscore_sum`` -- per-column z-score, then summed. Sensitive to outliers.
 * ``rank_sum``   -- per-column rank, then summed. Scale-free, and what
-  LogDelta's own USAGE.md recommends sorting by.
+  LogDelta recommends sorting by: a measure that comes out wildly distorted
+  drags a z-score sum with it, but moves a rank sum by at most one rank.
+
+``rank_sum`` is a *within-result* ordering, not an absolute score. Rank 1 is the
+least anomalous row on a measure, so over four measures the sum starts at 4 and
+rises to ``4 * n_rows``; comparing one across results of different sizes, or over
+different numbers of measures, is meaningless.
 
 Ported from LogDelta's ``log_analysis_functions.py``.
 """

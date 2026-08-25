@@ -15,12 +15,83 @@ the positions.
 """
 
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
 import umap
 
 from . import log_root, scoring
+
+# Colors and shapes are combined, so the number of groups that stay apart is the
+# count of colors times the count of shapes. The colors are picked from the
+# published colour-blind safe palettes (Okabe & Ito, Paul Tol, IBM) as the five
+# that stay furthest apart when simulated for protanopia, deuteranopia and
+# tritanopia, while keeping enough contrast against both the light and the dark
+# theme. The shape carries the difference for anyone who sees no color at all.
+# Kept identical to VisualLogAnalyzer's ``dash_app/utils/plots.py`` so the same
+# log folders come out the same colour in both projects.
+GROUP_COLORS = [
+    "#33BBEE",  # blue
+    "#E69F00",  # orange
+    "#117733",  # green
+    "#AA3377",  # magenta
+    "#785EF0",  # violet
+]
+
+GROUP_SYMBOLS = [
+    "circle",
+    "square",
+    "diamond",
+    "triangle-up",
+    "triangle-down",
+    "cross",
+    "x",
+    "star",
+    "pentagon",
+    "hexagram",
+]
+
+# Unlike VisualLogAnalyzer every plot here has a target log folder, drawn as a
+# cross so it is findable among the others. The two shapes that would be read as
+# that cross are therefore kept out of the group cycle, which still leaves
+# 5 x 8 = 40 groups that stay apart.
+TARGET_SYMBOL = "cross"
+COMPARISON_SYMBOLS = [s for s in GROUP_SYMBOLS if s not in (TARGET_SYMBOL, "x")]
+
+# A neutral outline keeps the palest markers visible in both themes.
+MARKER_OUTLINE = {"width": 1, "color": "rgba(128, 128, 128, 0.8)"}
+
+# A rolling mean changes slowly by construction, so a moving average *is* a path
+# and is drawn as one; one marker per log line only smears it into a band. Dash
+# and width carry the window, widest window solid and boldest, so a family's two
+# averages stay apart for a reader who cannot tell its colour from another's.
+MOVING_AVERAGE_PREFIX = "moving_avg_"
+MOVING_AVERAGE_DASHES = ["solid", "dash", "dot", "longdash", "dashdot"]
+
+
+def _group_marker(index, size=8, symbol_index=None):
+    """Colour and shape for one group.
+
+    The colours are cycled through first and the shape changes once they run
+    out, so every combination is used before any of them comes back.
+    ``symbol_index`` overrides that, for callers whose shape means something of
+    its own rather than "the colours ran out".
+    """
+    if symbol_index is None:
+        symbol_index = index // len(GROUP_COLORS)
+    return {
+        "color": GROUP_COLORS[index % len(GROUP_COLORS)],
+        "symbol": COMPARISON_SYMBOLS[symbol_index % len(COMPARISON_SYMBOLS)],
+        "size": size,
+        "line": dict(MARKER_OUTLINE),
+    }
+
+
+def _moving_average_window(col):
+    """Window of a ``moving_avg_<window>_<col>`` column, or ``None`` if it is raw."""
+    if not col.startswith(MOVING_AVERAGE_PREFIX):
+        return None
+    window = col[len(MOVING_AVERAGE_PREFIX):].split("_", 1)[0]
+    return int(window) if window.isdigit() else None
 
 
 def _aggregate_folder_documents(df, field, content_format, grouped):
@@ -82,37 +153,68 @@ def _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, group
     })
 
 
-def _figures(points, target_folder, file, title_subject):
-    """Build the UMAP and the simple scatter from the points frame."""
+def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertemplate):
+    """One marker trace per group, each with its own colour and shape.
+
+    The target log folder is drawn as a trace of its own, in its group's colour
+    but with the reserved shape at a larger size, since "group" is a shared
+    colour category (e.g. all log folders of one application) and cannot tell
+    the target apart from the comparison folders on its own without hovering.
+    """
     folders = points["folder"].to_list()
     groups = points["group"].to_list()
     unique_groups = sorted(set(groups))
-    if unique_groups == ["all"]:
-        color_map = {"all": "blue"}
-    else:
-        color_map = {
-            g: f"rgba({(i * 50) % 255}, {(i * 100) % 255}, {(i * 150) % 255}, 1)"
-            for i, g in enumerate(unique_groups)
-        }
-    # Target gets a cross so it is findable among the circles. The target's
-    # symbol label carries its full folder name, since "group" is a shared color
-    # category (e.g. all log folders of one application) and cannot tell the
-    # target apart from the comparison folders on its own without hovering.
-    target_label = f"target: {target_folder}"
-    symbols = ["comparison" if folder != target_folder else target_label for folder in folders]
-    symbol_map = {"comparison": "circle", target_label: "cross"}
-    title = f"{title_subject}<br>Target log folder (cross):<br>{target_folder}"
-    # Plotly labels hover rows and the legend with the raw column name, so spell
-    # the concept out rather than showing a bare "folder".
-    labels = {"folder": "Log folder", "group": "Group", "symbol": "Role"}
+    # "all" is what group_folders_by_indices writes when nothing was grouped, so
+    # using it as a legend entry would label every ungrouped plot with a word
+    # that says nothing.
+    ungrouped = unique_groups == ["all"]
 
-    fig_umap = px.scatter(
-        {"UMAP1": points["umap_x"].to_list(), "UMAP2": points["umap_y"].to_list(),
-         "folder": folders, "group": groups},
-        x="UMAP1", y="UMAP2", color="group", symbol=symbols,
-        color_discrete_map=color_map, symbol_map=symbol_map, labels=labels,
-        hover_data={"folder": True, "UMAP1": False, "UMAP2": False},
-        title=title, opacity=0.7,
+    def add(name, marker, rows, opacity):
+        if not rows:
+            return
+        fig.add_trace(go.Scatter(
+            x=[x_values[i] for i in rows],
+            y=[y_values[i] for i in rows],
+            mode="markers",
+            text=[folders[i] for i in rows],
+            hovertemplate=hovertemplate,
+            name=name,
+            marker=marker,
+            opacity=opacity,
+        ))
+
+    for index, group in enumerate(unique_groups):
+        add(
+            "Log folders" if ungrouped else group,
+            _group_marker(index),
+            [i for i, (folder, g) in enumerate(zip(folders, groups))
+             if g == group and folder != target_folder],
+            0.7,
+        )
+
+    target_rows = [i for i, folder in enumerate(folders) if folder == target_folder]
+    if target_rows:
+        marker = _group_marker(unique_groups.index(groups[target_rows[0]]), size=14)
+        marker["symbol"] = TARGET_SYMBOL
+        marker["line"] = {**MARKER_OUTLINE, "width": 2}
+        add(f"target: {target_folder}", marker, target_rows, 1.0)
+
+
+def _figures(points, target_folder, file, title_subject):
+    """Build the UMAP and the simple scatter from the points frame."""
+    title = f"{title_subject}<br>Target log folder (cross):<br>{target_folder}"
+    # The trace name carries the group, so hover spells the log folder out
+    # rather than showing a bare column name.
+    legend_note = "<extra>%{fullData.name}</extra>"
+
+    fig_umap = go.Figure()
+    _add_group_traces(
+        fig_umap, points, target_folder,
+        points["umap_x"].to_list(), points["umap_y"].to_list(),
+        hovertemplate="Log folder: %{text}" + legend_note,
+    )
+    fig_umap.update_layout(
+        title=title, xaxis_title="UMAP1", yaxis_title="UMAP2", legend_title_text="Group",
     )
 
     x_title = "Files" if file is True else "Unique terms"
@@ -128,12 +230,17 @@ def _figures(points, target_folder, file, title_subject):
     log_range = log_y.max() - log_y.min() if len(log_y) else 0.0
     y_jittered = 10 ** (log_y + np.random.normal(0, jitter * log_range, size=log_y.shape))
 
-    fig_simple = px.scatter(
-        {x_title: x_jittered, "Lines": y_jittered, "folder": folders, "group": groups},
-        x=x_title, y="Lines", color="group", symbol=symbols,
-        color_discrete_map=color_map, symbol_map=symbol_map, labels=labels,
-        hover_data={"folder": True, x_title: True, "Lines": True, "group": False},
-        title=title, opacity=0.7, log_y=True,
+    fig_simple = go.Figure()
+    _add_group_traces(
+        fig_simple, points, target_folder, x_jittered.tolist(), y_jittered.tolist(),
+        hovertemplate=(
+            "Log folder: %{text}<br>" + x_title + ": %{x:,.0f}<br>Lines: %{y:,.0f}"
+            + legend_note
+        ),
+    )
+    fig_simple.update_layout(
+        title=title, xaxis_title=x_title, yaxis_title="Lines", yaxis_type="log",
+        legend_title_text="Group",
     )
     return fig_umap, fig_simple
 
@@ -232,6 +339,14 @@ def plot_line_scores(df, title, display_mode="markers"):
     Each detector's raw score and its two moving averages are min-max
     normalized *as a family* so they share one 0-1 axis; across families the
     shapes stay comparable even though the raw scales are not.
+
+    One detector family is one colour, so its raw score and its averages read as
+    belonging together. Within a family the raw score is a scatter -- every point
+    there is a log line someone may want to hover -- and the averages are lines.
+
+    :param display_mode: how the *raw* per-line scores are drawn (``"markers"``,
+        ``"lines"``, ``"lines+markers"``). The moving averages ignore it and are
+        always lines.
     """
     measure_groups = {
         prefix: [col for col in df.columns if prefix in col]
@@ -239,6 +354,7 @@ def plot_line_scores(df, title, display_mode="markers"):
     }
     line_numbers = df["line_number"].to_list()
     messages = df["m_message"].to_list()
+    hover_text = [f"Log: {msg[:100]}<br>{msg[100:205]}" for msg in messages]
 
     normalized = df
     for columns in measure_groups.values():
@@ -247,21 +363,57 @@ def plot_line_scores(df, title, display_mode="markers"):
                 scoring.normalize_measure_columns(df, columns)
             )
 
-    fig = go.Figure()
-    for columns in measure_groups.values():
-        for col in columns:
-            if col not in normalized.columns:
-                continue
-            fig.add_trace(go.Scatter(
+    scatters, lines = [], []
+    for family_index, columns in enumerate(measure_groups.values()):
+        columns = [col for col in columns if col in normalized.columns]
+        if not columns:
+            continue
+        color = GROUP_COLORS[family_index % len(GROUP_COLORS)]
+        # Widest window first, so the smoothest trend takes the solid, boldest line.
+        windows = sorted(
+            {w for w in map(_moving_average_window, columns) if w is not None},
+            reverse=True,
+        )
+        for member_index, col in enumerate(columns):
+            shared = dict(
                 x=line_numbers,
                 y=normalized[col].to_list(),
-                mode=display_mode,
                 name=col,
-                text=[f"Log: {msg[:100]}<br>{msg[100:205]}" for msg in messages],
+                text=hover_text,
                 hoverinfo="text",
                 connectgaps=False,
-                marker=dict(symbol="x", size=4),
-            ))
+                # Draw order puts every line over every scatter; legendrank keeps
+                # the legend grouped by detector family regardless.
+                legendrank=1000 + family_index * 10 + member_index,
+            )
+            window = _moving_average_window(col)
+            if window is None:
+                # The family's own shape, so the four scatters stay apart for a
+                # reader who cannot tell their colours apart.
+                marker = _group_marker(family_index, size=4, symbol_index=family_index)
+                # One marker per log line, so an outline would fill the gaps
+                # between them into a smear.
+                marker["line"] = {"width": 0}
+                scatters.append(go.Scatter(
+                    mode=display_mode, marker=marker, line=dict(color=color),
+                    # Subordinate to the trend lines drawn over it.
+                    opacity=0.55, **shared,
+                ))
+            else:
+                rank = windows.index(window)
+                lines.append(go.Scatter(
+                    mode="lines",
+                    line=dict(
+                        color=color,
+                        dash=MOVING_AVERAGE_DASHES[rank % len(MOVING_AVERAGE_DASHES)],
+                        width=round(max(1.2, 2.6 - 0.7 * rank), 2),
+                    ),
+                    **shared,
+                ))
+
+    fig = go.Figure()
+    for trace in scatters + lines:
+        fig.add_trace(trace)
 
     fig.update_layout(
         title=title,

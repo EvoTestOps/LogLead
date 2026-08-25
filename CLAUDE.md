@@ -433,6 +433,25 @@ because `EventLogEnhancer.normalize()` `eval()`s what it is handed**), `scoring.
 `rank_sum` over the four measures; prefer `rank_sum`, the raw detector scales differ by orders of
 magnitude), `export.py` (the only thing that writes files).
 
+**Plot colours** (`visualize.py`) are a colour-blind safe set of five — `GROUP_COLORS`, picked from
+the Okabe & Ito / Paul Tol / IBM palettes — **cycled first**, with `GROUP_SYMBOLS` changing only once
+they run out, so groups are told apart by shape as well as colour and 5 x 8 of them stay distinct.
+`GROUP_COLORS`/`GROUP_SYMBOLS` are copied verbatim from VisualLogAnalyzer's
+`dash_app/utils/plots.py` (there is no shared package to import from) — keep the two in step, or the
+same log folders come out different colours in the two projects. LogLead's own addition is
+`TARGET_SYMBOL`: every plot here has a target log folder drawn as a cross, so `cross` and the
+lookalike `x` are held out of the group cycle in `COMPARISON_SYMBOLS`.
+
+`plot_line_scores` colours by *detector family* (kmeans/IF/RM/OOVD) and splits within a family by
+**how the trace is drawn, not by shape**: the raw per-line score is a scatter — every point there is
+a log line to hover — and its 10/100-line moving averages are `mode="lines"`, widest window solid and
+boldest (`MOVING_AVERAGE_DASHES`). A rolling mean is a path by construction, and drawing it as one
+marker per line smears it into a band; LogDelta's `_ano_plot_line_scores` draws all twelve as
+`symbol="x"` markers and relies on density to make the averages look like curves. `display_mode`
+therefore governs only the raw scores now. Which columns are averages is read from the
+`moving_avg_<window>_` prefix (`_moving_average_window`), not from column order, and a name that
+does not parse falls back to a scatter rather than raising.
+
 **The invariant that differs from LogDelta**: these functions hold no module state, never `os.chdir`,
 and never write files — they return DataFrames. Functions that may add an `e_*` column return
 `(results, df)` so the caller can keep the enhanced frame. Keeping it is the whole point; LogDelta
@@ -462,6 +481,16 @@ Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp
 - `formatting.py` — every analysis tool returns the same envelope: full table on disk, plus a preview
   sorted by the column that answers the question (`rank_sum` for anomalies) and truncated to
   `max_rows`. Tool results go into a model's context, so unbounded tables are not an option.
+
+**Anomaly guidance is part of the result, not just the docstrings** (`_anomaly_notes`). The observed
+failure mode is a model driving these tools reading one detector's score as a finding, and narrowing
+`detectors` to save time — both of which defeat `rank_sum`. So `_ANOMALY_NOTE` rides on every anomaly
+result, and `_SUBSET_NOTE`/`_SINGLE_DETECTOR_NOTE` fire *whenever* fewer than four detectors ran,
+naming the missing ones. A docstring is read once at tool-registration time; a note is in front of
+the model at the moment it is about to over-read a number, which is why the check is at the call site
+rather than only in the `detectors:` parameter docs. Keep the note wording aligned with
+`delta/scoring.py`'s module docstring — the numbers in it (`rank_sum` starts at 4, tops out at
+`4 * n_rows`) are properties of `add_combined_scores`, not slogans.
 
 **Log folder names** come from the directory names and are what every legend, result row and output
 file is labelled with, so opaque ids make the analysis unreadable. `open_log_root(folder_names=...)` and
@@ -495,3 +524,7 @@ match ours. Without `_STEP_ARGS` the kwargs filter in `run_config` would drop th
 
 `demo/mcp_demo.py` exercises all 19 tools against a real log root without an MCP client attached
 — the fastest way to check a change here.
+
+### WSL Browser Integration
+When running in WSL and producing interactive HTML visualizations (e.g. from `plot_folder_*` or `plot_file_*`), open them in the Windows default browser using:
+`open-browser <path-to-html>` (or copy to `/mnt/c/Users/mmantyla/AppData/Local/Temp` and launch via PowerShell `Start-Process $env:TEMP\<file>`).

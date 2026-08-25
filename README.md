@@ -137,16 +137,79 @@ analysis conversationally. It exposes the same comparison analyses as
 baseline of others — but interactively: the logs are loaded, masked, and parsed **once**, and every
 later question reuses it.
 
+### Registering it with an MCP client
+
+The server runs as a plain command-line program — the MCP client (Goose, Claude Code) launches it and
+talks to it over stdin/stdout. That means `loglead-mcp` has to be a command the MCP client can actually
+find. Pick one:
+
+Install globally — fetches the [published PyPI release](https://pypi.org/project/LogLead/), **not**
+this clone, so local/uncommitted changes won't be included:
 ```
-pip install loglead[mcp]      # or: uv sync --extra mcp
-loglead-mcp                   # stdio; also --transport streamable-http --port 8000
+uv tool install "loglead[mcp]"      # or: pip install "loglead[mcp]"
 ```
 
-Register it with Claude Code:
+Or point at the venv script directly — runs this clone's code, whatever state it's in:
+```
+/path/to/LogLead/.venv/bin/loglead-mcp
+```
+
+Or let `uv` run it from the clone — also this clone's code:
+```
+uv run --directory /path/to/LogLead --extra mcp loglead-mcp
+```
+
+Below, `loglead-mcp` stands for **whichever of the three you picked** — the plain word only works if
+you installed it globally (option one). If you used the venv path or `uv run --directory`, use that
+full command wherever `loglead-mcp` appears in the examples that follow, in place of the bare word.
+
+**Goose** — `goose configure` → *Add Extension* → *Command-line Extension*, name it `loglead`, give
+your command from above (e.g. `/path/to/LogLead/.venv/bin/loglead-mcp`) as the command to run, `1800`
+for the timeout, and any description (e.g. "log comparison and anomaly analysis") — it's a free-text
+label shown in the extensions list, not functional. That writes an entry into
+`~/.config/goose/config.yaml`, which you can equally well add by hand. The wizard also asks whether
+to add environment variables — answer no, none are required.
+
+```yaml
+extensions:
+  loglead:
+    enabled: true
+    type: stdio
+    name: loglead
+    description: log comparison and anomaly analysis
+    cmd: /path/to/LogLead/.venv/bin/loglead-mcp   # or plain "loglead-mcp" if installed globally
+    args: []                # if cmd is "uv": ["run", "--directory", "/path/to/LogLead", "--extra", "mcp", "loglead-mcp"]
+    timeout: 1800
+```
+
+Give it a generous `timeout`: the *first* `open_log_root` on a large log root reads, masks and
+parses everything, which can take minutes and would otherwise be killed mid-call. Every later
+question — and every restart, via the parquet cache — is seconds.
+
+To try it without touching the config, add the extension for one session (again, your command from
+above, not necessarily the bare word):
+
+```
+goose session --with-extension "loglead-mcp"
+```
+
+Or run the server over HTTP and attach to it (Goose 1.4x dropped SSE; use streamable HTTP) — this one
+does need `loglead-mcp` resolvable in the shell you launch it from, since it isn't wrapped by an MCP
+client:
+
+```
+loglead-mcp --transport streamable-http --port 8000
+goose session --with-streamable-http-extension "http://127.0.0.1:8000/mcp"
+```
+**Claude Code**
 
 ```
 claude mcp add loglead -- loglead-mcp
 ```
+
+
+Either way, ask Goose to *open a log root* to get started — the tool names below are what it will
+call.
 
 ### What it can do
 

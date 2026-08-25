@@ -12,7 +12,13 @@ Four levels, mirroring LogDelta's config step names:
 * **L4** ``anomaly_line_content``    -- score each *line* of a target file.
 
 Scores from the four detectors are on incomparable scales, so every result also
-carries ``zscore_sum`` and ``rank_sum``; sort by ``rank_sum``.
+carries ``zscore_sum`` and ``rank_sum``. **Run all four and sort by ``rank_sum``**:
+it is the sum of the per-detector ranks, so with four detectors it starts at 4 --
+the row every detector ranks least anomalous -- and higher is more anomalous. Any
+one detector can be badly distorted, which is also why ``rank_sum`` beats
+``zscore_sum``: one distorted measure moves a z-score sum a long way and a rank sum
+by at most one rank. Narrowing ``detectors`` is what breaks this, since ``rank_sum``
+then combines fewer measures (with one detector it is just that detector's rank).
 """
 
 import warnings
