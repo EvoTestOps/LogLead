@@ -2,9 +2,9 @@
 # syntactic clustering (IPLoM) with LLM-based template extraction without labeled data.
 #
 # Requires Python 3.11+ and the optional `iplom_llm` extra:
-#   uv add "loglead[iplom_llm]"
+#   uv run --extra iplom_llm demo/llm_parser.py
 #
-# The parser requires either a locally hosted LLM, or an OpenRouter api key.
+# The parser requires either a locally hosted LLM, or an OpenRouter API key.
 # See https://github.com/EvoTestOps/iplom-llm-parser/blob/main/README.md for details about configuration.
 
 # ______________________________________________________________________________
@@ -13,28 +13,59 @@ import os
 import random
 
 import polars as pl
+from dotenv import find_dotenv, load_dotenv
 from iplom_llm_parser import Config, IPLoMConfig, LLMConfig, PipelineConfig
+from iplom_llm_parser.llm_client import LLMConnectionError, check_llm_connection
 
 from loglead.enhancers import EventLogEnhancer
 
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
+
+# Reads API_KEY from a .env file at the repo root
+# see .env.sample
+load_dotenv(find_dotenv())
+
 # Location of our sample data
 sample_data = os.path.join(script_dir, "samples")
 
 # Parser configuration
 pipeline_config = PipelineConfig(template_correction=False)
 iplom_config = IPLoMConfig()
+
+
+# Option 1: OpenRouter
+# Model ids and pricing: https://openrouter.ai/models
+# Set the API key to .env file (see .env.sample)
+api_key = os.environ.get("API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+
 llm_config = LLMConfig(
-    model="google/gemma-4-26b-a4b-qat",
-    base_url="http://localhost:1234/v1",
-    provider="local",
+    provider="openrouter",
+    model="google/gemma-4-26b-a4b-it",
+    api_key=api_key,
+    max_concurrent=1,
 )
+
+# Option 2: locally hosted OpenAI-compatible server (e.g. with LM Studio)
+# llm_config = LLMConfig(
+#     provider="local",
+#     model="google/gemma-4-26b-a4b-qat",
+#     base_url="http://localhost:1234/v1",
+#     max_concurrent=1,
+# )
+
 config = Config(pipeline=pipeline_config, iplom=iplom_config, llm=llm_config)
 
 # Alternatively use config file:
 # config_path = os.path.join(script_dir, "config.toml")
+
+# LLMClient() also runs this check internally before making any requests,
+# so this call is not strictly required, but catches bad endpoint/key/model immeadiately.
+try:
+    check_llm_connection(llm_config)
+except LLMConnectionError as e:
+    raise SystemExit(f"LLM check failed: {e}")
 
 
 # For nicer printing a function to format series of elements as a list-like string

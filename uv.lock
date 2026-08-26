@@ -868,8 +868,9 @@ wheels = [
 [[package]]
 name = "iplom-llm-parser"
 version = "0.1.0"
-source = { git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.0#d36984051290d916fdeb383a1d2eebda1ad806d6" }
+source = { git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.1#b7dd9550b548c90026d91b9aadc37f097a76b4d2" }
 dependencies = [
+    { name = "httpx2" },
     { name = "polars", version = "1.38.1", source = { registry = "https://pypi.org/simple" } },
     { name = "pydantic-ai-slim", extra = ["openrouter"] },
     { name = "regex", version = "2026.7.19", source = { registry = "https://pypi.org/simple" } },
@@ -1364,7 +1365,7 @@ iplom-llm = [
 requires-dist = [
     { name = "drain3", specifier = ">=0.9.11" },
     { name = "gitpython" },
-    { name = "iplom-llm-parser", marker = "python_full_version >= '3.11' and extra == 'iplom-llm'", git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.0" },
+    { name = "iplom-llm-parser", marker = "python_full_version >= '3.11' and extra == 'iplom-llm'", git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.1" },
     { name = "jinja2" },
     { name = "matplotlib" },
     { name = "nbformat", specifier = ">=4.2.0" },
