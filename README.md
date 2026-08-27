@@ -1,9 +1,28 @@
 # LogLead
-LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations. LogLead is also usedas a backend for projects such as [LogDelta](https://github.com/EvoTestOps/LogDelta) and [VisualLogAnalyzer](https://github.com/EvoTestOps/VisualLogAnalyzer), which offer a more user-friendly approach to log analysis and log anomaly detection.
+LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations. LogLead is also used as a backend for projects such as [LogDelta](https://github.com/EvoTestOps/LogDelta) and [VisualLogAnalyzer](https://github.com/EvoTestOps/VisualLogAnalyzer), which offer a more user-friendly approach to log analysis and log anomaly detection.
+
+## Table of contents
+
+- [LogLead](#loglead)
+  * [Introduction](#introduction)
+  * [Installing LogLead](#installing-loglead)
+    + [Known issues](#known-issues)
+  * [Demos](#demos)
+    + [Thunderbird Supercomputer Log Demo](#thunderbird-supercomputer-log-demo)
+    + [Hadoop Distributed File System (HDFS) Log Demo](#hadoop-distributed-file-system-hdfs-log-demo)
+  * [MCP server](#mcp-server)
+    + [Registering it with an MCP client](#registering-it-with-an-mcp-client)
+    + [What it can do](#what-it-can-do)
+  * [Testing](#testing)
+  * [Example of Anomaly Detection results](#example-of-anomaly-detection-results)
+  * [Functional overview](#functional-overview)
+  * [Reference](#reference)
+
+## Introduction
 
 <img src="images/Log%20processing.svg">
 
-Currently, it features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+Currently, LogLead features nearly 1,000 unique anomaly detection combinations, encompassing 8 public datasets, 11 log representations (enhancers), and 11 classifiers. These resources enable you to benchmark your own data, log representation, or classifier against a diverse range of scenarios. If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
 
 A key strength of LogLead is its custom loader system, which efficiently isolates the unique aspects of logs from different systems. This design allows for a reduction in redundant code, as the same enhancement and anomaly detection code can be applied universally once the logs are loaded. 
 
