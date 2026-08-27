@@ -207,9 +207,25 @@ goose session --with-streamable-http-extension "http://127.0.0.1:8000/mcp"
 claude mcp add loglead -- loglead-mcp
 ```
 
-
 Either way, ask Goose to *open a log root* to get started — the tool names below are what it will
 call.
+
+**Claude Desktop Extension**
+
+Alternatively, you can install loglead-mcp as an extension in the Claude Desktop app. 
+
+1. Download [`loglead-mcp.mcpb`](./loglead-mcp.mcpb).
+2. Claude Desktop → Settings → Extensions → Advanced settings → Install Extension → select the file.
+3. Restart Claude Desktop.
+4. Start a new chat, e.g., "With loglead-mcp, find the log root at C:\Datasets\hadoop".
+
+When installing the bundle, the most recent version is automatically fetched from GitHub. The bundle can be repackaged with `npm`:
+```
+npm install -g @anthropic-ai/mcpb
+cd mcpb
+mcpb validate manifest.json
+mcpb pack . ../loglead-mcp.mcpb
+```
 
 ### What it can do
 

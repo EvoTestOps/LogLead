@@ -1,0 +1,11 @@
+[project]
+name = "loglead-mcp-bundle"
+version = "1.2.3"
+description = "MCPB launcher for LogLead's MCP server"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "loglead[mcp] @ git+https://github.com/EvoTestOps/LogLead.git@main",
+]
+
+[tool.uv]
+package = false
