@@ -145,6 +145,7 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
     root = os.path.abspath(os.path.expanduser(root))
     if not os.path.isdir(root):
         raise FileNotFoundError(f"Log root not found: {root}")
+    root_posix = root.replace(os.sep, "/")
     loader_class, kwargs = resolve_format(format)
     if loader_class is AutoLoader:
         # Stage 1 of detection recognizes a public dataset from the label file beside the logs and
@@ -159,7 +160,7 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
         root,
         filename_pattern=filename_pattern,
         min_file_size=min_file_size,
-        strip_full_data_path=root,
+        strip_full_data_path=root_posix,
         **kwargs,
     )
     df = loader.execute()
@@ -180,7 +181,7 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
     df = df.with_columns([
         # Where the line came from on disk. Only RawLoader keeps this itself, and only when handed
         # a prefix to strip, so it is rebuilt here from the prefix every loader was given.
-        pl.concat_str([pl.lit(root), pl.col("file_name")]).alias("orig_file_name"),
+        pl.concat_str([pl.lit(root_posix), pl.col("file_name")]).alias("orig_file_name"),
         # First path segment is the log folder
         pl.col("file_name").str.extract(r"^/([^/]+)", 1).alias("folder"),
         # The rest stays as the file name relative to its log folder
