@@ -371,6 +371,42 @@ class EventLogEnhancer:
             self.df = self.df.drop(["spell_obj", "spell_info"])
         return self.df
 
+    # https://github.com/EvoTestOps/iplom-llm-parser
+    def parse_iplom_llm(
+        self,
+        field="m_message",
+        reparse=False,
+        config=None,
+        config_path="config.toml",
+        client=None,
+    ):
+        self._handle_prerequisites([field])
+        if reparse or "e_event_iplom_llm_id" not in self.df.columns:
+            for col in ("e_event_iplom_llm_id", "e_event_iplom_llm_template"):
+                if col in self.df.columns:
+                    self.df = self.df.drop(col)
+
+            from loglead.parsers import IPLoMLLMParser
+
+            iplom_llm_parser = IPLoMLLMParser(
+                messages=self.df[field],
+                config=config,
+                config_path=config_path,
+                client=client,
+            )
+            iplom_llm_parser.parse()
+            self.iplom_llm_stats = iplom_llm_parser.stats
+
+            select_cols = [
+                pl.col("EventId").alias("e_event_iplom_llm_id"),
+                pl.col("EventTemplate").alias("e_event_iplom_llm_template"),
+                pl.col("ParameterList").alias("e_event_iplom_llm_params"),
+                pl.col("SlotTypes").alias("e_event_iplom_llm_slot_types"),
+            ]
+            df_new = iplom_llm_parser.df_log.select(select_cols)
+            self.df = pl.concat([self.df, df_new], how="horizontal")
+        return self.df
+
     def create_neural_emb(self, field="e_message_normalized"):
         self._handle_prerequisites([field])
         if "e_bert_emb" not in self.df.columns:

@@ -71,6 +71,10 @@ mcp = [
 [project.scripts]
 loglead-mcp = "loglead.mcp.server:main"
 
+iplom_llm = [
+    "iplom-llm-parser @ git+https://github.com/EvoTestOps/iplom-llm-parser@v0.1.1 ; python_version >= '3.11'",
+]
+
 [project.urls]
 Homepage = "https://github.com/EvoTestOps/LogLead"
 
