@@ -3,6 +3,7 @@ import requests
 import argparse
 import yaml
 import shutil
+import tarfile
 from pathlib import Path
 from zipfile import ZipFile
 import gzip
@@ -70,8 +71,9 @@ def download_file(url, dest_folder, is_github=False, progress_bar=None):
                 if progress_bar:
                     progress_bar.update(1)
             else:
-                total_size = int(r.headers.get('content-length', 0))
-                t = tqdm(total=total_size, unit='iB', unit_scale=True, desc=filename)
+                is_compressed_transfer = 'content-encoding' in r.headers
+                total_size = 0 if is_compressed_transfer else int(r.headers.get('content-length', 0))
+                t = tqdm(total=total_size or None, unit='iB', unit_scale=True, desc=filename)
                 with open(file_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=block_size):
                         t.update(len(chunk))
@@ -97,6 +99,31 @@ def unzip_file(zip_path, dest_folder):
         zip_ref.extractall(dest_folder)
     print(f'Extracted {zip_path} to {dest_folder}')
 
+def is_tar(path):
+    """Whether a path is a tar archive, gzipped or not.
+
+    Checked before the plain-gzip branch everywhere, because '.tar.gz' also ends with '.gz' and
+    gunzipping it just leaves a tar file lying there under a .log name.
+    """
+    return path.endswith(('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz'))
+
+def untar_file(tar_path, dest_folder):
+    """
+    Extracts a tar archive (optionally compressed) to the specified destination folder.
+
+    Args:
+        tar_path (str): The path to the tar archive.
+        dest_folder (str): The directory where the contents should be extracted.
+    """
+    os.makedirs(dest_folder, exist_ok=True)
+    with tarfile.open(tar_path, 'r:*') as tar:
+        try:
+            tar.extractall(dest_folder, filter='data')
+        except TypeError:
+            # The extraction filter arrived in Python 3.12; this project still supports 3.9.
+            tar.extractall(dest_folder)
+    print(f'Extracted {tar_path} to {dest_folder}')
+
 def ungzip_file(gz_path, dest_folder):
     """
     Unzips a GZ file to the specified destination folder and moves the extracted contents
@@ -108,9 +135,16 @@ def ungzip_file(gz_path, dest_folder):
     """
     # Ensure the destination folder exists
     os.makedirs(dest_folder, exist_ok=True)
-    # Create the path for the extracted file
-    filename = os.path.basename(gz_path).replace('.gz', '')
-    file_path = os.path.join(dest_folder, filename+".log")
+    # Create the path for the extracted file. The '.log' is only appended when the name inside the
+    # archive has none of its own: the supercomputer logs arrive as 'liberty2.gz' and want to land
+    # as 'liberty2.log', but Zeek names its files already and 'conn.log.gz' would otherwise be
+    # extracted to 'conn.log.log'.
+    filename = os.path.basename(gz_path)
+    if filename.endswith('.gz'):
+        filename = filename[:-len('.gz')]
+    if not os.path.splitext(filename)[1]:
+        filename += '.log'
+    file_path = os.path.join(dest_folder, filename)
     # Extract the GZ file
     with gzip.open(gz_path, 'rb') as f_in:
         with open(file_path, 'wb') as f_out:
@@ -225,45 +259,125 @@ def download_all_parts(name, urls, dest_folder):
             if file_path:
                 if file_path.endswith('.zip'):
                     unzip_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the zip after extraction
+                elif is_tar(file_path):
+                    untar_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the tarball after extraction
                 elif file_path.endswith('.gz'):
                     ungzip_file(file_path, dest_folder)
+                    os.remove(file_path)  # Remove the gz after extraction
                 elif file_path.endswith('.7z'):
                     un7z_file(file_path, dest_folder)
-                os.remove(file_path)  # Remove the zip or gz file after extraction
+                    os.remove(file_path)  # Remove the 7z after extraction
+                # else: a bare file (no archive extension) - it's already the payload in its
+                # final place, so leave it. Removing it unconditionally here used to delete the
+                # only copy of any dataset shipped as a plain file (e.g. nginx_json).
     
     # Clean up cloned repositories
     for repo_url, repo_folder in cloned_repos.items():
         shutil.rmtree(repo_folder)
 
+def extract_local_archive(name, archive, dest_folder, source_url=None):
+    """
+    Unpacks a dataset from an archive already on disk, for datasets this script cannot fetch.
+
+    Some datasets are served only to a logged-in account - Kaggle is the usual case - so there is
+    no URL to GET. The YAML entry then carries `local_archive` pointing at a copy the user
+    downloaded by hand, and optionally `source_url` saying where to get it. The archive is only
+    read: unlike a downloaded one it is never removed, because it is the user's file and this
+    script did not put it there.
+
+    Args:
+        name (str): The name of the dataset.
+        archive (str): Path to the local archive, '~' allowed.
+        dest_folder (str): The directory where the contents should be extracted.
+        source_url (str, optional): Where the archive can be obtained, quoted if it is missing.
+    """
+    path = os.path.expanduser(archive)
+    if not os.path.exists(path):
+        where = f' from {source_url}' if source_url else ''
+        print(f'Local archive {path} for {name} not found. Download it by hand{where}, put it '
+              f'there, and re-run - or set "download: false" for {name} to skip it.')
+        return
+
+    os.makedirs(dest_folder, exist_ok=True)
+    print(f'Extracting local archive {path} into {dest_folder}')
+    if path.endswith('.zip'):
+        unzip_file(path, dest_folder)
+    elif is_tar(path):
+        untar_file(path, dest_folder)
+    elif path.endswith('.gz'):
+        ungzip_file(path, dest_folder)
+    elif path.endswith('.7z'):
+        un7z_file(path, dest_folder)
+    else:
+        shutil.copy2(path, dest_folder)  # not an archive: it is already the payload
+
+
+def copy_local_dataset(name, source_folder, dest_folder):
+    """
+    Copies an already-downloaded dataset folder instead of fetching it again.
+
+    Several YAML configs point at the same public datasets but keep separate `root_folder`s (one
+    per format family, so their `test_data/` outputs don't collide). Re-downloading each of those
+    from scratch is wasteful once a master copy already exists on disk (typically the one
+    `downloader/datasets.yml` populates under `local_copy_folder`), so this copies it locally
+    instead of hitting the network again.
+
+    Args:
+        name (str): The name of the dataset.
+        source_folder (str): Path to the already-downloaded dataset folder.
+        dest_folder (str): The directory to copy it to.
+    """
+    print(f'Copying {source_folder} to {dest_folder} (local_copy_folder set).')
+    shutil.copytree(source_folder, dest_folder)
+
+
 def main(dest_base_folder, yaml_file):
     """
     Downloads and unzips all datasets to the specified base folder.
-    
+
     Args:
         dest_base_folder (str): The base folder where datasets should be downloaded.
         yaml_file (str): Path to the YAML file containing dataset information.
     """
     data = load_datasets(yaml_file)
     root_folder = dest_base_folder if dest_base_folder else os.path.expanduser(data['root_folder'])
-    
+    local_copy_folder = data.get('local_copy_folder')
+    if local_copy_folder:
+        local_copy_folder = os.path.expanduser(local_copy_folder)
+
     for dataset in data['datasets']:
         name = dataset['name']
         skip_download = not dataset.get('download', True)
         if skip_download:
             print(f'Skipping download for {name}.')
             continue
-        urls = dataset.get('urls', [dataset.get('url')])
-        if not any(urls):
-            print(f'No URLs provided for {name}. Skipping download.')
-            continue
         dataset_folder = os.path.join(root_folder, name)
-        
+
         # Check if the dataset folder already exists
         if os.path.exists(dataset_folder):
             print(f'Folder {dataset_folder} already exists. Skipping download for {name}.')
             continue
-        
-        download_all_parts(name, urls, dataset_folder)
+
+        if local_copy_folder:
+            source_folder = os.path.join(local_copy_folder, name)
+            if os.path.exists(source_folder):
+                copy_local_dataset(name, source_folder, dataset_folder)
+                continue
+            print(f'local_copy_folder set but {source_folder} not found; falling back to '
+                  f'downloading {name}.')
+
+        local_archive = dataset.get('local_archive')
+        urls = dataset.get('urls', [dataset.get('url')])
+        if not local_archive and not any(urls):
+            print(f'No URLs provided for {name}. Skipping download.')
+            continue
+
+        if local_archive:
+            extract_local_archive(name, local_archive, dataset_folder, dataset.get('source_url'))
+        else:
+            download_all_parts(name, urls, dataset_folder)
 
 def cli():
     parser = argparse.ArgumentParser(description='Download datasets to a specified location.')

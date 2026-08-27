@@ -1,0 +1,21 @@
+name: loghub
+description: >
+  The '*_structured.csv' files loghub ships beside each raw log - the same events already split
+  into columns by its own parsing. An ordinary CSV with a header row, RFC-4180 quoted, so the only
+  thing to configure is which column is the log line: 'Content'.
+
+  No timestamp mapping, on purpose. The 16 systems agree on LineId/Content/EventId/EventTemplate
+  and on nothing else, and each splits the time across a different set of columns - Date+Time,
+  Month+Date+Time, an epoch Timestamp, Date+Day+Time - so any single timestamp_field here would be
+  wrong for most of them. Reading one system at a time, add it: e.g. timestamp_field: [Date, Time]
+  with timestamp_formats: ["%y%m%d %H%M%S"] for HDFS, or the loghub_labeled spec for BGL and
+  Thunderbird, which both carry an epoch 'Timestamp' as well as a 'Label'.
+
+header: row
+
+message_field: Content
+extra_fields: keep
+
+sample:
+  - 'LineId,Date,Time,Pid,Level,Component,Content,EventId,EventTemplate'
+  - '1,081109,203615,148,INFO,dfs.DataNode$PacketResponder,PacketResponder 1 for block blk_38865049064139660 terminating,E10,PacketResponder <*> for block blk_<*> terminating'

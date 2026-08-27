@@ -60,6 +60,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# MCP server: pip install loglead[mcp], then run loglead-mcp
+# The MCP SDK needs Python 3.10+, while LogLead itself still supports 3.9,
+# so the marker keeps `pip install loglead` resolvable on 3.9.
+mcp = [
+'mcp[cli]>=1.9; python_version >= "3.10"',
+"XlsxWriter>=3.2" #xlsx result tables
+]
+
+[project.scripts]
+loglead-mcp = "loglead.mcp.server:main"
+
 iplom_llm = [
     "iplom-llm-parser @ git+https://github.com/EvoTestOps/iplom-llm-parser@v0.1.1 ; python_version >= '3.11'",
 ]
@@ -69,6 +80,12 @@ Homepage = "https://github.com/EvoTestOps/LogLead"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+# Format specs read at runtime by JsonLoader(format=...) and AccessLogLoader(format=...). Neither
+# directory has an __init__.py - they are data directories, not subpackages - so the patterns are
+# relative to their parent package.
+"loglead.loaders" = ["json_formats/*.yml", "access_log_formats/*.yml"]
 
 [tool.setuptools.packages.find]
 include = ["loglead*"]

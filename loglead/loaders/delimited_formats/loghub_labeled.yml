@@ -1,0 +1,27 @@
+name: loghub_labeled
+description: >
+  loghub's '*_structured.csv' for the two systems that keep a label in it, BGL and Thunderbird.
+  Both carry 'Label' - '-' for an ordinary line, an alert category such as KERNDTLB or APPSEV
+  otherwise - and an epoch 'Timestamp' column, which is what lets this spec map a time as well as a
+  message where the plain loghub spec cannot.
+
+  Use this one only on files that have the column. Applied to a directory where some files do not,
+  every row of theirs gets a null label rather than a wrong one, which is honest but leaves the
+  frame half-labelled and useless to a supervised detector.
+
+header: row
+
+message_field: Content
+
+timestamp_field: Timestamp
+timestamp_epoch: s
+
+label_field: Label
+normal_values: ['-']
+
+extra_fields: keep
+
+sample:
+  - 'LineId,Label,Timestamp,Date,Node,Time,NodeRepeat,Type,Component,Level,Content,EventId,EventTemplate'
+  - '1,-,1117838570,2005.06.03,R02-M1-N0-C:J12-U11,2005-06-03-15.42.50.363779,R02-M1-N0-C:J12-U11,RAS,KERNEL,INFO,instruction cache parity error corrected,E64,instruction cache parity error corrected'
+  - '807,KERNDTLB,1117898159,2005.06.04,R23-M0-NC-C:J10-U01,2005-06-04-08.15.59.155803,R23-M0-NC-C:J10-U01,RAS,KERNEL,FATAL,data TLB error interrupt,E31,data TLB error interrupt'

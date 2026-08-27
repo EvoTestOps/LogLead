@@ -25,13 +25,16 @@ Data is represented as [Polars](https://www.pola.rs/) DataFrames throughout (not
   - `LOG_DATA_PATH` is read (via `python-dotenv`) by the "bring your own full dataset" scripts —
     `demo/RawLoader_*`, `demo/parser_benchmark/*`, `demo/saner_2024_paper/*`, `demo/unsupervised_models.py`.
     The quick demos (`demo/HDFS_samples.py`, `demo/TB_samples.py`) use bundled sample parquet files instead
-    and never touch it. The downloader also doesn't use it — `downloader/download_data.py` reads `root_folder` from the YAML config (`datasets.yml`/`tests/datasets.yml`) instead.
+    and never touch it. The downloader also doesn't use it — `downloader/download_data.py` reads `root_folder`
+    from the YAML config (`downloader/datasets.yml` or one of `tests/datasets_*.yml`) instead.
   - See `.env.sample` for the format if you do need `LOG_DATA_PATH`.
 - There are two independent, **unlinked** ways to point tooling at a data directory on disk — nothing in
   the code cross-references them, so keeping them in sync (e.g. both pointing at `~/Datasets`) is on you:
   - `LOG_DATA_PATH` in `.env` — used only by the demo scripts listed above.
-  - `root_folder` in `datasets.yml`/`tests/datasets.yml` — used only by `downloader/download_data.py`
-    (`download_data.py:247`), optionally overridden by its `--location` CLI flag.
+  - `root_folder` in a dataset YAML config — used only by `downloader/download_data.py`, optionally
+    overridden by its `--location` CLI flag. A test config's `local_copy_folder` (see Common commands
+    below) links it back to `downloader/datasets.yml`'s `root_folder`, but that's opt-in per config —
+    it does not make `root_folder` itself a shared setting.
 - `scikit-learn` needs `gcc`/`g++` to build. The `pip`-installed package does not pull in `tensorflow`, so
   `BertEmbeddings` (`loglead/parsers/bert/`) must have TF installed manually to work.
 
@@ -58,24 +61,103 @@ anomaly-detection checks end to end; takes up to ~30 minutes:
 ```
 uv run tests/main.py
 ```
-`tests/main.py` chains together, in order: `downloader/download_data.py --config tests/datasets.yml`
-(downloads/prepares data), then `tests/loaders.py`, `tests/enhancers.py`, `tests/anomaly_detectors.py` via
-`runpy`. These are plain scripts, not a pytest suite — there's no test framework, fixtures, or `-k`
-filtering; run one of the four stages directly (e.g. `uv run tests/enhancers.py`) to iterate on just that
-stage once its input parquet files already exist in `<root_folder>/test_data/`. Each stage prints
-`MISMATCH!` warnings if a loaded dataset's row count drifts from the `expected_length` recorded in
-`tests/datasets.yml`, and raises/prints on structural problems (missing mandatory columns, null or
-non-UTF-8 values) rather than asserting — read the console output to see pass/fail.
+`tests/main.py` chains together, in order: `downloader/download_data.py --config
+tests/datasets_mid_labels.yml` (downloads/prepares data, the default when `--config` is omitted), then
+`tests/loaders.py`, `tests/enhancers.py`, `tests/anomaly_detectors.py` via `runpy`. These are plain
+scripts, not a pytest suite — there's no test framework, fixtures, or `-k` filtering; run one of the
+four stages directly (e.g. `uv run tests/enhancers.py`) to iterate on just that stage once its input
+parquet files already exist in `<root_folder>/test_data/`. Each stage prints `MISMATCH!` warnings if a
+loaded dataset's row count drifts from the `expected_length` recorded in the config, and raises/prints
+on structural problems (missing mandatory columns, null or non-UTF-8 values) rather than asserting —
+read the console output to see pass/fail.
+
+There is a fifth stage that `tests/main.py` does **not** chain, because it is cheap enough to run on
+its own and useful against configs whose data is too big to load:
+```
+uv run tests/log_file_detection.py --config tests/datasets_super_comp_labels.yml
+```
+It checks that `AutoLoader` picks the same loader `create_correct_loader()` picks by name, for every
+dataset in a config. Nothing is loaded — only ~1000 lines per file are sampled — so it covers the
+datasets `tests/loaders.py` cannot handle on an ordinary machine: Thunderbird/Spirit/Liberty are
+30–38 GB unpacked, and AWSCTD expands to 174 M rows and will OOM well under 16 GB. It also reads
+those three straight from their `.gz`, since Polars decompresses transparently and they are usually
+left packed. Its `BY_NAME` table mirrors `create_correct_loader()`'s if/elif chain and has to stay
+in step with it — that chain is the reference answer being checked against.
+
+`--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
+so the sets do not share a `test_data/` folder). The default, `tests/datasets_mid_labels.yml`, covers
+bgl/hadoop/hdfs/nezha/adfa/awsctd — the datasets small enough to load and enhance quickly. The three
+supercomputer logs (liberty/spirit/thunderbird) are split out into their own config precisely because
+they are not quick — up to 38 GB unpacked each — so running them is opt-in:
+```
+uv run tests/main.py --config tests/datasets_super_comp_labels.yml  # liberty, spirit, thunderbird
+```
+Plus five more, smaller and faster, covering the newer loaders:
+```
+uv run tests/main.py --config tests/datasets_json.yml         # JsonLoader: nginx_json, OTRF, ait_ads
+uv run tests/main.py --config tests/datasets_access_log.yml   # AccessLogLoader: Kaggle web access log
+uv run tests/main.py --config tests/datasets_fmt.yml          # LogfmtLoader: grafana/loki Drain testdata
+uv run tests/main.py --config tests/datasets_syslog.yml       # SyslogLoader: loghub Linux, Mac, OpenSSH
+uv run tests/main.py --config tests/datasets_csv_tsv.yml      # DelimitedLoader: loghub CSVs, Zeek, IoT-23, IIS
+uv run tests/main.py --config tests/datasets_auto.yml         # AutoLoader: the above, detected + one mixed folder
+uv run tests/main.py --config tests/datasets_lo2.yml          # LO2Loader: LO2v2 Light-OAuth2 microservice logs
+```
+`datasets_lo2.yml` is rooted at `~/Datasets` rather than a root of its own, because the unpacked
+logs are tens of GB and `local_copy_folder` would duplicate them. Its entry's keys are `LO2Loader`
+constructor arguments, and `single_error_type` is the load-bearing one: left unset the loader picks
+a *different random error test case per run on every call*, so `expected_length` would never
+reproduce. It also downloads only `light-oauth2-logs.zip` (2.9 GB) — the reduced log set the LO2v2
+paper's own analysis used — not the 65.6 GB full dataset. Use v2 and not v1: v1's fixed test order leaked startup logs into the
+"correct" class (F1 0.976 on Token, vs 0.623 once v2 randomized the order).
+`datasets_csv_tsv.yml` has five entries for four corpora, one per way a delimited file can name its
+columns: a header row (`loghub_csv`, 16 systems in one folder — and `loghub_bgl`, one of those files
+on its own, because it is labelled and a 16-file load would be 87% unlabelled), Zeek's `#fields`
+(`zeek`, a 35-log-type output directory; `iot23`, one labelled conn.log) and W3C's `#Fields:`
+(`iis`). Two are labelled, which is what puts them through the supervised half of
+`anomaly_detectors.py`; `loghub_bgl`'s predictors deliberately mirror the raw-BGL entry in
+`datasets_mid_labels.yml`, so the same events read two ways can be compared (F1 0.815 vs 0.844).
+`datasets_auto.yml` is the odd one: detection is not a format, so there is nothing of its own to
+download. It re-loads corpora the other configs already cover and copies their `expected_length`
+values unchanged, so a count that drifts there but not in the original config means detection chose
+the wrong loader. Its `mixed` entry downloads three unrelated corpora into **one** folder — the case
+§5 item 6 calls normal rather than exceptional — and its `expected_length` is the sum of the three.
+`datasets_access_log.yml` needs a manual download — Kaggle only serves that dataset to a logged-in
+account, so the entry uses `local_archive:` (see below) rather than a URL. Its log is 3.5 GB /
+10,365,152 lines and needs ~11 GB to hold as a frame, and `tests/loaders.py` **reads all of it**:
+there is no automatic capping and no memory check for it, so whether this config runs is a property
+of the machine, which is part of why it is opt-in rather than in the default set. Don't add one
+back — `AccessLogLoader(n_rows=...)` exists for a caller who wants to bound the read, and pointing
+the config at a smaller log is the other way; a test harness that quietly reads a different number
+of rows per machine was tried and removed. `reduction_fraction` (a fraction of what was read, as
+everywhere else) is what pins the cost of the enhancer and detector stages.
+
+**Config split**: `downloader/datasets.yml` is the single, download-only source of truth for every
+public dataset LogLead knows about — one `root_folder` (`~/Datasets`), and each entry carries only
+what `download_data.py` reads (`name`, `url`/`urls` or `local_archive`/`source_url`, `download`).
+Everything a test needs to know beyond that (`log_file`, `labels_file`, `format`, `loader`,
+`predictor_cols`, `expected_length`, `reduction_fraction`, ...) lives only in the `tests/datasets_*.yml`
+configs, so changing a test expectation never touches the download-only file. Since most
+`tests/datasets_*.yml` configs use their own `root_folder` (so their `test_data/` outputs don't
+collide with each other), they set `local_copy_folder: '~/Datasets'` to avoid re-downloading data that
+`downloader/datasets.yml` already fetched: `download_data.py` copies `<local_copy_folder>/<name>` to
+`<root_folder>/<name>` instead of hitting the network, falling back to a normal download if the local
+copy isn't there. `tests/datasets_mid_labels.yml` and `tests/datasets_super_comp_labels.yml` don't need
+it — they already point `root_folder` straight at `~/Datasets`.
 
 Downloading datasets directly (independent of running tests):
 ```
-uv run downloader/download_data.py                          # everything in downloader/datasets.yml
-uv run downloader/download_data.py --config tests/datasets.yml  # smaller set used by the test suite
+uv run downloader/download_data.py                                    # everything in downloader/datasets.yml
+uv run downloader/download_data.py --config tests/datasets_json.yml   # one test-specific set instead
 ```
 Edit the `datasets:` list in the relevant YAML and set `download: false` per-entry to skip datasets you
 don't need. Disk space: the full set in `downloader/datasets.yml` is ~7 GB to download and ~104 GB
 unzipped (Liberty/Spirit/Thunderbird dominate at 30-38 GB each) — make sure ~110 GB is free before running
 the unrestricted downloader.
+
+A dataset entry that carries `local_archive: '~/path/to/archive.zip'` instead of `url:`/`urls:` is one
+the downloader cannot fetch — it sits behind a login, Kaggle being the usual case. The archive is
+unpacked from wherever the user put it and, unlike a downloaded one, is never deleted afterwards. Add
+`source_url:` so the "not found" message can say where to get it.
 
 There is no linter, formatter, or CI workflow configured in this repo — don't invent one unless asked.
 
@@ -123,10 +205,117 @@ add_ano_col` and returns `self.df`. Subclasses only need to implement `load()`/`
 what "isolates the unique aspects of logs from different systems" so enhancer/anomaly-detection code
 never needs to know which dataset it's operating on.
 
-Concrete loaders: `RawLoader` (any plain log file, no labels — the starting point for new/custom data),
-and dataset-specific loaders `HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird /
-Spirit / Liberty supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop
-systems), `ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `GELFLoader`, `LO2Loader`.
+There is a per-directory `loglead/loaders/README.md` documenting every loader and the dataset each
+one reads — keep it in sync when adding or changing a loader.
+
+Loaders come in two shapes. Most are **dataset-specific**, one Python class per dataset:
+`HDFSLoader`, `HadoopLoader`, `BGLLoader`, `ThuSpiLibLoader` (Thunderbird / Spirit / Liberty
+supercomputer logs), `NezhaLoader` (microservice traces from TrainTicket/WebShop systems),
+`ADFALoader`, `AWSCTDLoader` (intrusion detection), `ProLoader`, `LO2Loader`. Plus `RawLoader` — any
+plain log file, one event per line, no labels; the starting point for new/custom data, and what
+`loglead/delta/` and the MCP tools fall back to (`format="raw"`) when a log root should be read as
+plain text.
+
+**Multi-line events** are `loaders/line_policy.py`, one implementation behind three keywords
+(`RawLoader.missing_timestamp_action`, `SyslogLoader.multiline`, and `HadoopLoader`, which does not
+expose one). It separates *which lines start an event* (`event_start('parsed'|'pattern'|'indent')`,
+Polars expressions that combine with `|`) from *what happens to the rest* (six policies: `drop`,
+`keep`, `fill-lastseen`, `merge-message`, `merge-add-column`, `raise`; `merge` is RawLoader's old
+name for `merge-add-column`). Those two used to be welded together per loader, which is why `merge`
+meant "into a trace column" in one loader and "into the message" in another. Everything groups
+**per file** — a running count over a whole multi-file frame attaches a file's leading continuation
+to the *previous* file's last event, and forward-fills a timestamp across the same boundary — so a
+new loader should call this rather than write its own. See `loaders/README.md` §Multi-line events.
+
+`AutoLoader` (`loaders/auto.py`) sits above all of them: it samples a file, decides the format, and
+**builds one of the other loaders** — it never parses anything itself, which is what keeps the
+decision (`detect_format()`, importable on its own) separable from the reading. Two stages, most
+specific first: a **dataset probe** that recognizes a public dataset from the label file and
+directory layout *beside* the log (so `HDFSLoader` gets its `anomaly_label.csv` and `df_seq`
+survives — a dataset whose labels are missing is deliberately not recognized and falls through; where
+the label is not a file at all the layout carries it, as with LO2's `correct/` test-case directory),
+then a
+**per-file format probe** ordered self-declared columns (Zeek `#separator`, W3C `#Fields:`) → JSON →
+access log → syslog → logfmt → delimited-with-a-header-row → generic timestamped text →
+plain text, each scored as a match rate over a sample. The two delimited tests sit at opposite ends
+deliberately: a file that names its own columns is the strongest evidence in the chain, "the first
+line looks like a header" the weakest. Three things here are load-bearing and were
+measured rather than reasoned: the logfmt test counts `>=2` `key=value` pairs per line and **must
+not** be anchored at `^` (real Grafana output puts free text before the pairs — anchoring passes a
+1,000-line sample at 0.996 and collapses to 0.199 at 5,000); the sample is the file's head
+**plus a chunk from its middle**, because that same file's head is not representative of it; and the
+header-row test asks for **at least** as many delimiters as the header rather than exactly as many,
+plus header cells that look like names, since RFC-4180 quoting puts commas inside fields (an
+exact-count test scores 1.000 on loghub's Apache CSV and 0.000 on its Hadoop one).
+The **generic timestamped-text pass alone** scores over lines that could *start* an event rather
+than over every line (`line_policy.starts_event()`), and reads with `missing_timestamp_action=
+"merge-message"` so the continuation lines are folded back into the event that printed them. Both
+halves are the same fact: a stack trace is one event however many lines it prints, so a per-line
+score makes a file *less* recognizable the more of it is one exception — on LogDelta's Hadoop demo
+root that lost eleven files their format at 7-38% when the same files score 75-96% per event, and
+they were the eleven with the most crashes in them. The named formats keep the plain per-line rate,
+since an indented line in pretty-printed JSON belongs to a record whose boundary that format's own
+parser already knows.
+`AutoLoader` normalizes `m_timestamp` to naive microseconds afterwards, since Polars takes the time
+unit from the format string and a `%3f` pattern otherwise yields a frame that silently refuses to
+`pl.concat` with every other loader's output. When every file in a tree agrees it delegates the
+whole tree to one loader; only a genuinely mixed folder pays for one loader per file, stacked with
+`diagonal_relaxed`.
+
+The newer ones are **spec-driven**: one class per *format family*, configured by a YAML spec rather
+than subclassed per dataset — a format then costs a `.yml` file rather than a Python class, which is
+what keeps five families covering what would otherwise be dozens of loaders. Their keyword arguments
+are exactly the spec keys, so a spec file
+is a serialized constructor call and the two forms cannot drift; `format=` takes either a shipped
+spec name or a path to your own file.
+
+- `JsonLoader` + `loaders/json_formats/*.yml` — JSON/NDJSON logs. The mapping it supplies is which
+  key is the message, the timestamp, the sequence id.
+- `AccessLogLoader` + `loaders/access_log_formats/*.yml` — Apache/nginx web access logs (Common,
+  Combined, and variants). Positional text, so a format is one regex; specs write it as an nginx
+  `log_format` string (`'$remote_addr - - [$time_local] "$request" $status ...'`) which compiles to
+  that regex. Splits `$request` into `method`/`path`/`protocol` and types `status`/byte counts as
+  numbers, since those — not the message text — are what an access log gives `AnomalyDetector`.
+- `DelimitedLoader` + `loaders/delimited_formats/*.yml` — CSV/TSV with a header, plus the
+  self-describing variants. Its extra question is `header=`: where the column names come from, as
+  `row` (the first line, delimiter sniffed from it), `zeek` (`#fields`, which also declares the
+  separator, the `#types` to cast to and the null markers), `w3c` (a `#Fields:` directive, repeated
+  at every rotation) or `none` + `columns=`. Decided **per file**, so a folder mixing them reads in
+  one call, and files are stacked `diagonal_relaxed` — a Zeek output directory is 35 log types with
+  35 different headers and lands as 342 columns. Two things to know before editing it: with no
+  message column (Zeek and W3C have none) a row is rendered as `name=value` text, since a delimited
+  row is only a log line once the header is back in front of the values; and this is the one family
+  that routinely arrives **labelled**, so `label_field`/`normal_values` build `normal` directly and
+  the label column is kept out of `m_message` — a message stating the answer makes every detector
+  look perfect.
+
+`LogfmtLoader` (`loaders/logfmt.py`) is a fourth family loader but has **no spec directory**, on
+purpose: logfmt lines carry their own key names and the names are conventional, so the mapping the
+other three need as configuration is just `ts|timestamp|time|t` → `m_timestamp`, `msg|message` →
+`m_message`, `level|lvl|severity` → `level`. The kwargs for
+overriding those exist and read the same as the others. Each key becomes its own column, so a
+tree of files lands wide-and-sparse the way heterogeneous JSON does; candidate keys are *coalesced*
+rather than first-wins, because one file routinely mixes `t=` and `ts=` lines from two components.
+
+`SyslogLoader` (`loaders/syslog.py`) also has no spec directory, for the opposite reason: syslog has
+exactly two layouts and both are defined by an RFC, so `rfc3164` and `rfc5424` are built-in regexes
+(`pattern=` is the escape hatch). Which one applies is decided **per file** from its first lines —
+lnav's rule, and the shape §5 item 6 of the support doc asks for — so a directory holding both reads
+in one call. Two consequences worth knowing before editing it: RFC 3164 carries **no year**, so
+`m_timestamp` is built by prepending `year=` (the current year by default), and a load mixing both
+RFCs runs two vectorized parses and coalesces them, since no single strptime covers both. A line that
+does not match is normally the second line of a multi-line message rather than garbage, so the knob
+for it is `multiline` (`merge-message` default / `merge-add-column` / `keep` / `drop` / `raise` —
+`keep` and `drop` named after `RawLoader.missing_timestamp_action`, the merges named for where they
+put the text since there are two of them), and `min_match_rate` — not the first bad line — is what
+catches a wrong format. Both merges group **per file**, so a file opening with continuation lines
+cannot attach them to the previous file's last event. The two differ only in *where* the
+continuation text lands, and not where you would guess: `normalize()` keeps just the first line of
+`m_message`, so every `parse_*` sees the same thing either way; what changes is `words()`,
+`trigrams()`, `alphanumerics()` and `length()`, which read `m_message` whole. `merge-message` feeds
+the trace into `e_words`/`e_chars_len`; `merge-add-column` keeps it out by parking it in `trace`.
+
+When adding a format that already fits one of the spec-driven loaders, add a `.yml` spec, not a class.
 
 ### Enhancers (`loglead/enhancers/`)
 
@@ -182,3 +371,160 @@ SequenceEnhancer chained calls (aggregate into df_seq) → AnomalyDetector(...).
 train_*() → predict(). `demo/HDFS_samples.py` and `demo/TB_samples.py` are the canonical worked examples
 of this chain and deliberately share most of their code to demonstrate loader-independence of the rest of
 the pipeline.
+
+### Log folder comparison (`loglead/delta/`)
+
+A second, **unsupervised** pipeline that sits on top of the primitives above and answers a different
+question: given many log folders from the same system, which one looks wrong? Everything here is
+*comparative* — a target is always judged against the other log folders, never in isolation — which is
+what "delta" refers to.
+
+**`loglead.delta` is not LogDelta and does not depend on it.** `logdelta` is never imported and is not
+in `pyproject.toml`/`uv.lock`. This code was *ported from* the sibling project LogDelta (`~/LogDelta`,
+which drives the same analyses from a YAML config) so that LogLead could expose it over MCP; the
+dependency runs the other way — LogDelta depends on LogLead, so it could not have gone the other way.
+
+**Layering.** `delta/` has zero `mcp` imports and returns plain DataFrames, so it is usable as a
+library on its own; `mcp/` imports *from* it, never the reverse. Keep it that way — `mcp` is an
+optional extra needing Python ≥3.10 while LogLead itself supports 3.9, so analysis code must not move
+under `loglead/mcp/`.
+
+**Vocabulary.** The object under analysis is a **log folder**: any set of logs that belong together —
+one test run, one day, one deployment, "last release". LogDelta calls this a *run*, and its own docs
+gloss that word as "folder" every time it appears; LogLead uses "log folder" throughout because the
+thing is frequently not a run. The three levels are **log folder → log file → log line**. In prose say
+"log folder"; in identifiers (tools, params, columns) it is plain `folder`. Note "run" survives here
+only as a *verb* (`run_config`, `uv run`) — and `loglead/loaders/lo2.py` has an unrelated `run` column
+of its own, which is a different pipeline entirely.
+
+The data shape here is a **log root**: a directory whose immediate subdirectories are *log folders*,
+loaded into a single event-level `df` with `folder` and `file_name` columns. There are
+no labels and no `df_seq`; comparison is always target-vs-baseline, where the baseline is the other
+log folders.
+
+**Which loader reads it** is `read_log_root(..., format=...)`, a *name* resolved through
+`LOG_ROOT_FORMATS` — `"auto"` (the default, `AutoLoader` per file), `"raw"`, a family (`"json"`,
+`"syslog"`, `"logfmt"`, `"access_log"`, `"delimited"`) or `"family/spec"` (`"json/nginx_json"`,
+`"delimited/zeek"`, `"syslog/rfc5424"`; `available_formats()` lists them all). Name-keyed, not
+class-keyed, because the value arrives from a model driving MCP — the same reason as
+`masking.get_pattern()`. The names *are* `AutoLoader.detections()`'s own format strings, so what
+detection reports can be handed straight back to pin it. Three things to know before touching this:
+`AutoLoader` is built with `dataset_probe=False` here (the probe hands a whole directory to a dataset
+loader, whose frame has no `file_name` — and LogDelta's Hadoop demo root really does keep
+`abnormal_label.txt` beside its log folders, so this is not hypothetical); `orig_file_name` is
+rebuilt from the strip prefix rather than taken from the loader, since only `RawLoader` produces it;
+and `REQUIRED_COLUMNS` (`m_message`, `file_name`) is checked right after loading, because a format
+that reads but maps nothing to the message would otherwise surface as empty results several analyses
+later. `read_folders()` is the older two-value wrapper (`(df, n_folders)`) kept for existing callers;
+`read_log_root()` returns `(df, info)` where `info` carries the detected-format counts.
+
+Three question types × four granularities, one function per cell:
+
+| | Distance (pair) | Anomaly (one vs many) | Visualize (set) |
+|---|---|---|---|
+| **L1** folder / file names | `distance_folder_filename` | `anomaly_folder(file=True)` | `plot_folder(file=True)` |
+| **L2** folder / log text | `distance_folder_content` | `anomaly_folder()` | `plot_folder()` |
+| **L3** file | `distance_file_content` | `anomaly_file_content` | `plot_file_content` |
+| **L4** line | `distance_line_content` | `anomaly_line_content` | — |
+
+Supporting modules: `log_root.py` (loading, and resolving the `"ALL"`/list/int/`"Prefix*"` selectors for
+log folders and files), `masking.py` (named regex sets — **only ever resolve these by name via `get_pattern()`,
+because `EventLogEnhancer.normalize()` `eval()`s what it is handed**), `scoring.py` (`zscore_sum` and
+`rank_sum` over the four measures; prefer `rank_sum`, the raw detector scales differ by orders of
+magnitude), `export.py` (the only thing that writes files).
+
+**Plot colours** (`visualize.py`) are a colour-blind safe set of five — `GROUP_COLORS`, picked from
+the Okabe & Ito / Paul Tol / IBM palettes — **cycled first**, with `GROUP_SYMBOLS` changing only once
+they run out, so groups are told apart by shape as well as colour and 5 x 8 of them stay distinct.
+`GROUP_COLORS`/`GROUP_SYMBOLS` are copied verbatim from VisualLogAnalyzer's
+`dash_app/utils/plots.py` (there is no shared package to import from) — keep the two in step, or the
+same log folders come out different colours in the two projects. LogLead's own addition is
+`TARGET_SYMBOL`: every plot here has a target log folder drawn as a cross, so `cross` and the
+lookalike `x` are held out of the group cycle in `COMPARISON_SYMBOLS`.
+
+`plot_line_scores` colours by *detector family* (kmeans/IF/RM/OOVD) and splits within a family by
+**how the trace is drawn, not by shape**: the raw per-line score is a scatter — every point there is
+a log line to hover — and its 10/100-line moving averages are `mode="lines"`, widest window solid and
+boldest (`MOVING_AVERAGE_DASHES`). A rolling mean is a path by construction, and drawing it as one
+marker per line smears it into a band; LogDelta's `_ano_plot_line_scores` draws all twelve as
+`symbol="x"` markers and relies on density to make the averages look like curves. `display_mode`
+therefore governs only the raw scores now. Which columns are averages is read from the
+`moving_avg_<window>_` prefix (`_moving_average_window`), not from column order, and a name that
+does not parse falls back to a scatter rather than raising.
+
+**The invariant that differs from LogDelta**: these functions hold no module state, never `os.chdir`,
+and never write files — they return DataFrames. Functions that may add an `e_*` column return
+`(results, df)` so the caller can keep the enhanced frame. Keeping it is the whole point; LogDelta
+discarded it and re-parsed on every step.
+
+### MCP server (`loglead/mcp/`)
+
+Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp`; entry point
+`loglead-mcp` (`[project.scripts]`).
+
+- `session.py` — `Session` holds one log root's enhanced frame and grows it in place;
+  `Session.ensure_content()` adds only the missing column and keeps it. `SessionStore` mirrors each
+  frame to a parquet cache keyed on the on-disk fingerprint (file count, total bytes, max mtime) plus
+  the preprocessing options (`format`, mask pattern, `file_name_normalizer`,
+  `folder_names`/`keep_original`) and a `_PREPROCESSING_VERSION`, so a restart
+  re-attaches in ~0.2s instead of re-reading. Bump that version whenever a change inside LogLead
+  makes the same inputs produce a different frame — nothing else in the key would notice. Anything that rewrites the frame **must** be in that
+  key — a cache hit skips preprocessing entirely and would otherwise serve a wrongly-shaped frame.
+  `format` is the heaviest entry: it decides which loader ran and therefore every column, so the same
+  logs read as `raw` and as `json` share nothing but their paths.
+  This module has no `mcp` dependency and is usable on its own — that is how
+  `demo/mcp_demo.py` runs.
+- `server.py` — one tool per analysis, named exactly like the LogDelta config keys. The local `@tool`
+  decorator wraps each in `redirect_stdout(sys.stderr)`: LogLead prints freely and stdout carries
+  JSON-RPC under the stdio transport. Imports `MCPServer` (SDK 2.x) with a fallback to `FastMCP`
+  (SDK 1.x).
+- `formatting.py` — every analysis tool returns the same envelope: full table on disk, plus a preview
+  sorted by the column that answers the question (`rank_sum` for anomalies) and truncated to
+  `max_rows`. Tool results go into a model's context, so unbounded tables are not an option.
+
+**Anomaly guidance is part of the result, not just the docstrings** (`_anomaly_notes`). The observed
+failure mode is a model driving these tools reading one detector's score as a finding, and narrowing
+`detectors` to save time — both of which defeat `rank_sum`. So `_ANOMALY_NOTE` rides on every anomaly
+result, and `_SUBSET_NOTE`/`_SINGLE_DETECTOR_NOTE` fire *whenever* fewer than four detectors ran,
+naming the missing ones. A docstring is read once at tool-registration time; a note is in front of
+the model at the moment it is about to over-read a number, which is why the check is at the call site
+rather than only in the `detectors:` parameter docs. Keep the note wording aligned with
+`delta/scoring.py`'s module docstring — the numbers in it (`rank_sum` starts at 4, tops out at
+`4 * n_rows`) are properties of `add_combined_scores`, not slogans.
+
+**Log folder names** come from the directory names and are what every legend, result row and output
+file is labelled with, so opaque ids make the analysis unreadable. `open_log_root(folder_names=...)` and
+the `set_folder_names` tool apply a caller-supplied `{directory name: meaningful name}` mapping to the
+`folder` column (`log_root.apply_folder_names`), keeping the directory name in `folder_original`;
+nothing on disk is renamed. Names are always applied to the original, so renaming replaces rather than
+stacks. `keep_original_folder_name` (default true) appends the directory name — needed for
+`group_by_indices` and `"Prefix*"` wildcards; pass false and the log folder simply *is* the given name,
+in which case uniqueness is enforced since every selector filters on `folder`. The names need not be
+ground-truth labels (`FailingRunThu` is as valid as `PageRank_MachineDown`), which is why nothing here
+says "label".
+
+The library deliberately takes **only a mapping** — datasets record this metadata in wildly different
+ways, so producing it is the caller's job. `demo/mcp_demo_hadoop_folder_names.json` ships one as data
+(derived from Hadoop's own `abnormal_label.txt`); the demo takes `--folder-names <file.json>`. Two
+ordering constraints: name log folders **after** `normalize_file_names` (`strip_folder_id` derives the
+id to strip from the raw directory name), and names reach output file names, so
+`export.build_file_name` sanitizes them.
+
+**Reading LogDelta YAML** (`run_config`). **LogLead does not depend on LogDelta** — `logdelta` is never
+imported, and is not in `pyproject.toml` or `uv.lock`; the dependency runs the other way (LogDelta
+depends on LogLead). `run_config` merely `yaml.safe_load`s a config *file* and calls LogLead's own
+tools, the way reading a `.csv` implies nothing about Excel.
+
+What it does create is a **naming coupling**: that file format is LogDelta's, so three lookup tables
+hold its vocabulary — `_STEP_TOOLS` keys stay LogDelta's step names (`distance_run_file`, …),
+`_STEP_ARGS` translates `target_run`/`comparison_runs` to our parameter names, and `_PREPROCESSING`
+maps its preprocessing steps. Keep those three tables in LogDelta's vocabulary and never "fix" them to
+match ours. Without `_STEP_ARGS` the kwargs filter in `run_config` would drop those arguments
+**silently**, and tools whose target defaults to `"ALL"` would score the wrong thing without erroring.
+
+`demo/mcp_demo.py` exercises all 19 tools against a real log root without an MCP client attached
+— the fastest way to check a change here.
+
+### WSL Browser Integration
+When running in WSL and producing interactive HTML visualizations (e.g. from `plot_folder_*` or `plot_file_*`), open them in the Windows default browser using:
+`open-browser <path-to-html>` (or copy to `/mnt/c/Users/mmantyla/AppData/Local/Temp` and launch via PowerShell `Start-Process $env:TEMP\<file>`).

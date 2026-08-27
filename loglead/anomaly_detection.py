@@ -24,6 +24,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import roc_auc_score
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import jaccard_score
 import zlib
@@ -177,13 +178,24 @@ class LogDistance:
 
         return cosine_sim, jaccard, compression, containment, self.size1, self.size2
 
+# Stand-in for a null in a categorical column: OneHotEncoder cannot take None, and "this field
+# was absent" is itself informative in logs whose fields vary per record.
+_MISSING_CATEGORY = "__missing__"
+
+
 class AnomalyDetector:
-    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly", 
-                 store_scores=False, print_scores=True, auc_roc=False):
+    # categorical_cols is last so that existing positional calls keep their meaning.
+    def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly",
+                 store_scores=False, print_scores=True, auc_roc=False, categorical_cols=None):
         self.item_list_col = item_list_col
         self.numeric_cols = numeric_cols if numeric_cols else []
+        self.categorical_cols = categorical_cols if categorical_cols else []
         self.label_col = label_col
         self.emb_list_col = emb_list_col
+        # Fitted one-hot encoders, mirroring self.vectorizer / self.vectorizer_no_anos.
+        self.encoder = None
+        self.encoder_no_anos = None
+        self._fitted_encoder = None
         self.store_scores = store_scores
         self.storage = _ModelResultsStorage()
         self.print_scores=print_scores
@@ -210,16 +222,24 @@ class AnomalyDetector:
         
     def prepare_train_test_data(self, vectorizer_class=CountVectorizer):
         #Prepare all data for running
+        # The encoder is fitted inside _prepare_data and read back off _fitted_encoder rather than
+        # returned, because the return arity is part of the public surface (demo/RawLoader_NoLabels
+        # unpacks it). It gets the same train/no-anos treatment as the vectorizer: a category that
+        # only ever occurs on anomalous rows must stay unknown to the no-anos models.
         self.X_train, self.labels_train, self.vectorizer  = self._prepare_data(self.train_df, vectorizer_class)
-        self.X_test, self.labels_test, _ = self._prepare_data(self.test_df, self.vectorizer)
+        self.encoder = self._fitted_encoder
+        self.X_test, self.labels_test, _ = self._prepare_data(self.test_df, self.vectorizer, self.encoder)
         #No anomalies dataset is used for some unsupervised algos.
         if self.label_col in self.train_df.columns:
             self.X_train_no_anos, _, self.vectorizer_no_anos = self._prepare_data(self.train_df.filter(pl.col(self.label_col).not_()),
                                                      vectorizer_class)
-            self.X_test_no_anos, self.labels_test_no_anos, _ = self._prepare_data(self.test_df, self.vectorizer_no_anos)
+            self.encoder_no_anos = self._fitted_encoder
+            self.X_test_no_anos, self.labels_test_no_anos, _ = self._prepare_data(self.test_df, self.vectorizer_no_anos,
+                                                                                  self.encoder_no_anos)
         else: #As we have no labels there is no difference in anos vs no_anos case
             self.X_train_no_anos, self.vectorizer_no_anos = self.X_train, self.vectorizer
             self.X_test_no_anos, self.labels_test_no_anos, = self.X_test, self.labels_test
+            self.encoder_no_anos = self.encoder
      
     # added a way to get the test data
     @property
@@ -240,7 +260,7 @@ class AnomalyDetector:
         return x
 
     # did some changes so the vectorizer does not get overwritten by anos 
-    def _prepare_data(self, df_seq, vectorizer_class=CountVectorizer):
+    def _prepare_data(self, df_seq, vectorizer_class=CountVectorizer, encoder=None):
         X = None
         if self.label_col in df_seq.columns:
             labels = df_seq.select(pl.col(self.label_col)).to_series().to_list()
@@ -285,10 +305,24 @@ class AnomalyDetector:
 
         # Extract additional predictors
         if self.numeric_cols:
-            additional_features = df_seq.select(self.numeric_cols).to_pandas().values
+            additional_features = df_seq.select(
+                [pl.col(c).cast(pl.Float64) for c in self.numeric_cols]).to_numpy()
             X = hstack([X, additional_features]) if X is not None else additional_features
 
-        return X, labels, vectorizer    
+        if self.categorical_cols:
+            values = df_seq.select([pl.col(c).cast(pl.Utf8).fill_null(_MISSING_CATEGORY)
+                                    for c in self.categorical_cols]).to_numpy()
+            if encoder is None:
+                # handle_unknown="ignore" encodes a category unseen in training as all-zeros, so
+                # test data cannot widen the matrix and shift every column the model learned.
+                encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=True)
+                encoded = encoder.fit_transform(values)
+            else:
+                encoded = encoder.transform(values)
+            self._fitted_encoder = encoder
+            X = hstack([X, encoded]) if X is not None else encoded
+
+        return X, labels, vectorizer
         
     def train_model(self, model,  /, *, filter_anos=False, **model_kwargs):
         X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
@@ -300,13 +334,22 @@ class AnomalyDetector:
         self.filter_anos = filter_anos
         self.model.fit(X_train_to_use, self.labels_train)
 
+    def _kmeans_distance(self, X):
+        """KMeans' anomaly score: the distance from each row to its nearest cluster centre."""
+        return np.min(self.model.transform(X), axis=1)
+
     def predict(self, custom_plot=False):
         #Binary scores
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
         predictions = self.model.predict(X_test_to_use)
         #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
-        if isinstance(self.model, (IsolationForest, LocalOutlierFactor,KMeans, OneClassSVM)):
+        if isinstance(self.model, (IsolationForest, LocalOutlierFactor, OneClassSVM)):
             predictions = np.where(predictions < 0, 1, 0)
+        elif isinstance(self.model, KMeans):
+            # KMeans.predict() returns a cluster index, never sklearn's -1/1 outlier flag, so the
+            # "< 0" rule above would mark every row normal. Threshold its distance score instead.
+            predictions = (self._kmeans_distance(X_test_to_use)
+                           > self.model.distance_threshold_).astype(int)
         df_seq = self.test_df.with_columns(pl.Series(name="pred_ano", values=predictions.tolist()))
         
         #Continuous scores
@@ -316,8 +359,7 @@ class AnomalyDetector:
                 # Unsupervised models give anomaly scores or decision function values
                 predictions_proba = 1- self.model.decision_function(X_test_to_use)
             elif isinstance(self.model, (KMeans)):
-                from sklearn.metrics.pairwise import pairwise_distances
-                predictions_proba = np.min(pairwise_distances(X_test_to_use, self.model.cluster_centers_), axis=1)
+                predictions_proba = self._kmeans_distance(X_test_to_use)
             elif isinstance(self.model, LinearSVC):
                 # LinearSVC does not have predict_proba method by default
                 # Use decision_function method to obtain confidence scores
@@ -339,15 +381,19 @@ class AnomalyDetector:
             else:
                 # Supervised models give probabilities using predict_proba method
                 predictions_proba = self.model.predict_proba(X_test_to_use)[:, 1]
-            df_seq = self.test_df.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))      
+            # Build on df_seq, not self.test_df: starting over from test_df would drop the
+            # "pred_ano" column added above, so with auc_roc=True the caller got the continuous
+            # score but lost the binary prediction.
+            df_seq = df_seq.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))
 
         if self.print_scores:
             self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
         if custom_plot:
             self.model.custom_plot(self.labels_test)
         if self.store_scores:
-            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, type(self.model).__name__, 
-                                            self.item_list_col, self.numeric_cols, self.emb_list_col)
+            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, type(self.model).__name__,
+                                            self.item_list_col, self.numeric_cols, self.emb_list_col,
+                                            self.categorical_cols)
         return df_seq 
        
     def train_LR(self, max_iter=4000, tol=0.0003):
@@ -371,8 +417,19 @@ class AnomalyDetector:
         self.train_model(LocalOutlierFactor, filter_anos=filter_anos, n_neighbors=n_neighbors,
                          contamination=contamination, novelty=True)
     
-    def train_KMeans(self, n_clusters=2, filter_anos = False):
+    def train_KMeans(self, n_clusters=2, filter_anos=False, contamination=0.1):
+        """Cluster, then treat distance to the nearest centre as the anomaly score.
+
+        `contamination` means what it does in IsolationForest and LOF, but KMeans has no parameter
+        for it: predict() returns a cluster index rather than an outlier flag, so the cut-off has
+        to be derived here, as the distance that `contamination` of the training rows exceed. It
+        is kept on the fitted model, the way sklearn keeps IsolationForest's own `offset_`, so it
+        cannot outlive the clustering it was computed from.
+        """
         self.train_model(KMeans, filter_anos=filter_anos, n_init="auto", n_clusters=n_clusters)
+        X_train_to_use = self.X_train_no_anos if filter_anos else self.X_train
+        self.model.distance_threshold_ = np.quantile(self._kmeans_distance(X_train_to_use),
+                                                     1 - contamination)
 
     def train_OneClassSVM(self):
         self.train_model(OneClassSVM, max_iter=1000)
@@ -451,7 +508,9 @@ class AnomalyDetector:
             else:
                 event_features = []
 
-            all_features = event_features + self.numeric_cols
+            categorical_features = list(self.encoder.get_feature_names_out(self.categorical_cols)) \
+                if self.categorical_cols and self.encoder is not None else []
+            all_features = event_features + self.numeric_cols + categorical_features
             if isinstance(model, (LogisticRegression, LinearSVC)):
                 feature_importance = abs(model.coef_[0])
             elif isinstance(model, DecisionTreeClassifier):
@@ -494,7 +553,7 @@ class AnomalyDetector:
                 if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
                 if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, y_pred)[1]:.4f}")
             if isinstance(self.model, KMeans):
-                y_pred = np.min(model.transform(X_test_to_use), axis=1) #Shortest distance from the cluster to be used as ano score
+                y_pred = self._kmeans_distance(X_test_to_use) #Shortest distance from the cluster to be used as ano score
                 if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
                 if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, y_pred)[1]:.4f}")
             if isinstance(self.model, (RarityModel, OOV_detector)):
@@ -534,18 +593,20 @@ class _ModelResultsStorage:
     def __init__(self):
         self.test_results = []
 
-    def _create_input_signature(self, item_list_col, numeric_cols, emb_list_col):
+    def _create_input_signature(self, item_list_col, numeric_cols, emb_list_col, categorical_cols=None):
         # Create the input signature by concatenating all input types
         input_parts = (
             item_list_col if item_list_col is not None else [],
             numeric_cols if numeric_cols is not None else [],
             emb_list_col if emb_list_col is not None else [],
+            categorical_cols if categorical_cols is not None else [],
         )
         input_signature = ''.join(str(item) for sublist in input_parts for item in sublist)
         return input_signature
 
-    def store_test_results(self, y_test, y_pred, y_pred_proba, model_name, item_list_col=None, numeric_cols=None, emb_list_col=None):
-        input_signature = self._create_input_signature(item_list_col, numeric_cols, emb_list_col)
+    def store_test_results(self, y_test, y_pred, y_pred_proba, model_name, item_list_col=None, numeric_cols=None,
+                           emb_list_col=None, categorical_cols=None):
+        input_signature = self._create_input_signature(item_list_col, numeric_cols, emb_list_col, categorical_cols)
 
         result = {
             #'model': model,

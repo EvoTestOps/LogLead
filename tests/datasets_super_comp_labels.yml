@@ -1,0 +1,33 @@
+root_folder: '~/Datasets'
+
+datasets:
+  - name: liberty
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
+    log_file: liberty2.log
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 0
+    reduction_fraction: 0.0005
+  - name: spirit
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
+    log_file: spirit2.log
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    expected_length: 0
+    reduction_fraction: 0.0005
+  - name: thunderbird
+    url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
+    log_file: tbird2.log 
+    download: true
+    load: true
+    enhance: true 
+    anomaly_detection: true
+    predictor_cols:
+      numeric: []               # every column ThuSpiLibLoader produces is a string
+      categorical: [month, day, component, date, userid]
+    expected_length: 211212192
+    reduction_fraction: 0.0005

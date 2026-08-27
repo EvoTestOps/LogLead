@@ -1,0 +1,186 @@
+root_folder: '~/Datasets_csv_tsv'
+local_copy_folder: '~/Datasets'
+
+# Delimited text with a header - CSV, TSV, Zeek and W3C/IIS - read by
+# DelimitedLoader. Five entries covering the three places the column names can come from, since
+# that, rather than the parsing, is what this family makes hard:
+#
+#   a header row      loghub_csv (16 systems, 15 distinct headers) and loghub_bgl (one of them,
+#                     with its labels)
+#   Zeek's '#fields'  zeek (a whole Zeek output directory) and iot23 (one conn.log, labelled)
+#   W3C's '#Fields:'  iis
+#
+# Two of the five are labelled, which is unusual for a format family in this suite: loghub keeps
+# the alert category in 'Label' and IoT-23 appends 'label'/'det_label' to conn.log, so both reach
+# the supervised half of tests/anomaly_detectors.py rather than only the unsupervised scoring.
+#
+# predictor_cols is pinned everywhere. The reason is the same as in tests/datasets_json.yml and
+# stronger here: a folder read is the union of every file's header, so which columns exist at all
+# depends on which files were present, and profiling would pick different ones per run. file_name
+# is deliberately absent - it is provenance, not something the log said, and here it would be a
+# near-perfect proxy for the log type.
+
+datasets:
+  # Header row. One CSV per loghub system in one folder, so the load is the union of 15 distinct
+  # headers (31 columns) over 16 files x 2,000 rows. No timestamp: each system splits the time
+  # across different columns, so there is nothing a single mapping could name - see the loghub
+  # spec. Unlabelled here on purpose, even though two of the files do carry a Label: a frame where
+  # 28,000 of 32,000 rows have a null label is not something a supervised detector can use, and
+  # loghub_bgl below is that test instead.
+  - name: loghub_csv
+    loader: delimited
+    format: loghub
+    filename_pattern: "*.csv"
+    urls:
+      - https://raw.githubusercontent.com/logpai/loghub/master/Android/Android_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Apache/Apache_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/BGL/BGL_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HDFS/HDFS_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HPC/HPC_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Hadoop/Hadoop_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/HealthApp/HealthApp_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Linux/Linux_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Mac/Mac_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/OpenSSH/OpenSSH_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/OpenStack/OpenStack_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Proxifier/Proxifier_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Spark/Spark_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Thunderbird/Thunderbird_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Windows/Windows_2k.log_structured.csv
+      - https://raw.githubusercontent.com/logpai/loghub/master/Zookeeper/Zookeeper_2k.log_structured.csv
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [Level, Component]   # LineId is a row number and EventId is loghub's own parse
+    expected_length: 32000
+    reduction_fraction: 1.0
+
+  # The same shape, one system, labelled: BGL's structured CSV keeps '-' for an ordinary line and
+  # the alert category otherwise, 143 of its 2,000 rows being alerts, plus an epoch 'Timestamp'.
+  # Its own entry rather than a file inside loghub_csv above, because a dataset entry is a folder.
+  # predictor_cols deliberately mirror the raw-BGL entry in tests/datasets_mid_labels.yml: the same
+  # events through a different loader should be predictable from the same fields.
+  - name: loghub_bgl
+    loader: delimited
+    format: loghub_labeled
+    log_file: BGL_2k.log_structured.csv
+    urls:
+      - https://raw.githubusercontent.com/logpai/loghub/master/BGL/BGL_2k.log_structured.csv
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      numeric: [e_words_len, e_alphanumerics_len]
+      categorical: [Type, Level, Component]   # NOT Label, which is the target
+    expected_length: 2000
+    reduction_fraction: 1.0
+
+  # Zeek's self-describing TSV, read as a whole output directory: 35 log types, 35 different
+  # '#fields' lines, so the frame is the union of all of them (342 columns) and sparse by
+  # construction. conn.log is 1,021,950 of the 1,474,104 events. m_timestamp is null for 512 of
+  # them - loaded_scripts.log and known_hosts.log carry no 'ts' at all, which is what a genuinely
+  # per-file schema looks like.
+  - name: zeek
+    loader: delimited
+    format: zeek
+    filename_pattern: "*.log"
+    urls:
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/analyzer.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/capture_loss.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/conn.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dce_rpc.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dns.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/dpd.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/files.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ftp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/http.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/kerberos.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_certs.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_hosts.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/known_services.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ldap_search.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/loaded_scripts.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/modbus.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/notice.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ntlm.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ntp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ocsp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/packet_filter.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/pe.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/rdp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/rfb.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smb_files.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smb_mapping.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/smtp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/snmp.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/software.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ssh.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/ssl.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/stats.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/syslog.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/weird.log.gz
+      - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/x509.log.gz
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      # Only the columns every log type has. proto/conn_state are null outside the connection logs,
+      # which a categorical encoder handles as its own category; a numeric column with nulls would
+      # be dropped by the harness, so none of Zeek's byte counts are pinned here - iot23 is where
+      # those get tested.
+      numeric: [e_chars_len, e_words_len, e_alphanumerics_len, e_trigrams_len]
+      categorical: [proto, conn_state]
+    expected_length: 1474104
+    reduction_fraction: 0.03
+
+  # Zeek again, one file, labelled per line: IoT-23's conn.log.labeled for the Mirai scenario -
+  # 23,145 events, 21,222 malicious (14,394 DDoS, 6,706 C&C, 122 PartOfAHorizontalPortScan) and
+  # 1,923 benign. This is the labelled member of the family, and the only entry here whose numeric
+  # predictors are the log's own fields rather than token lengths.
+  - name: iot23
+    loader: delimited
+    format: zeek_labeled
+    log_file: conn.log.labeled
+    urls:
+      - https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset/IndividualScenarios/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      # Zeek's counts, which are never null even when the connection carried no payload. duration/
+      # orig_bytes/resp_bytes are null on the 17,824 rows Zeek never saw an answer for, and
+      # det_label is the label under another name.
+      numeric: [missed_bytes, orig_pkts, orig_ip_bytes, resp_pkts, resp_ip_bytes]
+      categorical: [proto, service, conn_state]
+    expected_length: 23145
+    reduction_fraction: 1.0
+
+  # W3C extended, which is a directive rather than a header row and repeats mid-file. All three
+  # files are 15 fields wide: the Exchange one declares them three times over its two days, the
+  # other two declare nothing at all and are read under the iis spec's columns fallback. 55,689 +
+  # 118 + 19 events.
+  - name: iis
+    loader: delimited
+    format: iis
+    filename_pattern: "*.log"
+    urls:
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/suspicious_behaviour/exchange_2016_iis/exchange_2016_iis.log
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1505.003/wsus-iis.log
+      - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1190/pswa/iis_pswaaccess.log
+    download: true
+    load: true
+    enhance: true
+    anomaly_detection: true
+    predictor_cols:
+      # Typed by the CSV reader with no cast declared, which is the argument for reading a
+      # delimited log as delimited rather than as text.
+      numeric: [sc-status, sc-substatus, sc-win32-status, time-taken, s-port]
+      categorical: [cs-method]   # cs-uri-stem has 385 values and c-ip 93: ids, not categories
+    expected_length: 55826
+    reduction_fraction: 1.0
