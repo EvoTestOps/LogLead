@@ -310,6 +310,18 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
                                   content_format="Words", random_seed=42)
     show(res, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=4)
 
+    # The UMAP layout is essentially the whole cost of these tools, and the
+    # simple unique-terms-against-lines view does not use it. Asking for that
+    # one alone is the difference between ~42s and under a second on 5,000 log
+    # folders, so it is worth knowing the option is there.
+    banner('L2 plot_folder_content again, plots=["simple"] -- no UMAP, no wait')
+    started = time.perf_counter()
+    res = server.plot_folder_content("demo", target, comparison_folders=8,
+                                     content_format="Words", plots=["simple"])
+    print(f"   {time.perf_counter() - started:.2f}s, "
+          f"figures written: {sorted(res['plots'])}")
+    show(res, ["folder", "unique_terms", "lines"], limit=4)
+
     banner("L3 plot_file_content")
     res = server.plot_file_content("demo", target, comparison_folders=8,
                                    target_files=[worst_file],

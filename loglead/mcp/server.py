@@ -41,6 +41,9 @@ FolderSelector = Union[str, int, Sequence[str]]
 #: A file selector: same forms, resolved against the target log folder's files.
 FileSelector = Union[str, int, Sequence[str]]
 
+#: Which figures a plot tool should build: any subset of ``visualize.PLOTS``.
+PlotSelector = Sequence[str]
+
 
 def tool(fn):
     """Register a function as an MCP tool, with stdout kept off the wire.
@@ -853,6 +856,8 @@ def anomaly_line_content(
 def _plot_result(session, analysis, level, params, points, figures, max_rows):
     artifacts = {}
     for suffix, fig in figures.items():
+        if fig is None:  # not requested via `plots`
+            continue
         stem = export.build_file_name(
             analysis=f"{analysis}_{suffix}", level=level,
             target_folder=params.get("target_folder", ""), comparison_folder="Many",
@@ -862,13 +867,21 @@ def _plot_result(session, analysis, level, params, points, figures, max_rows):
             file=params.get("file", ""),
         )
         artifacts[suffix] = export.write_figure(fig, str(session.output_dir), stem)
+    notes = ["unique_terms vs lines is the simple, directly interpretable view."]
+    if "umap_x" in points.columns:
+        notes.insert(0, "umap_x/umap_y place each log folder in 2D: outliers sit away "
+                        "from the cluster.")
+    else:
+        notes.append("The UMAP was not run (plots did not ask for it), so there are no "
+                     "umap_x/umap_y columns. Pass plots=[\"umap\", \"simple\"] for it -- "
+                     "the layout is nearly the whole cost of this tool.")
     return formatting.result(
-        session, analysis, level, params, points, artifacts.get("umap"), max_rows,
+        session, analysis, level, params, points,
+        next((artifacts[name] for name in ("umap", "simple") if name in artifacts), None),
+        max_rows,
         sort_by=["unique_terms"],
         extra={"plots": artifacts},
-        notes=["umap_x/umap_y place each log folder in 2D: outliers sit away from the "
-               "cluster. unique_terms vs lines is the simpler, directly "
-               "interpretable view."],
+        notes=notes,
     )
 
 
@@ -879,12 +892,13 @@ def plot_folder_filename(
     comparison_folders: FolderSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     random_seed: Optional[int] = 42,
+    plots: PlotSelector = visualize.PLOTS,
     max_rows: int = 60,
 ) -> dict:
     """L1: plot every log folder as one point, by its file names.
 
-    Writes two interactive HTML plots and returns the coordinates, so the
-    positions are readable without opening them.
+    Writes an interactive HTML plot per entry in `plots` and returns the
+    coordinates, so the positions are readable without opening them.
 
     Args:
         session_id: Handle from open_log_root.
@@ -895,18 +909,25 @@ def plot_folder_filename(
             "PageRank_DiskFull".
         random_seed: Makes UMAP reproducible. Pass null for a fresh layout;
             re-running with different layouts is a good stability check.
+        plots: Which figures to build: "umap", "simple", or both. The UMAP
+            layout is nearly the whole cost of this tool -- on 5,000 log folders
+            it is ~41s against ~0.7s for everything else -- and the "simple"
+            figure (unique terms against lines) does not use it. Pass
+            ["simple"] when that cruder view is what you want; it is often
+            enough on its own.
         max_rows: Log folders returned inline.
     """
     session = STORE.get(session_id)
     points, fig_umap, fig_simple, session.df = visualize.plot_folder(
         session.df, target_folder, comparison_folders, file=True, random_seed=random_seed,
-        group_by_indices=group_by_indices, mask=False,
+        group_by_indices=group_by_indices, mask=False, plots=plots,
     )
     session.flush()
     return _plot_result(
         session, "plot_folder_filename", 1,
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
-         "group_by_indices": group_by_indices, "random_seed": random_seed},
+         "group_by_indices": group_by_indices, "random_seed": random_seed,
+         "plots": list(plots)},
         points, {"umap": fig_umap, "simple": fig_simple}, max_rows,
     )
 
@@ -921,6 +942,7 @@ def plot_folder_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
+    plots: PlotSelector = visualize.PLOTS,
     max_rows: int = 60,
 ) -> dict:
     """L2: plot every log folder as one point, by its log text.
@@ -934,6 +956,12 @@ def plot_folder_content(
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         random_seed: Makes UMAP reproducible.
+        plots: Which figures to build: "umap", "simple", or both. The UMAP
+            layout is nearly the whole cost of this tool -- on 5,000 log folders
+            it is ~41s against ~0.7s for everything else -- and the "simple"
+            figure (unique terms against lines) does not use it. Pass
+            ["simple"] when that cruder view is what you want; it is often
+            enough on its own.
         max_rows: Log folders returned inline.
     """
     session = STORE.get(session_id)
@@ -941,7 +969,7 @@ def plot_folder_content(
     points, fig_umap, fig_simple, session.df = visualize.plot_folder(
         session.df, target_folder, comparison_folders, file=False, random_seed=random_seed,
         group_by_indices=group_by_indices, mask=mask, content_format=content_format,
-        vectorizer=vectorizer,
+        vectorizer=vectorizer, plots=plots,
     )
     session.flush()
     return _plot_result(
@@ -949,7 +977,7 @@ def plot_folder_content(
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
          "group_by_indices": group_by_indices, "mask": mask,
          "content_format": content_format, "vectorizer": vectorizer,
-         "random_seed": random_seed},
+         "random_seed": random_seed, "plots": list(plots)},
         points, {"umap": fig_umap, "simple": fig_simple}, max_rows,
     )
 
@@ -965,6 +993,7 @@ def plot_file_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
+    plots: PlotSelector = visualize.PLOTS,
     max_rows: int = 60,
 ) -> dict:
     """L3: for each target file, plot each log folder's copy of it as one point.
@@ -973,19 +1002,23 @@ def plot_file_content(
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
         comparison_folders: Log folders to include.
-        target_files: Which files to plot -- two plots are produced per file.
+        target_files: Which files to plot -- one plot per entry in `plots`, per file.
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         random_seed: Makes UMAP reproducible.
+        plots: Which figures to build: "umap", "simple", or both. One UMAP
+            layout runs per file and it is nearly the whole cost of this tool,
+            so ["simple"] is worth more here the more files you asked for; the
+            "simple" figure (unique terms against lines) does not use it.
         max_rows: Log folders returned inline per file.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     per_file, session.df = visualize.plot_file_content(
         session.df, target_folder, comparison_folders, target_files, random_seed,
-        group_by_indices, mask, content_format, vectorizer,
+        group_by_indices, mask, content_format, vectorizer, plots,
     )
     session.flush()
 
@@ -1007,7 +1040,8 @@ def plot_file_content(
         "level": 3,
         "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
                    "target_files": target_files, "mask": mask,
-                   "content_format": content_format, "vectorizer": vectorizer},
+                   "content_format": content_format, "vectorizer": vectorizer,
+                   "plots": list(plots)},
         "n_files": len(files),
         "files": files,
     }

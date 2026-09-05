@@ -442,6 +442,23 @@ same log folders come out different colours in the two projects. LogLead's own a
 `TARGET_SYMBOL`: every plot here has a target log folder drawn as a cross, so `cross` and the
 lookalike `x` are held out of the group cycle in `COMPARISON_SYMBOLS`.
 
+**The two folder/file plots are selectable, not a pair** (`plots=`, an allowlist against
+`visualize.PLOTS`). The UMAP layout is essentially the entire cost of `plot_folder` /
+`plot_file_content` — measured on hdfs_balanced_5k (91,638 lines, 5,000 log folders), 41s of a 42s
+call, against ~0.7s for the loading, aggregating, vectorizing and figure building put together — and
+the "simple" figure never uses its output: unique terms is `(dtm > 0).sum(axis=1)` off the sparse
+document-term matrix and lines is a Polars `group_by`, 0.01s for the two. So `_document_term_matrix`
+and `_umap_2d` are separate (both figures need the first, only one needs the second), and
+`plots=["simple"]` takes that call to 0.6s. Two consequences to keep: a figure not asked for comes
+back as `None` rather than being dropped from the tuple, and `points_df` then **omits** `umap_x`/
+`umap_y` rather than nulling them — a null coordinate reads as a layout that failed, a missing
+column as one that never ran. `_umap_2d` densifies on the way in on purpose: UMAP accepts the sparse
+matrix but takes its sparse nearest-neighbour path and is *slower* on it (34s vs 13s on the same
+5,000 folders). Two costs no flag can remove, so don't go looking: `random_state` makes umap-learn
+single-threaded (13s vs 5s warm on 12 cores), which is the price of `random_seed` being
+reproducible, and the first layout in a process pays ~29s of numba JIT on top of `import umap`'s own
+14s at `delta/__init__` time.
+
 `plot_line_scores` colours by *detector family* (kmeans/IF/RM/OOVD) and splits within a family by
 **how the trace is drawn, not by shape**: the raw per-line score is a scatter — every point there is
 a log line to hover — and its 10/100-line moving averages are `mode="lines"`, widest window solid and
@@ -450,7 +467,14 @@ marker per line smears it into a band; LogDelta's `_ano_plot_line_scores` draws 
 `symbol="x"` markers and relies on density to make the averages look like curves. `display_mode`
 therefore governs only the raw scores now. Which columns are averages is read from the
 `moving_avg_<window>_` prefix (`_moving_average_window`), not from column order, and a name that
-does not parse falls back to a scatter rather than raising.
+does not parse falls back to a scatter rather than raising. **Hover follows the same split, and for
+a reason that is about file size**: plotly serializes each trace's `text` array separately, so the
+per-line log message on all twelve traces tripled the message text in the file for nothing — 70 MB
+of HTML for a 20,000-line file. Only the four raw scatters carry `text`; the eight averages use
+`hoverinfo="x+y+name"`, which plotly builds from the coordinates and the trace name and which costs
+no per-line array (30 MB for that same file). A point on a rolling mean is not a log line anyway, so
+this is what its hover should have said. The remaining bulk is the four surviving copies, which is
+the floor if each detector's scatter is to stay hoverable.
 
 **The invariant that differs from LogDelta**: these functions hold no module state, never `os.chdir`,
 and never write files — they return DataFrames. Functions that may add an `e_*` column return
