@@ -867,14 +867,33 @@ def _plot_result(session, analysis, level, params, points, figures, max_rows):
             file=params.get("file", ""),
         )
         artifacts[suffix] = export.write_figure(fig, str(session.output_dir), stem)
-    notes = ["unique_terms vs lines is the simple, directly interpretable view."]
+    # The columns are the result for a caller that cannot see the HTML, so the
+    # note says what they mean rather than pointing at the picture.
+    unit = "file names" if level == 1 else "terms"
+    notes = [f"Each row is one log folder. unique_terms is how many distinct {unit} it "
+             "uses (the x axis), lines is its line count (the y axis, log scale). "
+             "A log folder far from the others on either is worth a look."]
+    # A log root of one-file log folders makes the file-name plot degenerate: every
+    # point shares an x, and a caller reading only the rows sees a column of
+    # identical numbers with nothing to say it was never going to differ. The
+    # docstring says this too, but only this fires when it is actually happening.
+    if level == 1 and points.height > 1 and points["unique_terms"].n_unique() == 1:
+        count = points["unique_terms"][0]
+        notes.append(
+            f"CAUTION: every log folder here contains the same number of files ({count}), "
+            "so the x axis is a single value and separates nothing. This plot needs log "
+            "folders holding several files each. Use plot_folder_content, which reads the "
+            "log text, or anomaly_folder_content for a ranking."
+        )
     if "umap_x" in points.columns:
-        notes.insert(0, "umap_x/umap_y place each log folder in 2D: outliers sit away "
-                        "from the cluster.")
+        notes.append("umap_x/umap_y place the same log folders in 2D: outliers sit away "
+                     "from the cluster. The axes have no units -- only relative "
+                     "positions mean anything.")
     else:
-        notes.append("The UMAP was not run (plots did not ask for it), so there are no "
-                     "umap_x/umap_y columns. Pass plots=[\"umap\", \"simple\"] for it -- "
-                     "the layout is nearly the whole cost of this tool.")
+        notes.append('No UMAP was run, so there are no umap_x/umap_y columns. Pass '
+                     'plots=["umap", "simple"] if the positions above leave the answer '
+                     'unclear; it sees which terms differ, not just how many, and costs '
+                     'tens of seconds on a few thousand log folders.')
     return formatting.result(
         session, analysis, level, params, points,
         next((artifacts[name] for name in ("umap", "simple") if name in artifacts), None),
@@ -892,13 +911,56 @@ def plot_folder_filename(
     comparison_folders: FolderSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     random_seed: Optional[int] = 42,
-    plots: PlotSelector = visualize.PLOTS,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
     max_rows: int = 60,
 ) -> dict:
-    """L1: plot every log folder as one point, by its file names.
+    """Scatter plot of every log folder as one point:
+    X AXIS: how many distinct file names the log folder contains.
+    Y AXIS: how many log lines it contains in total, on a log scale.
 
-    Writes an interactive HTML plot per entry in `plots` and returns the
-    coordinates, so the positions are readable without opening them.
+    Both numbers are returned as the "unique_terms" and "lines" columns -- one
+    row per log folder -- so you can read the plot from the result without
+    opening the HTML. ("unique_terms" is the generic column name; at this level
+    the terms being counted are file names.) 
+    
+    WHEN THIS TOOL APPLIES: only when a log folder holds SEVERAL files that
+    belong together -- one folder per job run, one file per container, service,
+    task or node, with the same file names recurring across folders. 
+
+    WHY TWO AXIS MAY FIND ANOMALIES:
+      - Fewer files may mean a component never started, or died before writing
+        anything. More files may means retries: a restarted attempt writes under a
+        new name, so failure ADDS files.
+      - Line count is roughly how much work happened. Far fewer lines means may mean
+        it stopped early -- crash, timeout, kill. Far more may mean it was looping, 
+        retrying, or printing
+        stack traces, because failures are verbose. 
+
+    These are screening signals, not proof. They count files and lines without
+    looking at what is in them, so a log folder with entirely ordinary counts
+    can still hold one fatal line, and a legitimately longer run looks anomalous
+    here. 
+
+    WHY "umap" MAY FIND ANOMALIES THE COUNTS CANNOT: the x axis above is a
+    single number, so two log folders holding 20 files each sit on the same spot
+    even if they share none of those files. UMAP starts from the whole set
+    instead. Every distinct file name in the log root becomes one dimension,
+    each log folder becomes a 1/0 vector saying which of them it has, and UMAP
+    squeezes all those dimensions down to 2 while keeping log folders that were
+    near each other in the full space near each other on the plot. So log
+    folders that ran the same components land together, and one that ran a
+    DIFFERENT set is pushed away whatever its file count -- a difference in
+    which names, not how many, which the counts cannot express.
+
+    It has less to work with here than plot_folder_content does, since a log
+    root has only as many dimensions as it has distinct file names, normally a
+    far smaller set than the vocabulary of the log text. So log text is usually
+    the stronger place to spend a UMAP. Still worth trying here: which
+    components a run even started can be exactly the tell, and there is no
+    knowing in advance how a given system fails.
+
+    Cost: ~41s on 5,000 log folders against under a second for the default, so
+    it is off unless requested.
 
     Args:
         session_id: Handle from open_log_root.
@@ -907,14 +969,19 @@ def plot_folder_filename(
         group_by_indices: Underscore-separated parts of the folder name to colour
             by, e.g. [0, 1] colours "PageRank_DiskFull_application_1" by
             "PageRank_DiskFull".
-        random_seed: Makes UMAP reproducible. Pass null for a fresh layout;
-            re-running with different layouts is a good stability check.
-        plots: Which figures to build: "umap", "simple", or both. The UMAP
-            layout is nearly the whole cost of this tool -- on 5,000 log folders
-            it is ~41s against ~0.7s for everything else -- and the "simple"
-            figure (unique terms against lines) does not use it. Pass
-            ["simple"] when that cruder view is what you want; it is often
-            enough on its own.
+        random_seed: Makes the UMAP layout reproducible. Pass null for a fresh
+            one; re-running with different layouts is a good stability check.
+            Ignored unless you asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry.
+            "simple" (the default): the file-names-against-lines scatter
+                described above. Under a second.
+            "umap": a different plot of the same log folders, where x and y are
+                "umap_x"/"umap_y" -- see above for what it sees that the counts
+                do not. The axes have no units and no meaning on their own; only
+                distance between points does, and outliers sit away from the
+                cluster.
+            Pass ["umap", "simple"] for both; they share one vectorization, so
+            both together cost no more than "umap" alone.
         max_rows: Log folders returned inline.
     """
     session = STORE.get(session_id)
@@ -942,10 +1009,55 @@ def plot_folder_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
-    plots: PlotSelector = visualize.PLOTS,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
     max_rows: int = 60,
 ) -> dict:
-    """L2: plot every log folder as one point, by its log text.
+    """Scatter plot of every log folder as one point:
+    X AXIS: how many distinct terms the log folder's log text uses. A "term" is
+        whatever `content_format` says -- a word by default, otherwise a
+        3-gram or a parsed event template.
+    Y AXIS: how many log lines it contains in total, on a log scale.
+
+    Both numbers are returned as the "unique_terms" and "lines" columns -- one
+    row per log folder -- so you can read the plot from the result without
+    opening the HTML.
+
+    Unlike plot_folder_filename this works whatever the folders hold, including
+    one file each, because it reads the log text rather than the file layout.
+
+    WHY TWO COUNTS MAY FIND ANOMALIES: 
+      - Distinct terms is how varied its vocabulary was. More may
+        mean it reached code paths the others did not -- error branches,
+        exception classes and stack frames all bring words that a clean run
+        never prints. Fewer means it never got far enough to say much.
+      - Line count is roughly how much work happened, and how much got
+        complained about. Far fewer lines means it stopped early -- crash,
+        timeout, kill. Far more means it was looping, retrying, or printing
+        stack traces, because failures are verbose. Log scale, since these span
+        orders of magnitude.
+
+    These are screening signals, not proof. Counting distinct terms says nothing
+    about WHICH terms: a log folder can use exactly the usual number of words
+    and have one of them be "OutOfMemoryError", and two log folders can sit on
+    the same point with almost no vocabulary in common. 
+
+    WHY "umap" MAY FIND ANOMALIES THE COUNTS CANNOT: the x axis above collapses
+    a log folder's whole vocabulary into one number. UMAP starts from that
+    vocabulary instead. Every distinct term in the log root becomes one
+    dimension, each log folder becomes a vector of how often it used each term,
+    and UMAP squeezes all those dimensions down to 2 while keeping log folders
+    that were near each other in the full space near each other on the plot. So
+    log folders that said similar things land together, and one that said
+    something different is pushed away even if it used the same NUMBER of
+    distinct terms -- a difference in which terms, not how many.
+
+    This is the level UMAP has the most to work with, since the vocabulary of
+    the log text is normally far larger than the set of file names
+    plot_folder_filename can offer it. Reach for it when the counts leave
+    several log folders looking alike.
+
+    Cost: ~41s on 5,000 log folders against under a second for the default, so
+    it is off unless requested.
 
     Args:
         session_id: Handle from open_log_root.
@@ -954,14 +1066,20 @@ def plot_folder_content(
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            Decides what counts as a term on the x axis.
         vectorizer: "Count" or "Tfidf".
-        random_seed: Makes UMAP reproducible.
-        plots: Which figures to build: "umap", "simple", or both. The UMAP
-            layout is nearly the whole cost of this tool -- on 5,000 log folders
-            it is ~41s against ~0.7s for everything else -- and the "simple"
-            figure (unique terms against lines) does not use it. Pass
-            ["simple"] when that cruder view is what you want; it is often
-            enough on its own.
+        random_seed: Makes the UMAP layout reproducible; ignored unless you
+            asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry.
+            "simple" (the default): the terms-against-lines scatter described
+                above. Under a second.
+            "umap": a different plot of the same log folders, where x and y are
+                "umap_x"/"umap_y" -- see above for what it sees that the counts
+                do not. The axes have no units and no meaning on their own; only
+                distance between points does, and outliers sit away from the
+                cluster.
+            Pass ["umap", "simple"] for both; they share one vectorization, so
+            both together cost no more than "umap" alone.
         max_rows: Log folders returned inline.
     """
     session = STORE.get(session_id)
@@ -993,26 +1111,69 @@ def plot_file_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
-    plots: PlotSelector = visualize.PLOTS,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
     max_rows: int = 60,
 ) -> dict:
-    """L3: for each target file, plot each log folder's copy of it as one point.
+    """Scatter plot of one named file across log folders, each copy of it as one point.
+
+    One plot per file you ask for. Within a plot, one point per log folder that
+    has a file of that name:
+
+    X AXIS: how many distinct terms that log folder's copy of the file uses. A
+        "term" is whatever `content_format` says -- a word by default.
+    Y AXIS: how many lines that copy has, on a log scale.
+
+    Both numbers are returned as the "unique_terms" and "lines" columns -- one
+    row per log folder, per file -- so you can read the plot from the result
+    without opening the HTML.
+
+    This is the drill-down from the whole-folder plots: it answers which log
+    folder's copy of *this* file is the odd one out. Files are matched by name
+    across log folders, so a file only one log folder has is skipped -- there
+    is nothing to compare it against.
+
+    WHY "umap" MAY FIND ANOMALIES THE COUNTS CANNOT: the x axis above collapses
+    a copy's whole vocabulary into one number. UMAP starts from that vocabulary
+    instead. Every distinct term across the copies of this file becomes a
+    dimension, each copy becomes a vector of how often it used each term, and
+    UMAP squeezes those dimensions down to 2 while keeping copies that were near
+    each other in the full space near each other on the plot. So a copy that
+    said something the others did not is pushed away even when it used the same
+    NUMBER of distinct terms and the same number of lines -- which at this level
+    is common, since copies of one file from one system tend to be similar in
+    size and differ only in what went wrong.
+
+    One UMAP layout runs per file, so this is the parameter that decides what
+    asking for many files costs.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
         comparison_folders: Log folders to include.
-        target_files: Which files to plot -- one plot per entry in `plots`, per file.
+        target_files: Which files to plot. "ALL", a list, an int N, or a
+            wildcard, resolved against the files the target log folder has.
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            Decides what counts as a term on the x axis.
         vectorizer: "Count" or "Tfidf".
-        random_seed: Makes UMAP reproducible.
-        plots: Which figures to build: "umap", "simple", or both. One UMAP
-            layout runs per file and it is nearly the whole cost of this tool,
-            so ["simple"] is worth more here the more files you asked for; the
-            "simple" figure (unique terms against lines) does not use it.
-        max_rows: Log folders returned inline per file.
+        random_seed: Makes the UMAP layout reproducible; ignored unless you
+            asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry, per file.
+            "simple" (the default): the terms-against-lines scatter described
+                above. Under a second per file.
+            "umap": a different plot of the same points, where x and y are
+                "umap_x"/"umap_y" -- see above for what it sees that the counts
+                do not. The axes have no units and no meaning on their own; only
+                distance between points does, and outliers sit away from the
+                cluster. Slow, and it runs once per file.
+            Pass ["umap", "simple"] for both; per file they share one
+            vectorization, so both cost no more than "umap" alone.
+        max_rows: How many rows to return inline for EACH file. The result is a
+            list with one entry per file, and inside each entry one row per log
+            folder holding a file of that name -- so this caps the rows inside
+            an entry, not the number of entries. `target_files` controls how
+            many files you get.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
@@ -1074,6 +1235,16 @@ _STEP_TOOLS = {
 _STEP_ARGS = {
     "target_run": "target_folder",
     "comparison_runs": "comparison_folders",
+}
+
+#: What a LogDelta step means but does not say. Its plot steps always draw both
+#: the UMAP and the simple view, and a config has no key to ask for either, so
+#: reproducing one means requesting both here -- our own default is the cheap
+#: half. Overridden by anything the config does state.
+_STEP_DEFAULTS = {
+    "plot_run_file": {"plots": visualize.PLOTS},
+    "plot_run_content": {"plots": visualize.PLOTS},
+    "plot_file_content": {"plots": visualize.PLOTS},
 }
 
 # LogDelta names preprocessing steps after its own functions; map to ours.
@@ -1156,6 +1327,7 @@ def run_config(config_path: str, session_id: Optional[str] = None,
         for item in items or []:
             renamed = {_STEP_ARGS.get(k, k): v for k, v in item.items()}
             kwargs = {k: v for k, v in renamed.items() if k in tool.__annotations__}
+            kwargs = {**_STEP_DEFAULTS.get(step_name, {}), **kwargs}
             try:
                 tool(session_id=sid, **kwargs)
                 executed.append({"step": step_name, "params": kwargs})

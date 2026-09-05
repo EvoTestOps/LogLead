@@ -62,7 +62,7 @@ from .distance import (
     distance_folder_content,
     distance_folder_filename,
 )
-from .visualize import PLOTS, plot_file_content, plot_folder
+from .visualize import DEFAULT_PLOTS, PLOTS, plot_file_content, plot_folder
 
 __all__ = [
     "anomaly",
@@ -90,4 +90,5 @@ __all__ = [
     "plot_folder",
     "plot_file_content",
     "PLOTS",
+    "DEFAULT_PLOTS",
 ]

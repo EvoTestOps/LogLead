@@ -301,31 +301,32 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     # ------------------------------------------------------------ visualize --
     banner("L1 plot_folder_filename -- coordinates come back, not just an HTML file")
     res = server.plot_folder_filename("demo", target, comparison_folders=8,
-                               group_by_indices=[0, 1], random_seed=42)
-    show(res, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=4)
+                               group_by_indices=[0, 1])
+    show(res, ["folder", "unique_terms", "lines"], limit=4)
     print(f"   plots: {res['plots']}")
 
     banner("L2 plot_folder_content")
     res = server.plot_folder_content("demo", target, comparison_folders=8,
-                                  content_format="Words", random_seed=42)
-    show(res, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=4)
+                                  content_format="Words")
+    show(res, ["folder", "unique_terms", "lines"], limit=4)
 
     # The UMAP layout is essentially the whole cost of these tools, and the
-    # simple unique-terms-against-lines view does not use it. Asking for that
-    # one alone is the difference between ~42s and under a second on 5,000 log
-    # folders, so it is worth knowing the option is there.
-    banner('L2 plot_folder_content again, plots=["simple"] -- no UMAP, no wait')
+    # default view -- unique terms against lines -- does not use it, so it is
+    # opt-in: the difference is ~42s against under a second on 5,000 log
+    # folders. Ask for it when the numbers alone leave the answer unclear.
+    banner('L2 plot_folder_content again, plots=["umap", "simple"] -- the embedding too')
     started = time.perf_counter()
     res = server.plot_folder_content("demo", target, comparison_folders=8,
-                                     content_format="Words", plots=["simple"])
+                                     content_format="Words", random_seed=42,
+                                     plots=["umap", "simple"])
     print(f"   {time.perf_counter() - started:.2f}s, "
           f"figures written: {sorted(res['plots'])}")
-    show(res, ["folder", "unique_terms", "lines"], limit=4)
+    show(res, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=4)
 
     banner("L3 plot_file_content")
     res = server.plot_file_content("demo", target, comparison_folders=8,
                                    target_files=[worst_file],
-                                   content_format="Words", random_seed=42)
+                                   content_format="Words")
     for entry in res["files"]:
         print(f"   {entry['file_name']}: {entry['n_rows']} log folders plotted")
 

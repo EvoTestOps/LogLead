@@ -76,6 +76,13 @@ MOVING_AVERAGE_DASHES = ["solid", "dash", "dot", "longdash", "dashdot"]
 #: should not have to pay for the other one.
 PLOTS = ("umap", "simple")
 
+#: What you get without asking. The cheap one, because the alternative is a
+#: default that costs ~40s and can only be avoided by reading a parameter's
+#: documentation -- and because "unique terms against lines" is interpretable
+#: from the numbers alone, while UMAP coordinates mean nothing without the
+#: picture. Ask for ``PLOTS`` when you want the embedding too.
+DEFAULT_PLOTS = ("simple",)
+
 
 def _validate_plots(plots):
     """Normalize the ``plots`` selector to a tuple in :data:`PLOTS` order.
@@ -241,7 +248,7 @@ def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertempl
         add(f"target: {target_folder}", marker, target_rows, 1.0)
 
 
-def _figures(points, target_folder, file, title_subject, plots=PLOTS):
+def _figures(points, target_folder, file, title_subject, plots):
     """Build the requested figures from the points frame.
 
     :returns: ``(fig_umap, fig_simple)``, either of which is ``None`` when
@@ -297,7 +304,7 @@ def _figures(points, target_folder, file, title_subject, plots=PLOTS):
 def plot_folder(
     df, target_folder, comparison_folders="ALL", file=True, random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
-    plots=PLOTS,
+    plots=DEFAULT_PLOTS,
 ):
     """L1/L2: plot every log folder as one point.
 
@@ -308,8 +315,9 @@ def plot_folder(
     :param random_seed: int makes UMAP reproducible. LogDelta accepted this
         parameter but discarded it here, so its folder-level plots moved
         between log folders.
-    :param plots: which of :data:`PLOTS` to build. ``["simple"]`` skips the
-        UMAP layout, which is essentially the whole cost of the call.
+    :param plots: which of :data:`PLOTS` to build. Defaults to
+        :data:`DEFAULT_PLOTS`, the "simple" scatter alone; add ``"umap"`` for
+        the embedding, which is essentially the whole cost of the call.
     :returns: ``(points_df, fig_umap, fig_simple, df)``, with a figure that was
         not asked for as ``None``. ``points_df`` has one row per log folder:
         ``folder, group, unique_terms, lines``, plus ``umap_x, umap_y`` when the
@@ -347,12 +355,13 @@ def plot_folder(
 def plot_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
-    plots=PLOTS,
+    plots=DEFAULT_PLOTS,
 ):
     """L3: for each target file, plot each log folder's copy of that file as one point.
 
-    :param plots: which of :data:`PLOTS` to build. One UMAP layout is run per
-        file here, so ``["simple"]`` is worth more the more files there are.
+    :param plots: which of :data:`PLOTS` to build, defaulting to
+        :data:`DEFAULT_PLOTS`. One UMAP layout is run per file here, so adding
+        ``"umap"`` costs more the more files you asked for.
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
         ``(file_name, points_df, fig_umap, fig_simple)``, with a figure that was
         not asked for as ``None``.

@@ -442,22 +442,37 @@ same log folders come out different colours in the two projects. LogLead's own a
 `TARGET_SYMBOL`: every plot here has a target log folder drawn as a cross, so `cross` and the
 lookalike `x` are held out of the group cycle in `COMPARISON_SYMBOLS`.
 
-**The two folder/file plots are selectable, not a pair** (`plots=`, an allowlist against
-`visualize.PLOTS`). The UMAP layout is essentially the entire cost of `plot_folder` /
-`plot_file_content` — measured on hdfs_balanced_5k (91,638 lines, 5,000 log folders), 41s of a 42s
-call, against ~0.7s for the loading, aggregating, vectorizing and figure building put together — and
-the "simple" figure never uses its output: unique terms is `(dtm > 0).sum(axis=1)` off the sparse
-document-term matrix and lines is a Polars `group_by`, 0.01s for the two. So `_document_term_matrix`
-and `_umap_2d` are separate (both figures need the first, only one needs the second), and
-`plots=["simple"]` takes that call to 0.6s. Two consequences to keep: a figure not asked for comes
-back as `None` rather than being dropped from the tuple, and `points_df` then **omits** `umap_x`/
-`umap_y` rather than nulling them — a null coordinate reads as a layout that failed, a missing
-column as one that never ran. `_umap_2d` densifies on the way in on purpose: UMAP accepts the sparse
-matrix but takes its sparse nearest-neighbour path and is *slower* on it (34s vs 13s on the same
-5,000 folders). Two costs no flag can remove, so don't go looking: `random_state` makes umap-learn
-single-threaded (13s vs 5s warm on 12 cores), which is the price of `random_seed` being
-reproducible, and the first layout in a process pays ~29s of numba JIT on top of `import umap`'s own
-14s at `delta/__init__` time.
+**The two folder/file plots are selectable, not a pair, and the UMAP is the opt-in half** (`plots=`,
+an allowlist against `visualize.PLOTS`, defaulting to `DEFAULT_PLOTS` = `("simple",)`). The layout is
+essentially the entire cost of `plot_folder` / `plot_file_content` — measured on hdfs_balanced_5k
+(91,638 lines, 5,000 log folders), 41s of a 42s call, against ~0.7s for the loading, aggregating,
+vectorizing and figure building put together — and the "simple" figure never uses its output: unique
+terms is `(dtm > 0).sum(axis=1)` off the sparse document-term matrix and lines is a Polars
+`group_by`, 0.01s for the two. So `_document_term_matrix` and `_umap_2d` are separate (both figures
+need the first, only one needs the second), and the default call is 0.6s rather than 44s. The
+default is the cheap one **because the alternative is a 40s default avoidable only by reading a
+parameter's docs**, and because a caller who cannot see the picture — which over MCP is every caller
+— can read `unique_terms`/`lines` and cannot read UMAP coordinates. Two consequences to keep: a
+figure not asked for comes back as `None` rather than being dropped from the tuple, and `points_df`
+then **omits** `umap_x`/`umap_y` rather than nulling them — a null coordinate reads as a layout that
+failed, a missing column as one that never ran. `_umap_2d` densifies on the way in on purpose: UMAP
+accepts the sparse matrix but takes its sparse nearest-neighbour path and is *slower* on it (34s vs
+13s on the same 5,000 folders). Two costs no flag can remove, so don't go looking: `random_state`
+makes umap-learn single-threaded (13s vs 5s warm on 12 cores), which is the price of `random_seed`
+being reproducible, and the first layout in a process pays ~29s of numba JIT on top of `import
+umap`'s own 14s at `delta/__init__` time.
+
+Flipping that default put one thing at risk that `_STEP_DEFAULTS` (`mcp/server.py`) exists to hold:
+LogDelta's plot steps always draw **both** figures and its config format has no key to say so, so
+reproducing a config means `run_config` requesting both explicitly. It is a fourth LogDelta-vocabulary
+lookup table alongside `_STEP_TOOLS`/`_STEP_ARGS`/`_PREPROCESSING` — keyed by LogDelta's step names,
+and merged *under* whatever the config states.
+
+**The three plot tools' MCP descriptions do not use the L1-L4 vocabulary** the other nine analysis
+tools do, and say what both axes are. A client sees only the docstring: the level numbers are a
+reference to the table above that never reaches it, and are redundant with the tool name anyway,
+while "unique terms against lines" is unguessable and is the entire content of the default result.
+The same reasoning applies to the other nine tools, which have not been swept yet.
 
 `plot_line_scores` colours by *detector family* (kmeans/IF/RM/OOVD) and splits within a family by
 **how the trace is drawn, not by shape**: the raw per-line score is a scatter — every point there is
