@@ -1,0 +1,12 @@
+name: gelf
+description: >
+  The shape GELFLoader reads: a message key plus an @timestamp key, i.e. a Logstash/Elasticsearch
+  style envelope rather than canonical GELF (which uses short_message and an epoch-float timestamp -
+  see gelf_native). No timestamp_formats, so Polars infers, matching GELFLoader's own
+  str.strptime(pl.Datetime, strict=False).
+
+container: ndjson
+
+timestamp_field: "@timestamp"
+message_field: message
+extra_fields: keep

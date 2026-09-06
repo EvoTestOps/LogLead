@@ -106,24 +106,6 @@ class BaseLoader:
         split_cols = split_cols.to_frame()
         self.df = split_cols.unnest("fields")
       
-    def lines_not_starting_with_pattern(self, pattern=None):
-        if self.df is None:
-            self.load()
-        if pattern is None:
-            pattern = self.event_pattern
-
-        # Filter lines that do not start with the pattern.
-        non_matching_lines_df = self.df.filter(~pl.col("column_1").str.contains(pattern))
-        # Filter lines that do start with the pattern.
-        matching_lines_df = self.df.filter(pl.col("column_1").str.contains(pattern))
-        
-        # Get the number of lines that do not start with the pattern.
-        non_matching_lines_count = non_matching_lines_df.shape[0]
-        # Get the number of lines that do start with the pattern.
-        matching_lines_count = matching_lines_df.shape[0]
-            
-        return non_matching_lines_df, non_matching_lines_count, matching_lines_df, matching_lines_count 
-
     def reduce_dataframes(self, frac=0.5, random_state=42):
         # If df_sequences is present, reduce its size
         if hasattr(self, 'df_seq') and self.df_seq is not None:

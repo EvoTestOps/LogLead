@@ -1,0 +1,21 @@
+name: otrf_winevent
+description: >
+  Windows event logs from the OTRF Security-Datasets, one scenario per file. The keys differ from
+  line to line because the fields depend on the EventID - only TimeCreated, SourceName, EventID,
+  Channel, Task, Message and Hostname are present on every record. Message contains embedded CRLFs.
+  Beware: these files carry both ProcessID and ProcessId as separate keys, so do not normalize the
+  case of key names.
+
+container: ndjson
+file_pattern: "*.json"
+
+timestamp_field: TimeCreated
+timestamp_formats:
+  - "%Y-%m-%d %H:%M:%S%.3f"
+
+message_field: Message
+seq_id_field: Hostname
+extra_fields: keep
+
+sample:
+  - '{"TimeCreated": "2020-10-18 10:56:18.799", "SourceName": "Microsoft-Windows-Security-Auditing", "EventID": 5156, "Channel": "Security", "Task": "12810", "Hostname": "WORKSTATION5", "Message": "The Windows Filtering Platform has permitted a connection."}'

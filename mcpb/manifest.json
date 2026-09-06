@@ -1,0 +1,50 @@
+{
+  "manifest_version": "0.4",
+  "name": "loglead-mcp",
+  "display_name": "LogLead",
+  "version": "1.2.3",
+  "description": "Conversational log analysis: compare log folders/files for anomalies, distance, and structure using LogLead.",
+  "long_description": "Wraps LogLead's log-folder comparison analyses (LogDelta-style distance, anomaly, and visualization checks) as MCP tools. A log root is loaded, masked, and parsed once per session, and every later question reuses that parsed state across four levels: folder/file names, folder content, file content, and line content.\n\nThis bundle installs LogLead directly from the `main` branch of its GitHub repository at launch. Third-party dependencies (polars, scikit-learn, xgboost, shap, umap-learn, and others) are resolved as normal platform wheels via uv alongside it.",
+  "author": {
+    "name": "EvoTestOps",
+    "url": "https://github.com/EvoTestOps/LogLead"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EvoTestOps/LogLead"
+  },
+  "homepage": "https://github.com/EvoTestOps/LogLead",
+  "license": "MIT",
+  "server": {
+    "type": "uv",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--python",
+        "3.11",
+        "${__dirname}/server/main.py"
+      ],
+      "env": {
+        "LOGLEAD_MCP_CACHE": "${user_config.cache_dir}"
+      }
+    }
+  },
+  "user_config": {
+    "cache_dir": {
+      "type": "directory",
+      "title": "Cache directory",
+      "description": "Where LogLead caches parsed/masked log data (parquet) between questions. Defaults to $XDG_CACHE_HOME/loglead-mcp if left blank.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.11.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.10,<3.13"
+    }
+  },
+  "keywords": ["logs", "log analysis", "anomaly detection", "log parsing", "loglead"]
+}

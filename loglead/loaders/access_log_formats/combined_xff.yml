@@ -1,0 +1,25 @@
+name: combined_xff
+description: >
+  Combined Log Format with a trailing "$http_x_forwarded_for", the usual first addition to the
+  default layout once a site sits behind a CDN or load balancer. This is the layout of the Kaggle
+  "Web Server Access Logs" dataset (zanbil.ir, 10,365,152 lines), where the field is "-" for direct
+  traffic and holds the originating client address for proxied requests.
+
+log_format: >-
+  $remote_addr $ident $remote_user [$time_local] "$request" $status $body_bytes_sent
+  "$http_referer" "$http_user_agent" "$http_x_forwarded_for"
+
+timestamp_field: time_local
+timestamp_formats:
+  - "%d/%b/%Y:%H:%M:%S %z"
+
+line_format: "{remote_addr} {request} {status}"
+
+request_field: request
+numeric_fields: [status, body_bytes_sent]
+seq_id_field: remote_addr
+extra_fields: keep
+
+sample:
+  - '54.36.149.41 - - [22/Jan/2019:03:56:14 +0330] "GET /filter/27 HTTP/1.1" 200 30577 "-" "Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)" "-"'
+  - '31.56.96.51 - - [22/Jan/2019:03:56:16 +0330] "GET /image/60844/productModel/200x200 HTTP/1.1" 200 5667 "https://www.zanbil.ir/m/filter/b113" "Mozilla/5.0 (Linux; Android 6.0)" "51.38.89.157"'

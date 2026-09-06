@@ -136,6 +136,28 @@ df_seq = sad.predict()
 sad.train_DT()
 df_seq = sad.predict()
 
+# Predict from the fields the log arrived with, instead of from its message text. HDFS lines carry
+# a level (INFO/WARN) and a component, but those live on the *events* while the labels live on the
+# sequences, so they have to be aggregated first. category_counts() does that by counting each
+# value per sequence - "how many WARN lines does this block have", "how many came from
+# dfs.FSNamesystem". Counts are numbers, so unlike the event-level case they need no encoding and
+# go straight into numeric_cols.
+print(f"Predicting with per-sequence counts of the log's own categorical fields, no message text")
+df_seqs = seq_enhancer.category_counts("level")
+df_seqs = seq_enhancer.category_counts("component")
+count_cols = [c for c in df_seqs.columns if c.startswith("cat_")]
+print(f"{len(count_cols)} count columns built from 'level' and 'component': {count_cols[:4]} ...")
+sad.item_list_col = None
+sad.numeric_cols = count_cols
+sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)
+# Logistic Regression
+sad.train_LR()
+df_seq = sad.predict()
+# Use Decision Tree
+sad.train_DT()
+df_seq = sad.predict()
+sad.numeric_cols = None  # Reset so the runs below use only what they set themselves
+
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store score to Pandas table for easy storage
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")

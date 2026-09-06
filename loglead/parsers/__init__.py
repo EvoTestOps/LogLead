@@ -1,4 +1,4 @@
-__all__ = ['AELParser', 'BrainParser', 'IPLoMParser', 'LenmaTemplateManager', 'PL_IPLoMParser',
+__all__ = ['AELParser', 'BrainParser', 'IPLoMParser', 'IPLoMLLMParser', 'LenmaTemplateManager', 'PL_IPLoMParser',
            'SpellParser', 'DrainTemplateMiner', 'DrainTemplateMinerNoMasking',
            'DrainPersistenceTemplateMiner', 'DrainPersistenceTemplateMinerNoMasking']
 import logging
@@ -14,3 +14,4 @@ from .iplom.IPLoM import IPLoMParser
 from .lenma.lenma import LenmaTemplateManager
 from .pl_iplom.pl_iplom import PL_IPLoMParser
 from .pyspell.spell import SpellParser
+from .iplom_llm.iplom_llm import IPLoMLLMParser

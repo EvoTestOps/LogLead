@@ -1,0 +1,26 @@
+name: common
+description: >
+  Common Log Format (CLF) - the NCSA original, Apache's "common" and nginx's seven-field baseline.
+  Seven fields, no referrer and no user agent. The second field is the long-obsolete ident lookup
+  and the third the HTTP-auth user; both are "-" on essentially every public server, which is what
+  null_token is for.
+
+log_format: '$remote_addr $ident $remote_user [$time_local] "$request" $status $body_bytes_sent'
+
+timestamp_field: time_local
+timestamp_formats:
+  - "%d/%b/%Y:%H:%M:%S %z"
+
+# No single field is "the message" in an access log, so render one. Path is deliberately left out
+# of the rendered line and kept as its own column: it is high-cardinality, and putting it in
+# m_message makes every Drain template a one-off.
+line_format: "{remote_addr} {request} {status}"
+
+request_field: request
+numeric_fields: [status, body_bytes_sent]
+seq_id_field: remote_addr
+extra_fields: keep
+
+sample:
+  - '127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326'
+  - '31.56.96.51 - - [22/Jan/2019:03:56:16 +0330] "GET /image/60844 HTTP/1.1" 200 5667'

@@ -3,6 +3,7 @@ import glob
 
 import polars as pl
 
+from . import line_policy
 from .base import BaseLoader
 
 __all__ = ['HadoopLoader']
@@ -51,43 +52,19 @@ class HadoopLoader(BaseLoader):
         dataframes = pl.collect_all(queries)
         self.df = pl.concat(dataframes)
     
-    #Occasionally multiline entries exists, e.g. log message followed by stack trace here we merge them to one log event. 
+    #Occasionally multiline entries exists, e.g. log message followed by stack trace here we merge them to one log event.
     def _merge_multiline_entries(self):
-         # Sort the dataframe by "seq_id_sub" and "row_nr_per_file" to ensure correct lines are merged together
+        # Sort by file and line number so the lines of one event are adjacent and in order, which
+        # is what makes the running count inside to_events() mean anything.
         self.df = self.df.sort(["seq_id_sub", "row_nr_per_file"])
-        
-        # Create a flag column that determines if the row starts with the pattern.
-        #self.df = self.df.with_columns(pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).alias("flag"))
-        #The above should work but for some reason there are some nulls. Force the nulls to False
-        self.df = self.df.with_columns(
-                pl.col("column_1").str.contains(self.event_pattern).cast(pl.Boolean).fill_null(False).alias("flag")
-        )
-
-
-        # Generate groups by taking a cumulative sum over the flag. This will group multi-line entries together.
-        self.df = self.df.with_columns(pl.col("flag").cum_sum().alias("group"))
-        # Calculate number of lines in each group
-
-        # Merge the entries in each group
-        df_grouped = self.df.group_by("group").agg(
-            pl.col("column_1").str.concat("\n").alias("column_1"),
-            pl.col("seq_id").first().alias("seq_id"),
-            pl.col("seq_id_sub").first().alias("seq_id_sub"),
-            pl.col("row_nr_per_file").first().alias("row_nr_per_file")
-        )
-        self.df = df_grouped
-        #Debug
-        #df_grouped = df_grouped.with_columns(pl.col("column_1").str.n_chars().alias("entry_length"))
-        # Find the entry with the longest length
-        #max_entry = df_grouped.filter(pl.col("entry_length") == df_grouped.select(pl.col("entry_length").max()))
-        #longest_entry_length = max_entry["entry_length"][0]
-        #longest_entry_content = max_entry["column_1"][0]
-        #longest_entry_seq_id_sub = max_entry["seq_id_sub"][0]
-
-        #print(f"Longest merged entry in column_1 has {longest_entry_length} characters.")
-        #print(f"Seq_id_sub of the longest entry: {longest_entry_seq_id_sub}")
-        #print("Content of the longest entry:")
-        #print(longest_entry_content)
+        # A Hadoop event starts where a date does; everything printed under it is the stack trace
+        # that event produced, and belongs in its message. Grouped per file via seq_id_sub - the
+        # cumulative sum this replaces ran over the whole frame, so a file whose first line was a
+        # trace line attached it to the last event of the file before it.
+        self.df = line_policy.to_events(
+            self.df,
+            line_policy.event_start("pattern", pattern=self.event_pattern, text_column="column_1"),
+            policy="merge-message", text_column="column_1", partition_by="seq_id_sub")
         return self.df
 
     def preprocess(self):    

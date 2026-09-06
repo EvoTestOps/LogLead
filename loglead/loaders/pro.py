@@ -14,7 +14,11 @@ class ProLoader(BaseLoader):
         queries = []
         for file in glob.glob(self.filename):
             if os.path.getsize(file) > 0: #some files can be empty
-                q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator)
+                # quote_char=None and truncate_ragged_lines as in every newer loader: without them
+                # a stray '"' in a log line makes the CSV reader join lines together, and the read
+                # fails with "CSV malformed: expected N rows, actual M".
+                q = pl.scan_csv(file, has_header=False, infer_schema_length=0, separator=self._csv_separator,
+                                quote_char=None, truncate_ragged_lines=True)
                 q = q.with_columns((pl.lit(os.path.basename(file))).alias('seq_id'))
                 queries.append(q)
         dataframes = pl.collect_all(queries)

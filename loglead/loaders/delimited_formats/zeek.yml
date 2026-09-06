@@ -1,0 +1,25 @@
+name: zeek
+description: >
+  Zeek's default TSV output, the self-describing case. Almost nothing is configured here because
+  almost nothing needs to be: the file's own '#separator', '#fields', '#types', '#unset_field' and
+  '#empty_field' directives give the delimiter, the column names, the column types and the null
+  markers, so this spec only has to say what the file cannot - that 'ts' is an epoch timestamp and
+  'uid' is Zeek's connection id, which is the natural seq_id for grouping a session's events.
+
+  Applies to every Zeek log type, not just conn.log: the names differ per file and are read from
+  each file, which is why one call reads a whole Zeek output directory.
+
+header: zeek
+
+# Seconds since the epoch, with microseconds after the decimal point.
+timestamp_field: ts
+timestamp_epoch: s
+
+seq_id_field: uid
+extra_fields: keep
+
+sample:
+  - '#separator \x09'
+  - '#fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	proto	service	duration'
+  - '#types	time	string	addr	port	addr	port	enum	string	interval'
+  - '1521911721.255387	CMwJl820SlYyy434c8	10.164.94.120	39681	10.47.3.155	3389	tcp	ssl	0.004266'

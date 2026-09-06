@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.venv/
 private_data/
 *_wip.py
 *_wip.yml

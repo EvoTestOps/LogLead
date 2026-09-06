@@ -79,6 +79,58 @@ class SequenceEnhancer:
         self.df_seq = self.df_seq.join(df_temp, on='seq_id')
         return self.df_seq
 
+    def category_counts(self, column, prefix="cat_", top_n=20, normalize=False):
+        """Count how often each value of an event-level categorical column occurs per sequence.
+
+        Turns a field the log arrived with into sequence-level predictors: how many WARN lines a
+        block has, how many came from dfs.FSNamesystem. The output is numeric, so it goes straight
+        into AnomalyDetector's numeric_cols - unlike an event-level categorical, it needs no
+        encoding, because a count is already a number.
+
+        :param column: event-level column to count values of, e.g. "level" or "component".
+        :param prefix: prepended to every generated column name.
+        :param top_n: keep only this many of the most frequent values. One column per distinct
+            value means an unbounded column would widen df_seq without limit; None keeps all.
+        :param normalize: divide each count by the sequence length, giving a share rather than a
+            count. Useful when sequences differ a lot in length, since otherwise a long normal
+            sequence outscores a short anomalous one on every counter.
+        """
+        values = self.df.get_column(column).drop_nulls().value_counts(sort=True)
+        if top_n is not None:
+            values = values.head(top_n)
+        keep = values.get_column(column).to_list()
+        if not keep:
+            return self.df_seq
+
+        counts = (self.df.filter(pl.col(column).is_in(keep))
+                  .group_by(["seq_id", column]).len()
+                  .pivot(values="len", index="seq_id", on=column))
+
+        # Values become column names, and real ones carry characters that make later selection
+        # awkward - HDFS components look like "dfs.DataNode$BlockReceiver:". Sanitize, and keep
+        # the raw value only when sanitizing would collide with another value's name.
+        renames, taken = {}, set(self.df_seq.columns)
+        for value in [c for c in counts.columns if c != "seq_id"]:
+            safe = "".join(ch if ch.isalnum() else "_" for ch in str(value)).strip("_")
+            name = f"{prefix}{column}_{safe}"
+            suffix = 2
+            while name in taken:
+                name, suffix = f"{prefix}{column}_{safe}_{suffix}", suffix + 1
+            taken.add(name)
+            renames[value] = name
+        counts = counts.rename(renames)
+
+        new_cols = [c for c in counts.columns if c != "seq_id"]
+        self.df_seq = self.df_seq.join(counts, on="seq_id", how="left")
+        # A sequence with none of a value is absent from the pivot, which means 0, not unknown.
+        self.df_seq = self.df_seq.with_columns([pl.col(c).fill_null(0) for c in new_cols])
+        if normalize:
+            lengths = self.df.group_by("seq_id").agg(pl.len().alias("_seq_rows"))
+            self.df_seq = (self.df_seq.join(lengths, on="seq_id", how="left")
+                           .with_columns([(pl.col(c) / pl.col("_seq_rows")).alias(c) for c in new_cols])
+                           .drop("_seq_rows"))
+        return self.df_seq
+
     def embeddings(self, embedding_column="e_bert_emb"):
         # Aggregate by averaging the embeddings for each sequence (seq_id)
         df_temp = self.df.select(pl.col("seq_id"), pl.col(embedding_column).list.to_struct(n_field_strategy="max_width")).unnest(embedding_column)
