@@ -397,8 +397,10 @@ thing is frequently not a run. The three levels are **log folder → log file �
 only as a *verb* (`run_config`, `uv run`) — and `loglead/loaders/lo2.py` has an unrelated `run` column
 of its own, which is a different pipeline entirely.
 
-The data shape here is a **log root**: a directory whose immediate subdirectories are *log folders*,
-loaded into a single event-level `df` with `folder` and `file_name` columns. There are
+The data shape here is a **log root**: a directory holding *log folders*, loaded into a single
+event-level `df` with `folder` and `file_name` columns. Each subdirectory of the log root is one
+log folder and can hold several files; a log file sitting directly in the log root, with no
+subdirectory, is a log folder of its own -- a log root can hold both kinds at once. There are
 no labels and no `df_seq`; comparison is always target-vs-baseline, where the baseline is the other
 log folders.
 
@@ -443,10 +445,10 @@ same log folders come out different colours in the two projects. LogLead's own a
 lookalike `x` are held out of the group cycle in `COMPARISON_SYMBOLS`.
 
 **The two folder/file plots are selectable, not a pair, and the UMAP is the opt-in half** (`plots=`,
-an allowlist against `visualize.PLOTS`, defaulting to `DEFAULT_PLOTS` = `("simple",)`). The layout is
+an allowlist against `visualize.PLOTS`, defaulting to `DEFAULT_PLOTS` = `("scatter",)`). The layout is
 essentially the entire cost of `plot_folder` / `plot_file_content` — measured on hdfs_balanced_5k
 (91,638 lines, 5,000 log folders), 41s of a 42s call, against ~0.7s for the loading, aggregating,
-vectorizing and figure building put together — and the "simple" figure never uses its output: unique
+vectorizing and figure building put together — and the "scatter" figure never uses its output: unique
 terms is `(dtm > 0).sum(axis=1)` off the sparse document-term matrix and lines is a Polars
 `group_by`, 0.01s for the two. So `_document_term_matrix` and `_umap_2d` are separate (both figures
 need the first, only one needs the second), and the default call is 0.6s rather than 44s. The
@@ -498,7 +500,7 @@ discarded it and re-parsed on every step.
 
 ### MCP server (`loglead/mcp/`)
 
-Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp`; entry point
+Exposes `loglead/delta/` as 20 MCP tools. Optional install: `uv sync --extra mcp`; entry point
 `loglead-mcp` (`[project.scripts]`).
 
 - `session.py` — `Session` holds one log root's enhanced frame and grows it in place;
@@ -520,6 +522,32 @@ Exposes `loglead/delta/` as 19 MCP tools. Optional install: `uv sync --extra mcp
 - `formatting.py` — every analysis tool returns the same envelope: full table on disk, plus a preview
   sorted by the column that answers the question (`rank_sum` for anomalies) and truncated to
   `max_rows`. Tool results go into a model's context, so unbounded tables are not an option.
+
+**A truncated preview is not the end of the table** (`Session.stash_result` / `query_result`). Every
+analysis keeps the frame it previewed in the session and returns a `result_id`, so the follow-up
+question — "every log folder under 5 lines", "the row for this one", "everything past a `rank_sum` of
+100" — is a filter over an in-memory Polars frame, not another analysis run. No CSV is involved: the
+table is already a frame, and `export.py`'s files stay what they always were, the human's copy. Three
+things to keep in mind: `where` clauses are structured `[column, op, value]` triples rather than an
+expression string, because the clause arrives from a model and nothing here `eval`s what it is handed
+(same rule as `masking.get_pattern()`); results are in-memory only, so a stale `result_id` must say
+"re-run the analysis" rather than resurrect anything; and the cache is bounded **twice**
+(`MAX_RESULTS`, `MAX_RESULT_ROWS`) because one `plot_file_content` call stashes a tiny table per file
+while one `anomaly_line_content` call stashes a scored frame per file with a row per log line.
+
+**The three plot tools return no rows at all, and have no `max_rows`** (`_plot_result`) — the only
+analysis tools without one, and the only ones that do not build their envelope through
+`formatting.result`. A scatter has no top N, so any first-N of the points is one arbitrary corner of
+the picture: on hdfs_balanced_5k, sorting by `unique_terms` and taking 60 gives 60 near-identical log
+folders spanning terms 63-93, missing three of the four axis extremes *and* the target itself, which
+ranks ~4,000th of 5,000 and is the one point the plot draws as a cross. A row cap cannot fix that,
+which is what `query_result` is for. So a plot result is `n_rows` + `summary`
+(min/p10/p25/median/p75/p90/max per axis — what a caller picks a threshold from, having never seen
+the data) + `target` (the target's own row plus its percentile on each axis) + `result_id` + `plots`,
+and the points themselves are a query. Note `umap_x`/`umap_y` are columns of that stashed table like
+any other, so reading a layout is `query_result(sort_by="umap_x")` rather than a bigger result. Plot
+results carry no `artifact` either — the HTML paths are in `plots`, and the old envelope pointed
+`artifact` at a plotly file directly under a note promising the full table.
 
 **Anomaly guidance is part of the result, not just the docstrings** (`_anomaly_notes`). The observed
 failure mode is a model driving these tools reading one detector's score as a finding, and narrowing
@@ -561,7 +589,7 @@ maps its preprocessing steps. Keep those three tables in LogDelta's vocabulary a
 match ours. Without `_STEP_ARGS` the kwargs filter in `run_config` would drop those arguments
 **silently**, and tools whose target defaults to `"ALL"` would score the wrong thing without erroring.
 
-`demo/mcp_demo.py` exercises all 19 tools against a real log root without an MCP client attached
+`demo/mcp_demo.py` exercises all 20 tools against a real log root without an MCP client attached
 — the fastest way to check a change here.
 
 ### WSL Browser Integration

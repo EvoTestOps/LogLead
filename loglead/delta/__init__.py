@@ -22,12 +22,12 @@ or name a family to pin one (see :func:`log_root.available_formats`).
 Three question types across four granularities:
 
 =================  ===========================  =============================  ==========================
-Level              Distance (pair)              Anomaly (one vs many)          Visualize (set)
+Granularity        Distance (pair)              Anomaly (one vs many)          Visualize (set)
 =================  ===========================  =============================  ==========================
-L1 folder / files  ``distance_folder_filename`` ``anomaly_folder(file=True)``  ``plot_folder(file=True)``
-L2 folder / text   ``distance_folder_content``  ``anomaly_folder()``           ``plot_folder()``
-L3 file            ``distance_file_content``    ``anomaly_file_content``       ``plot_file_content``
-L4 line            ``distance_line_content``    ``anomaly_line_content``       --
+folder / files     ``distance_folder_filename`` ``anomaly_folder(file=True)``  ``plot_folder(file=True)``
+folder / text      ``distance_folder_content``  ``anomaly_folder()``           ``plot_folder()``
+file               ``distance_file_content``    ``anomaly_file_content``       ``plot_file_content``
+line               ``distance_line_content``    ``anomaly_line_content``       --
 =================  ===========================  =============================  ==========================
 
 Unlike the LogDelta originals, these functions hold no module-level state,

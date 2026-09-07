@@ -1,12 +1,12 @@
 """Pairwise distance between log folders, files, and lines.
 
-Four levels, mirroring LogDelta's config step names:
+Four functions, mirroring LogDelta's config step names:
 
-* **L1** ``distance_folder_filename`` -- log folder vs log folder over *file
+* ``distance_folder_filename`` -- log folder vs log folder over *file
   names* only. Never opens a file.
-* **L2** ``distance_folder_content``  -- log folder vs log folder over log *text*.
-* **L3** ``distance_file_content``    -- file vs same-named file, across log folders.
-* **L4** ``distance_line_content``    -- line-by-line diff of one file across log
+* ``distance_folder_content``  -- log folder vs log folder over log *text*.
+* ``distance_file_content``    -- file vs same-named file, across log folders.
+* ``distance_line_content``    -- line-by-line diff of one file across log
   folders.
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
@@ -20,7 +20,7 @@ from . import log_root, scoring
 
 
 def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
-    """L1: compare log folders by which file names they contain.
+    """Compare log folders by which file names they contain.
 
     :returns: one row per comparison log folder with set overlaps, ``jaccard distance``
         and ``overlap distance``.
@@ -60,7 +60,7 @@ def distance_folder_content(
     df, target_folder, comparison_folders="ALL", mask=True,
     content_format="Words", vectorizer="Count",
 ):
-    """L2: compare log folders by their whole log text.
+    """Compare log folders by their whole log text.
 
     :returns: ``(results_df, df)`` -- one row per comparison log folder with all four
         distances plus ``zscore_sum``/``rank_sum``, and the (possibly enhanced)
@@ -93,7 +93,7 @@ def distance_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
     content_format="Words", vectorizer="Count",
 ):
-    """L3: compare each file against the same-named file in other log folders.
+    """Compare each file against the same-named file in other log folders.
 
     Only files present in *both* log folders are compared. If ``target_files`` is
     given, the comparison is further restricted to that set.
@@ -151,7 +151,7 @@ def distance_file_content(
 def distance_line_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
 ):
-    """L4: line-by-line diff of a file between the target log folder and others.
+    """Line-by-line diff of a file between the target log folder and others.
 
     :returns: a list of ``(file_name, comparison_folder, diff_df)``. Each
         ``diff_df`` has ``line_number``, ``difference`` (``' '`` unchanged,

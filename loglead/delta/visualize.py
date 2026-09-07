@@ -4,10 +4,11 @@ Two views are produced per call:
 
 * **UMAP** -- each log folder's document-term vector reduced to 2D. Answers "which
   log folder sits apart from the cluster?".
-* **Simple** -- unique terms (or file count at L1) against line count, log-y.
-  Cruder but directly interpretable, and often enough on its own: LogDelta's
-  own walkthrough separated normal from anomalous Hadoop log folders at ~86% accuracy
-  with a single threshold on this plot.
+* **Scatter** -- unique terms (or file count, when describing folders by file
+  name) against line count, log-y. Cruder but directly interpretable, and
+  often enough on its own: LogDelta's own walkthrough separated normal from
+  anomalous Hadoop log folders at ~86% accuracy with a single threshold on
+  this plot.
 
 Unlike LogDelta these functions also return the underlying coordinates as a
 DataFrame, so a caller that cannot look at the picture can still reason about
@@ -70,18 +71,18 @@ MOVING_AVERAGE_DASHES = ["solid", "dash", "dot", "longdash", "dashdot"]
 #: The two figures :func:`plot_folder` and :func:`plot_file_content` can produce,
 #: selectable rather than welded together because their costs are nothing alike.
 #: On 5,000 HDFS log folders the UMAP layout is ~41s against ~0.7s for the whole
-#: rest of the call, and the "simple" figure does not use its output -- unique
+#: rest of the call, and the "scatter" figure does not use its output -- unique
 #: terms comes off the sparse document-term matrix and lines is a Polars
 #: ``group_by``. So a caller who wants only the directly interpretable view
 #: should not have to pay for the other one.
-PLOTS = ("umap", "simple")
+PLOTS = ("umap", "scatter")
 
 #: What you get without asking. The cheap one, because the alternative is a
 #: default that costs ~40s and can only be avoided by reading a parameter's
 #: documentation -- and because "unique terms against lines" is interpretable
 #: from the numbers alone, while UMAP coordinates mean nothing without the
 #: picture. Ask for ``PLOTS`` when you want the embedding too.
-DEFAULT_PLOTS = ("simple",)
+DEFAULT_PLOTS = ("scatter",)
 
 
 def _validate_plots(plots):
@@ -251,7 +252,7 @@ def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertempl
 def _figures(points, target_folder, file, title_subject, plots):
     """Build the requested figures from the points frame.
 
-    :returns: ``(fig_umap, fig_simple)``, either of which is ``None`` when
+    :returns: ``(fig_umap, fig_scatter)``, either of which is ``None`` when
         ``plots`` did not ask for it.
     """
     title = f"{title_subject}<br>Target log folder (cross):<br>{target_folder}"
@@ -271,8 +272,8 @@ def _figures(points, target_folder, file, title_subject, plots):
             title=title, xaxis_title="UMAP1", yaxis_title="UMAP2", legend_title_text="Group",
         )
 
-    fig_simple = None
-    if "simple" in plots:
+    fig_scatter = None
+    if "scatter" in plots:
         x_title = "Files" if file is True else "Unique terms"
         x_values = np.asarray(points["unique_terms"].to_list(), dtype=float)
         y_values = np.asarray(points["lines"].to_list(), dtype=float)
@@ -286,19 +287,19 @@ def _figures(points, target_folder, file, title_subject, plots):
         log_range = log_y.max() - log_y.min() if len(log_y) else 0.0
         y_jittered = 10 ** (log_y + np.random.normal(0, jitter * log_range, size=log_y.shape))
 
-        fig_simple = go.Figure()
+        fig_scatter = go.Figure()
         _add_group_traces(
-            fig_simple, points, target_folder, x_jittered.tolist(), y_jittered.tolist(),
+            fig_scatter, points, target_folder, x_jittered.tolist(), y_jittered.tolist(),
             hovertemplate=(
                 "Log folder: %{text}<br>" + x_title + ": %{x:,.0f}<br>Lines: %{y:,.0f}"
                 + legend_note
             ),
         )
-        fig_simple.update_layout(
+        fig_scatter.update_layout(
             title=title, xaxis_title=x_title, yaxis_title="Lines", yaxis_type="log",
             legend_title_text="Group",
         )
-    return fig_umap, fig_simple
+    return fig_umap, fig_scatter
 
 
 def plot_folder(
@@ -306,19 +307,19 @@ def plot_folder(
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
     plots=DEFAULT_PLOTS,
 ):
-    """L1/L2: plot every log folder as one point.
+    """Plot every log folder as one point.
 
-    :param file: ``True`` describes a log folder by its file names (L1, forces
-        ``content_format="File"``), ``False`` by its log text (L2).
+    :param file: ``True`` describes a log folder by its file names (forces
+        ``content_format="File"``), ``False`` by its log text.
     :param group_by_indices: underscore-separated parts of the folder name to
         colour by, e.g. ``[0, 1]``.
     :param random_seed: int makes UMAP reproducible. LogDelta accepted this
         parameter but discarded it here, so its folder-level plots moved
         between log folders.
     :param plots: which of :data:`PLOTS` to build. Defaults to
-        :data:`DEFAULT_PLOTS`, the "simple" scatter alone; add ``"umap"`` for
+        :data:`DEFAULT_PLOTS`, the "scatter" plot alone; add ``"umap"`` for
         the embedding, which is essentially the whole cost of the call.
-    :returns: ``(points_df, fig_umap, fig_simple, df)``, with a figure that was
+    :returns: ``(points_df, fig_umap, fig_scatter, df)``, with a figure that was
         not asked for as ``None``. ``points_df`` has one row per log folder:
         ``folder, group, unique_terms, lines``, plus ``umap_x, umap_y`` when the
         UMAP was built.
@@ -348,8 +349,8 @@ def plot_folder(
         "File Name Comparison Between Log Folders" if file
         else "Log Text Comparison Between Log Folders"
     )
-    fig_umap, fig_simple = _figures(points, target_folder, file, subject, plots)
-    return points, fig_umap, fig_simple, df
+    fig_umap, fig_scatter = _figures(points, target_folder, file, subject, plots)
+    return points, fig_umap, fig_scatter, df
 
 
 def plot_file_content(
@@ -357,13 +358,13 @@ def plot_file_content(
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
     plots=DEFAULT_PLOTS,
 ):
-    """L3: for each target file, plot each log folder's copy of that file as one point.
+    """For each target file, plot each log folder's copy of that file as one point.
 
     :param plots: which of :data:`PLOTS` to build, defaulting to
         :data:`DEFAULT_PLOTS`. One UMAP layout is run per file here, so adding
         ``"umap"`` costs more the more files you asked for.
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
-        ``(file_name, points_df, fig_umap, fig_simple)``, with a figure that was
+        ``(file_name, points_df, fig_umap, fig_scatter)``, with a figure that was
         not asked for as ``None``.
     """
     plots = _validate_plots(plots)
@@ -393,18 +394,18 @@ def plot_file_content(
             .get_column("lines").to_numpy()
         )
         points = _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, grouped)
-        fig_umap, fig_simple = _figures(
+        fig_umap, fig_scatter = _figures(
             points, target_folder, file_name,
             f"Textual Content Comparison Between Files: {file_name}",
             plots,
         )
-        per_file.append((file_name, points, fig_umap, fig_simple))
+        per_file.append((file_name, points, fig_umap, fig_scatter))
 
     return per_file, df
 
 
 def plot_line_scores(df, title, display_mode="markers"):
-    """Chronological plot of L4 per-line anomaly scores.
+    """Chronological plot of anomaly_line_content's per-line anomaly scores.
 
     Each detector's raw score and its two moving averages are min-max
     normalized *as a family* so they share one 0-1 axis; across families the

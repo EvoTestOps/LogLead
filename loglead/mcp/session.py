@@ -22,6 +22,7 @@ import os
 import shutil
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,19 @@ from ..enhancers import EventLogEnhancer
 #: columns a session *requires* is :data:`log_root.REQUIRED_COLUMNS`, checked at
 #: load time where the loader can still be named in the error.
 BASE_COLUMNS = ("m_message", "file_name", "orig_file_name", "folder")
+
+#: How many analysis result tables a session keeps for ``query_result``. An
+#: analysis returns a preview; the table it previewed stays here so the caller
+#: can filter it afterwards instead of being handed rows nobody chose.
+#:
+#: Two bounds because the tables differ by orders of magnitude: one
+#: ``plot_file_content`` call over a folder of files stashes a table per file,
+#: each a handful of rows, while one ``anomaly_line_content`` call stashes a
+#: scored frame per file with a row per log line and a column per detector.
+#: Counting alone would evict useful tables for the first and hold far too much
+#: for the second.
+MAX_RESULTS = 50
+MAX_RESULT_ROWS = 1_000_000
 
 
 def default_cache_dir():
@@ -81,6 +95,11 @@ class Session:
     )
     #: derived column -> source column it was computed from. See ensure_content.
     content_source: dict = dataclass_field(default_factory=dict)
+    #: result_id -> (analysis, table). See stash_result. In memory only: unlike
+    #: the frame these were computed from, results are not worth a parquet --
+    #: recomputing one takes seconds, and a stale id must fail loudly rather
+    #: than resurrect a table from a previous process.
+    results: "OrderedDict[str, tuple]" = dataclass_field(default_factory=OrderedDict)
     _dirty: bool = False
 
     # -- introspection ----------------------------------------------------- #
@@ -121,6 +140,7 @@ class Session:
             "parsers": self.parsers,
             "enhanced_columns": self.enhanced_columns,
             "output_dir": str(self.output_dir),
+            "result_ids": list(self.results),
             "created_at": self.created_at.isoformat(timespec="seconds"),
             "last_used_at": self.last_used_at.isoformat(timespec="seconds"),
         }
@@ -129,6 +149,47 @@ class Session:
 
     def touch(self):
         self.last_used_at = datetime.now(timezone.utc)
+
+    # -- result tables ----------------------------------------------------- #
+
+    def stash_result(self, analysis, df):
+        """Keep an analysis result table so ``query_result`` can filter it.
+
+        A tool result goes into a model's context, so an analysis returns a
+        preview of a few rows and the rest of the table used to be unreachable.
+        Keeping the frame here makes the follow-up question -- "every log folder
+        under 5 lines", "the row for this one" -- a query rather than a rerun.
+
+        :returns: the ``result_id`` to pass back to ``query_result``.
+        """
+        self.touch()
+        result_id = f"{analysis}-{uuid.uuid4().hex[:8]}"
+        self.results[result_id] = (analysis, df)
+        # Evict oldest-used first, but never the table just stashed -- however
+        # big it is, it is the one the caller is about to ask about.
+        while len(self.results) > 1 and (
+            len(self.results) > MAX_RESULTS
+            or sum(table.height for _, table in self.results.values()) > MAX_RESULT_ROWS
+        ):
+            self.results.popitem(last=False)
+        return result_id
+
+    def get_result(self, result_id):
+        """Look up a stashed table as ``(analysis, df)``, refreshing its place.
+
+        Reading counts as use, so the tables a caller is working through stay
+        while the ones it has moved on from age out.
+        """
+        self.touch()
+        if result_id not in self.results:
+            raise ValueError(
+                f"Unknown result_id {result_id!r} in session {self.session_id!r}. "
+                f"Result tables live only in this process, and only the {MAX_RESULTS} "
+                "most recent are kept -- re-run the analysis to get a fresh one. "
+                f"Available now: {', '.join(list(self.results)[-10:]) or 'none'}."
+            )
+        self.results.move_to_end(result_id)
+        return self.results[result_id]
 
     def ensure_content(self, mask, content_format):
         """Guarantee the column for ``content_format`` exists, and keep it.

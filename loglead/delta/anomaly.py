@@ -4,12 +4,12 @@ The shape is always the same: **comparison log folders are the training set, the
 target is the test set**. There are no labels, so only unsupervised detectors
 apply and the output is a score per object, not a verdict.
 
-Four levels, mirroring LogDelta's config step names:
+Four functions, mirroring LogDelta's config step names:
 
-* **L1** ``anomaly_folder_filename`` -- score each log folder, by its file names.
-* **L2** ``anomaly_folder_content``  -- score each log folder, by its log text.
-* **L3** ``anomaly_file_content``    -- score each file of the target log folder.
-* **L4** ``anomaly_line_content``    -- score each *line* of a target file.
+* ``anomaly_folder_filename`` -- score each log folder, by its file names.
+* ``anomaly_folder_content``  -- score each log folder, by its log text.
+* ``anomaly_file_content``    -- score each file of the target log folder.
+* ``anomaly_line_content``    -- score each *line* of a target file.
 
 Scores from the four detectors are on incomparable scales, so every result also
 carries ``zscore_sum`` and ``rank_sum``. **Run all four and sort by ``rank_sum``**:
@@ -103,10 +103,11 @@ def anomaly_folder(
     df, target_folder, comparison_folders="ALL", file=False, detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
-    """L1/L2: score whole log folders.
+    """Score whole log folders.
 
-    :param file: ``True`` describes a log folder by its *file names* (L1),
-        ``False`` by its log *text* (L2). L1 forces ``content_format="File"``.
+    :param file: ``True`` describes a log folder by its *file names* and
+        forces ``content_format="File"``; ``False`` describes it by its log
+        *text*.
     :param target_folder: exact name, ``"ALL"``, an int N, or a ``"Prefix*"``
         wildcard -- each resolved target gets its own baseline.
     :returns: ``(results_df, df)`` -- one row per scored log folder.
@@ -122,7 +123,7 @@ def anomaly_folder(
             df, field, name, comparison_folders, "folder",
             detectors, vectorizer, detector_params,
         )
-        # LogDelta forwarded no vectorizer here, so L1/L2 always used Count.
+        # LogDelta forwarded no vectorizer here, so anomaly_folder always used Count.
         frames.append(
             scored.with_columns(pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"))
         )
@@ -136,7 +137,7 @@ def anomaly_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
-    """L3: score each file of the target log folder against the same files elsewhere.
+    """Score each file of the target log folder against the same files elsewhere.
 
     :returns: ``(results_df, df)`` -- one row per (target log folder, file).
     """
@@ -178,7 +179,7 @@ def anomaly_line_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
-    """L4: score every line of a target file against the same file elsewhere.
+    """Score every line of a target file against the same file elsewhere.
 
     This is the drill-down level: each row is one real log line, so the score
     sits next to the message that earned it.

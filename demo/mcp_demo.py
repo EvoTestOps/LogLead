@@ -9,7 +9,9 @@ What it demonstrates, beyond "nothing crashes":
 * the logs are read, masked, and parsed **once**; the second open is a cache hit;
 * asking for a second parser adds only the missing column instead of redoing the
   first one;
-* every analysis returns real numbers, not just a path to a file.
+* every analysis returns real numbers, not just a path to a file;
+* a truncated preview is not the end of the table -- ``query_result`` filters the
+  rest of it from the session, without recomputing anything.
 
 Usage::
 
@@ -92,7 +94,28 @@ def show(result, keys, limit=5):
     for row in result.get("rows", [])[:limit]:
         print("   " + "  ".join(f"{k}={row.get(k)}" for k in keys if k in row))
     if result.get("truncated"):
-        print(f"   ... {result['n_rows']} rows total -> {result.get('artifact')}")
+        # query_result counts matching rows rather than table rows, and pages
+        # with offset rather than pointing at a file.
+        total = result.get("n_rows", result.get("n_rows_matched"))
+        shown = len(result.get("rows", []))
+        rest = result.get("artifact") or (
+            f"query_result(result_id={result['result_id']!r}, "
+            f"offset={result.get('offset', 0) + shown})"
+        )
+        print(f"   ... {total} rows total -> {rest}")
+
+
+def show_plot(result):
+    """Print a plot result, which carries no rows -- a scatter has no top N."""
+    for axis, stats in result["summary"].items():
+        print(f"   {axis}: min={stats['min']}  median={stats['median']}  max={stats['max']}")
+    target = result.get("target")
+    if target:
+        print(f"   target {target['folder']}: "
+              f"unique_terms={target['unique_terms']} (p{target['unique_terms_pct']}), "
+              f"lines={target['lines']} (p{target['lines_pct']})")
+    print(f"   {result['n_rows']} points -> query_result(result_id="
+          f"{result['result_id']!r})")
 
 
 def main():
@@ -299,29 +322,47 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
         print(f"     L{line['line_number']:<4} {line['m_message'][:80]}")
 
     # ------------------------------------------------------------ visualize --
-    banner("L1 plot_folder_filename -- coordinates come back, not just an HTML file")
+    banner("L1 plot_folder_filename -- the axes come back, not just an HTML file")
     res = server.plot_folder_filename("demo", target, comparison_folders=8,
                                group_by_indices=[0, 1])
-    show(res, ["folder", "unique_terms", "lines"], limit=4)
+    show_plot(res)
     print(f"   plots: {res['plots']}")
 
     banner("L2 plot_folder_content")
     res = server.plot_folder_content("demo", target, comparison_folders=8,
                                   content_format="Words")
-    show(res, ["folder", "unique_terms", "lines"], limit=4)
+    show_plot(res)
 
     # The UMAP layout is essentially the whole cost of these tools, and the
     # default view -- unique terms against lines -- does not use it, so it is
     # opt-in: the difference is ~42s against under a second on 5,000 log
     # folders. Ask for it when the numbers alone leave the answer unclear.
-    banner('L2 plot_folder_content again, plots=["umap", "simple"] -- the embedding too')
+    banner('L2 plot_folder_content again, plots=["umap", "scatter"] -- the embedding too')
     started = time.perf_counter()
     res = server.plot_folder_content("demo", target, comparison_folders=8,
                                      content_format="Words", random_seed=42,
-                                     plots=["umap", "simple"])
+                                     plots=["umap", "scatter"])
     print(f"   {time.perf_counter() - started:.2f}s, "
           f"figures written: {sorted(res['plots'])}")
-    show(res, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=4)
+    show_plot(res)
+    # The layout's coordinates are columns of the points like any other, so
+    # reading them is a query rather than a bigger result.
+    q = server.query_result("demo", res["result_id"], sort_by="umap_x", max_rows=3)
+    show(q, ["folder", "umap_x", "umap_y", "unique_terms", "lines"], limit=3)
+
+    banner("query_result -- ask the whole table, instead of reading a preview of it")
+    # Scoring every log folder produces one row each, of which a preview shows a
+    # handful. The table stays in the session, so the follow-up question is a
+    # filter rather than another analysis run.
+    res = server.anomaly_folder_content("demo", target_folder="ALL", comparison_folders="ALL",
+                                        content_format="Words", max_rows=3)
+    print(f"   {res['n_rows']} log folders scored, {len(res['rows'])} previewed"
+          f" -> result_id {res['result_id']}")
+    q = server.query_result("demo", res["result_id"],
+                            where=[["folder", "contains", "MachineDown"]],
+                            sort_by="rank_sum", max_rows=4)
+    print(f"   of those, {q['n_rows_matched']} are MachineDown log folders:")
+    show(q, ["folder", "rank_sum"], limit=4)
 
     banner("L3 plot_file_content")
     res = server.plot_file_content("demo", target, comparison_folders=8,
@@ -329,6 +370,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
                                    content_format="Words")
     for entry in res["files"]:
         print(f"   {entry['file_name']}: {entry['n_rows']} log folders plotted")
+        show_plot(entry)
 
     # ----------------------------------------------------------------- wrap --
     banner("final session state")

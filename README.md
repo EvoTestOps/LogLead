@@ -261,13 +261,19 @@ line**. Three question types across four granularities:
 | **L4** line                 | `distance_line_content`     | `anomaly_line_content`      | —                        |
 
 Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
-`set_folder_names`, `read_log_lines`, `search_log_lines`, and `run_config` for executing an existing
-LogDelta YAML.
+`set_folder_names`, `read_log_lines`, `search_log_lines`, `query_result`, and `run_config` for executing
+an existing LogDelta YAML.
 
 A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
 each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
 about, with the full tables and interactive Plotly HTML written alongside.
+
+A result is a preview of a few rows, since the whole table would not fit in an assistant's context —
+but the table stays in the session, and `query_result` filters it: every log folder under five lines,
+the ones whose name contains `MachineDown`, everything past a `rank_sum` you choose. Nothing is
+recomputed, and the plot tools lean on it hardest — a scatter has no "top N", so they return the
+range of each axis, where the target sits in it, and let you ask for the points you actually want.
 
 The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
 defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it

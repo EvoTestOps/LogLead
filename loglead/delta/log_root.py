@@ -1,10 +1,13 @@
 """Loading and slicing a log root.
 
-A *log root* is a directory whose immediate subdirectories are **log folders**
-and whose leaves are log files. A log folder is any set of logs that belong together
--- one test run, one day, one deployment, "last release" -- so the term stays
-accurate whichever of those you happen to have. Files are matched *by name
-across log folders*, which is what makes the comparison possible.
+A *log root* is a directory holding **log folders**. A log folder is any set
+of logs that belong together -- one test run, one day, one deployment, "last
+release" -- so the term stays accurate whichever of those you happen to have.
+A subdirectory of the log root is one log folder, and can hold several log
+files; a log file sitting directly in the log root, with no subdirectory, is
+a log folder of its own. A log root can hold both kinds at once. Files are
+matched *by name across log folders*, which is what makes the comparison
+possible.
 
 The three object levels are nested: **log folder -> log file -> log line**.
 
@@ -126,8 +129,10 @@ def resolve_format(format="auto"):
 def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"):
     """Load every matching log file under ``root`` into one event-level frame.
 
-    :param root: the log root. Its immediate subdirectories become log folders.
-    :param filename_pattern: glob applied within each subdirectory.
+    :param root: the log root. Each subdirectory of it becomes a log folder; a
+        log file sitting directly in ``root``, with no subdirectory, becomes a
+        log folder of its own.
+    :param filename_pattern: glob applied within each log folder.
     :param min_file_size: skip files of this size or smaller (bytes).
     :param format: how to read the files -- a name from :func:`available_formats`.
         ``"auto"`` detects per file, so a log root of JSON, syslog or CSV logs
@@ -256,8 +261,10 @@ def strip_folder_id_from_file_names(df):
     Hadoop container logs embed the application id in the file name, e.g. in log
     folder ``application_1445062781478_0011`` the file
     ``container_1445062781478_0011_01_000001.log`` becomes
-    ``container__01_000001.log``. Without this, file-level (L3) and line-level
-    (L4) analyses find zero matching files between log folders.
+    ``container__01_000001.log``. Without this, file-content and line-content
+    analyses (``distance_file_content``, ``anomaly_file_content``,
+    ``distance_line_content``, ``anomaly_line_content``) find zero matching
+    files between log folders.
 
     Ported from LogDelta's ``remove_run_name_from_file_names``.
     """
