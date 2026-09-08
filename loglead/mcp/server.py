@@ -15,6 +15,7 @@ import contextlib
 import functools
 import os
 import sys
+import time
 from typing import Optional, Sequence, Union
 
 import polars as pl
@@ -41,7 +42,10 @@ keeps its full table server-side under a result_id -- use query_result to
 filter or page through it instead of re-running the analysis. You can also
 inspect raw log files directly: search_log_lines finds lines by regex or
 substring with line numbers, and query_result filters/pages any result
-table.""")
+table.
+
+COST. These tools span milliseconds to hours. Every result reports its own
+elapsed_seconds: make one narrow call.""")
 
 #: Set by main(); tests and demos construct their own.
 STORE = SessionStore()
@@ -57,7 +61,7 @@ PlotSelector = Sequence[str]
 
 
 def tool(fn):
-    """Register a function as an MCP tool, and stop it from printing to stdout.
+    """Register a function as an MCP tool, keep stdout clean, and time it.
 
     LogLead and the libraries it uses print a lot of messages while running --
     warnings, status notes, and so on. Normally that's fine, but the stdio
@@ -65,15 +69,20 @@ def tool(fn):
     any of these extra prints would corrupt that connection. This wrapper sends
     them to stderr instead, where they're harmless.
 
-    The function itself (not the wrapper) is what gets returned, so it can
-    still be called directly and normally from other Python code, like the
-    demo script and :func:`run_config`.
+    It also puts ``elapsed_seconds`` on every result.
+
+    The wrapper is what gets returned, so direct Python callers -- the demo,
+    :func:`run_config`, the tests -- get the same behaviour an MCP client does.
     """
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        started = time.perf_counter()
         with contextlib.redirect_stdout(sys.stderr):
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
+        if isinstance(result, dict):
+            result.setdefault("elapsed_seconds", round(time.perf_counter() - started, 2))
+        return result
 
     mcp.tool()(wrapper)
     return wrapper
@@ -779,7 +788,7 @@ def anomaly_folder_filename(
     detector_params: Optional[dict] = None,
     max_rows: int = 25,
 ) -> dict:
-    """Train anomaly detection model on log file names. 
+    """Train anomaly detection model on log file names.
     Score whole log folders, by their set of file names.
 
     Args:
@@ -1179,7 +1188,7 @@ def plot_folder_filename(
             Ignored unless you asked for "umap".
         plots: Which plots to build. One HTML file is written per entry.
             "scatter" (the default): the file-names-against-lines scatter
-                described above. Under a second.
+                described above. Cheap at any size.
             "umap": a different plot of the same log folders, based on which
                 distinct file names each shares with the others, not just how
                 many. Axes are "umap_x"/"umap_y" with no units -- only relative
@@ -1256,7 +1265,7 @@ def plot_folder_content(
             asked for "umap".
         plots: Which plots to build. One HTML file is written per entry.
             "scatter" (the default): the terms-against-lines scatter described
-                above. Under a second.
+                above. Cheap at any size.
             "umap": a different plot of the same log folders, based on which
                 distinct terms each shares with the others, not just how many.
                 Axes are "umap_x"/"umap_y" with no units -- only relative
@@ -1332,7 +1341,7 @@ def plot_file_content(
             asked for "umap".
         plots: Which plots to build. One HTML file is written per entry, per file.
             "scatter" (the default): the terms-against-lines scatter described
-                above. Under a second per file.
+                above. Cheap, linear in the files named.
             "umap": a different plot of the same points, based on which
                 distinct terms each shares with the others. Axes are
                 "umap_x"/"umap_y" with no units -- only relative distance

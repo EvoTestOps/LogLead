@@ -84,6 +84,69 @@ those three straight from their `.gz`, since Polars decompresses transparently a
 left packed. Its `BY_NAME` table mirrors `create_correct_loader()`'s if/elif chain and has to stay
 in step with it — that chain is the reference answer being checked against.
 
+The MCP server has its own suite, also not chained by `tests/main.py` — it needs the `mcp` extra
+(`uv sync --extra mcp`) and two log roots that no config describes:
+```
+uv run tests/mcp/server.py                  # all of it: data checks, then hadoop, then hdfs
+uv run tests/mcp/server.py --only hadoop    # one stage; 'data' always runs first
+```
+It exercises all 20 tools in `loglead/mcp/server.py` against `~/Datasets/hadoop_renamed` (55 log
+folders, 978 files — the multi-file shape, where L3/L4 and `group_by_indices` have something to work
+on) and `~/Datasets/hdfs_balanced_5k` (5,000 single-file log folders — where the plot tools'
+summary-instead-of-rows, the degenerate L1 plot and result paging bite). Both are *derived* from public
+loghub datasets rather than downloadable, so `tests/mcp/make_test_data.py` rebuilds them from
+`~/Datasets/hadoop` and `~/Datasets/hdfs` (downloading those through `downloader/download_data.py`
+if missing) and stage 1 of the suite runs it — that is why the generator is the first thing in the
+directory, and why nothing else runs until it passes. Both are byte-identical wherever they are
+built, which is what lets the suite assert exact line counts: `hadoop_renamed` is Hadoop's own
+`abnormal_label.txt` baked into the directory names, and `hdfs_balanced_5k` is HDFS_v1 split per
+block id with 2,500 blocks per class selected by **hash order, not an RNG** — `random.sample` would
+depend on the directory order it was handed (which is how the ad-hoc script that predates this one
+produced a sample nobody could reproduce) and on CPython's sampling internals. The chosen sample is
+recorded as `EXPECTED_SAMPLE_DIGEST`/`EXPECTED_LINES` and verified on every run, so a copy holding
+some other 5,000 blocks is rebuilt rather than quietly failing a count later; change
+`SEED`/`BLOCKS_PER_CLASS` and the build prints the two new constants to paste back.
+
+`tests/mcp/benchmark.py` is the sibling that answers "how long does this take", and
+`tests/mcp/COST.md` is its committed output:
+```
+uv run tests/mcp/benchmark.py --markdown tests/mcp/COST.md
+```
+It times every tool at two or three sizes and fits `cost ≈ fixed + marginal × n` per series where
+one exists — every tool with a comparison-folder, target-folder, or target-file selector gets one,
+including `plot_folder_content`'s scatter, added after the first pass left it as the one tool with
+no fitted row. A single per-call number is not predictive: `distance_file_content` is ~10s of fixed
+aggregation plus 0.55s per file, while `anomaly_file_content` is 0.13s fixed plus 0.4s per file, and
+only the second rewards a narrower `target_files`. Nor does a fitted rate carry across log roots of
+different shape: `distance_folder_content` is ~0.29s/folder on Hadoop's 3,300-line-average folders,
+but its measured cost at `comparison_folders="ALL"` on HDFS's 18-line-average folders (~35s) is
+nowhere near what that rate predicts for 5,000 of them — use the directly-measured "ALL" number for
+a log root you have, not an extrapolation from a different one. That last point is why **the
+absolute seconds live here and in `COST.md`, and never in the MCP docstrings**: a client opens its
+own log root, of a shape neither benchmark corpus predicts, so "~21 minutes" is at best noise and at
+worst a number it trusts over its own measurement. What the `Cost:` line in each tool's docstring
+and the COST paragraph in the server `instructions` carry instead is *what a call is proportional
+to* (per target, per comparison folder, per file, fixed) plus the ratios that are properties of the
+code rather than of a corpus — the ones the measurements settled: `anomaly_*` refit four detectors
+**per target** and `target_folder` defaults to `"ALL"`, so that family is the expensive one;
+`content_format` swings cost 60–80x on identical data (`Parse-Tip` 0.18s, `Words` 2.78s, `3grams`
+11.35s at 10 comparison folders — `Words` ~15x `Parse-Tip`, `3grams` ~4x `Words`); and the UMAP was
+documented at ~41s on 5,000 log folders but measures ~8s against under 0.3s for the default scatter,
+tens of times the scatter and the one big jump in the server — while the scatter itself turned out
+to be 20–40x cheaper per comparison folder than `distance_folder_content`, since it counts terms
+rather than scoring pairs. The client closes the gap with `elapsed_seconds`, which every result
+carries: it is told the shape beforehand and measures the constant itself. Re-run the benchmark when
+the analysis code changes, and update the docstrings only where a *ratio* or a scaling shape moved.
+
+The one thing that is *not* reproducible is detector output — `train_KMeans`/`train_IsolationForest`
+take no `random_state`, and sklearn's threaded KMeans is not bit-stable regardless — so two identical
+runs differ in the third significant figure. Hence no detector score is asserted as a value: the
+labelled checks use `rank_auc` (Mann-Whitney, anomalous vs normal log folders) with margin against
+the observed spread. A count like "8 of the top 10" was tried and dropped; it moves between 7 and 10
+across runs, and on Hadoop, where 44 of 55 log folders are failures, 8 is what chance produces
+anyway. The parquet cache is kept between runs under `<datasets>/test_data/mcp_cache` because a cold
+read of the HDFS root is two minutes; `--fresh-cache` drops it.
+
 `--config` selects which dataset set runs, and each config is self-contained (its own `root_folder`,
 so the sets do not share a `test_data/` folder). The default, `tests/datasets_mid_labels.yml`, covers
 bgl/hadoop/hdfs/nezha/adfa/awsctd — the datasets small enough to load and enhance quickly. The three

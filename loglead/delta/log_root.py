@@ -359,8 +359,10 @@ def apply_folder_names(df, names, keep_original=True):
     where they came from, and because names are always derived from the original,
     calling this again replaces the previous mapping instead of stacking onto it.
 
-    :param names: ``{directory name: new name}``. Log folders missing from the
-        mapping keep their current name.
+    :param names: ``{directory name: new name}``. A log folder missing from the
+        mapping goes back to its directory name, and an empty mapping clears
+        every name -- naming is always derived from the directory name, never
+        from a name already applied.
     :param keep_original: append the directory name, giving
         ``PageRank_MachineDown_application_1445062781478_0012``. Keeps log
         folders traceable, and lets a multi-part name line up with
@@ -372,6 +374,8 @@ def apply_folder_names(df, names, keep_original=True):
     """
     names = validate_folder_names(names)
     if not names:
+        if "folder_original" in df.columns:
+            df = df.with_columns(pl.col("folder_original").alias("folder"))
         return df, {"named": 0, "unnamed": sorted(_unique_folders(df))}
 
     # Naming always starts from the original folder name, never from a name
