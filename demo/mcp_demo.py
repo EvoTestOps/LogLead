@@ -158,6 +158,55 @@ def main():
 
 
 def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="auto"):
+    # ---------------------------------------------------------------- peek --
+    banner("peek_log_root -- what is on disk, without reading any of it")
+    # The cheap call that comes before the expensive one: stat the files, sample
+    # a few hundred lines from the largest, and say what would be read. A client
+    # pointed at an unfamiliar directory starts here.
+    peeked = server.peek_log_root(log_root_path)
+    print(f" kind={peeked['kind']}  {peeked['n_folders']} log folders, "
+          f"{peeked['n_files']} files, {peeked['total_bytes'] / 1e6:.1f} MB "
+          f"in {peeked['elapsed_seconds']}s")
+    print(f" estimated {peeked['estimated_lines']:,} lines (sampled, not counted)")
+    for entry in peeked["probed"][:2]:
+        print(f"   {entry['file']}: {entry['format']} "
+              f"(matched {entry['match_rate']:.0%} of a sample)")
+        print(f"     {entry['sample'][0][:96]}")
+    for note in peeked["notes"]:
+        print(f" note: {note}")
+
+    # ------------------------------------------------------------ splitting --
+    banner("split_log_file -- turning one log file into something comparable")
+    # Every analysis here judges a log folder against the others, so a single log
+    # file cannot be analysed as it stands. Cutting it into slices gives it
+    # something to be compared against: itself, earlier and later. Demonstrated
+    # on one file copied out of the log root, so the demo needs no extra data.
+    scratch = tempfile.mkdtemp(prefix="loglead-mcp-demo-split-")
+    try:
+        biggest = max(
+            (os.path.join(sub, name)
+             for sub, _, names in os.walk(log_root_path) for name in names
+             if name.endswith(".log")),
+            key=os.path.getsize,
+        )
+        sliced = os.path.join(scratch, "slices")
+        manifest = server.split_log_file(biggest, n_slices=4, out_dir=sliced)
+        print(f" {os.path.basename(biggest)} ({manifest['total_lines']:,} lines) "
+              f"-> {manifest['n_slices']} slices in {manifest['elapsed_seconds']}s")
+        for entry in manifest["slices"]:
+            print(f"   {entry['file']}: {entry['lines']:,} lines")
+        print(f" note: {manifest['notes'][0]}")
+        # And the proof that the result is a log root: it opens as one.
+        info = server.open_log_root(path=sliced, mask=False, session_id="slices")
+        # Fewer events than lines: the splitter counts lines, while AutoLoader
+        # folds a stack trace's continuation lines into the event that printed
+        # it. Both numbers are right, and they are counting different things.
+        print(f" opened as a log root: {info['n_folders']} log folders, "
+              f"{info['n_rows']:,} events from {manifest['total_lines']:,} lines")
+        server.close_log_root("slices")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
     # ---------------------------------------------------------------- load --
     banner("open_log_root -- read, mask, and parse once")
     names = load_folder_names(folder_names_path, log_root_path)
@@ -187,7 +236,8 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     print(f" parsers={info['parsers']}  enhanced={info['enhanced_columns']}")
     print(f" cache_hit={info['cache_hit']}")
     # What detection chose, per format. The only place a wrong guess is visible.
-    print(f" format={info['format']}  detected={info['detected_formats']}")
+    print(f" format={info['format']}  detected={info['detected_formats']}"
+          f"  probed={info.get('probed_files')} file(s)")
 
     target = info["folders"][0]
     print(f" target log folder: {target}")

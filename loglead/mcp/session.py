@@ -31,6 +31,7 @@ import polars as pl
 
 from ..delta import export, log_root, masking
 from ..enhancers import EventLogEnhancer
+from ..loaders import DEFAULT_MAX_DETECT_FILES
 
 #: Columns present straight from the loader, before any enhancement. Which
 #: columns a session *requires* is :data:`log_root.REQUIRED_COLUMNS`, checked at
@@ -79,6 +80,9 @@ class Session:
     #: {detected format: n files} when "auto" chose per file. Empty on a cache
     #: hit -- nothing was read, so there was nothing to detect.
     detected_formats: dict = dataclass_field(default_factory=dict)
+    #: How many files "auto" was allowed to probe before extrapolating. Part of
+    #: the cache key, so it is kept for the recompute in set_folder_names.
+    max_detect_files: int = DEFAULT_MAX_DETECT_FILES
     #: {directory name -> meaningful name} applied to ``folder``. See set_folder_names.
     folder_names: dict = dataclass_field(default_factory=dict)
     #: Whether folder_names kept the folder name as a suffix.
@@ -263,7 +267,7 @@ class SessionStore:
 
     def _cache_key(self, root, filename_pattern, mask_pattern, file_name_normalizer,
                    min_file_size, folder_names=None, keep_original_folder_name=True,
-                   format="auto"):
+                   format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
         n_files, total_bytes, max_mtime = log_root.count_log_root_files(
             root, filename_pattern, min_file_size
         )
@@ -280,13 +284,16 @@ class SessionStore:
         # The format is the most load-bearing part of the key, because it
         # decides which loader read the files and so every column in the frame:
         # the same logs read as "raw" and as "json" agree on nothing but paths.
+        # max_detect_files is in the key for the same reason at one remove: it
+        # decides how many files "auto" looked at, and a log root where the
+        # sample missed a second format is read differently at 0 than at 50.
         # sort_keys because dict order is insertion order, and two equal
         # mappings must hash the same.
         payload = "|".join([
             str(root), filename_pattern, mask_pattern or "", file_name_normalizer,
             str(min_file_size), str(n_files), str(total_bytes), f"{max_mtime:.0f}",
             json.dumps(folder_names or {}, sort_keys=True), str(keep_original_folder_name),
-            format, self._PREPROCESSING_VERSION,
+            format, str(max_detect_files), self._PREPROCESSING_VERSION,
         ])
         digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
         return digest, n_files
@@ -297,7 +304,7 @@ class SessionStore:
              mask_pattern="myllari_extended", parsers=(), file_name_normalizer="none",
              min_file_size=0, output_dir=None, table_format="csv", session_id=None,
              refresh=False, folder_names=None, keep_original_folder_name=True,
-             format="auto"):
+             format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
         """Load a log root into a session, reusing the parquet cache when possible.
 
         :param mask: run :meth:`EventLogEnhancer.normalize` at open time.
@@ -313,6 +320,8 @@ class SessionStore:
         :param keep_original_folder_name: keep the folder name as a suffix.
         :param format: which loader reads the files -- a name from
             :func:`log_root.available_formats`. ``"auto"`` detects per file.
+        :param max_detect_files: how many files ``"auto"`` probes before
+            applying their answer to the rest; 0 probes every file.
         :returns: ``(session, info)`` where ``info`` records the cache outcome.
         """
         if table_format not in export.TABLE_FORMATS:
@@ -341,9 +350,10 @@ class SessionStore:
         parsers = [str(p).lower().replace("parse-", "") for p in (parsers or [])]
         folder_names = log_root.validate_folder_names(folder_names)
 
+        max_detect_files = max(int(max_detect_files or 0), 0)
         digest, n_files = self._cache_key(
             root, filename_pattern, effective_mask_pattern, file_name_normalizer,
-            min_file_size, folder_names, keep_original_folder_name, format,
+            min_file_size, folder_names, keep_original_folder_name, format, max_detect_files,
         )
         cache_path = self.cache_dir / f"{root.name}-{digest}.parquet"
 
@@ -357,7 +367,8 @@ class SessionStore:
             if sidecar.exists():
                 content_source = json.loads(sidecar.read_text())
         else:
-            df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format)
+            df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format,
+                                                   max_detect_files)
             if mask:
                 df = EventLogEnhancer(df).normalize(
                     regexs=masking.get_pattern(mask_pattern)
@@ -380,6 +391,7 @@ class SessionStore:
             cache_path=cache_path,
             format=format,
             detected_formats=read_info.get("detected_formats", {}),
+            max_detect_files=max_detect_files,
             folder_names=folder_names,
             keep_original_folder_name=keep_original_folder_name,
             min_file_size=min_file_size,
@@ -397,6 +409,8 @@ class SessionStore:
             "cache_hit": cache_hit,
             "cache_path": str(cache_path),
             "n_files_on_disk": n_files,
+            # Only meaningful when files were actually read: a cache hit detected nothing.
+            "probed_files": read_info.get("probed_files"),
             "dropped_rows": read_info.get("dropped_rows", 0),
             "elapsed_seconds": round(time.time() - started, 2),
         }
@@ -420,7 +434,7 @@ class SessionStore:
             digest, _ = self._cache_key(
                 session.root, session.filename_pattern, session.mask_pattern,
                 session.file_name_normalizer, session.min_file_size, folder_names,
-                keep_original, session.format,
+                keep_original, session.format, session.max_detect_files,
             )
             session.cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
 

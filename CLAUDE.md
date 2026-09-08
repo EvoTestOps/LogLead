@@ -87,10 +87,24 @@ in step with it — that chain is the reference answer being checked against.
 The MCP server has its own suite, also not chained by `tests/main.py` — it needs the `mcp` extra
 (`uv sync --extra mcp`) and two log roots that no config describes:
 ```
-uv run tests/mcp/server.py                  # all of it: data checks, then hadoop, then hdfs
+uv run tests/mcp/server.py                  # the default set: data, hadoop, hdfs, split, detect
 uv run tests/mcp/server.py --only hadoop    # one stage; 'data' always runs first
+uv run tests/mcp/server.py --only bgl       # opt-in: needs the 743 MB loghub BGL download
 ```
-It exercises all 20 tools in `loglead/mcp/server.py` against `~/Datasets/hadoop_renamed` (55 log
+Three stages sit outside that pair of log roots. `split` needs no corpus at all — it builds a
+synthetic 1,000-line log, splits it both ways, and checks the slices rejoin into the original file
+byte for byte, which is a property of the splitter rather than of any dataset; it runs by default
+because a check that only runs when someone has the right download is a check that mostly does not
+run. `detect` is synthetic for a second reason on top of that one: it builds a log root of 120
+log4j log folders and 3 NDJSON ones, and both built corpora are single-format, so neither can show
+what `AutoLoader`'s format sampling does when the sample meets a file that disagrees — the frame
+must come out the same at `max_detect_files=50` and at `0`, and it is the mixed case that decides
+whether the sampled default is safe. `bgl` is the real single-file case — `~/Datasets/bgl/BGL.log`, 743 MB and 4,747,963 lines —
+and is **not** in the default set because it needs that download and writes a second copy of it.
+Its numbers are exact for the same reason Hadoop's are: BGL is a plain loghub download, so the line
+count is a property of the dataset.
+
+It exercises all 22 tools in `loglead/mcp/server.py` against `~/Datasets/hadoop_renamed` (55 log
 folders, 978 files — the multi-file shape, where L3/L4 and `group_by_indices` have something to work
 on) and `~/Datasets/hdfs_balanced_5k` (5,000 single-file log folders — where the plot tools'
 summary-instead-of-rows, the degenerate L1 plot and result paging bite). Both are *derived* from public
@@ -111,7 +125,21 @@ some other 5,000 blocks is rebuilt rather than quietly failing a count later; ch
 `tests/mcp/COST.md` is its committed output:
 ```
 uv run tests/mcp/benchmark.py --markdown tests/mcp/COST.md
+uv run tests/mcp/benchmark.py --only bgl     # the third shape; needs ~/Datasets/bgl/BGL.log
 ```
+A third log root was added to it: **bgl**, `BGL.log` split into ten slices — 10 log folders of
+~471,000 lines each, against Hadoop's ~3,300 and HDFS's ~18. It is not a midpoint of the other two;
+it is the only one that stresses the amount of text *inside* a log folder, and the only one where a
+call **fails** rather than merely taking a long time. `anomaly_folder_content(target_folder="ALL")`
+peaks at 14.6 GB and `3grams` at 11.6 GB: each completes in a fresh process and each is an
+out-of-memory kill on a 16 GB machine once anything else has run, which is how both were found —
+by killing the benchmark. Three consequences are baked into `bench_bgl` and must stay: the anomaly
+row is measured at **one** size rather than swept (a sweep to four targets was killed three times),
+the cached open is measured by **close-and-reopen** rather than by holding a second session beside
+the first (which would be two 3 GB frames at once), and `3grams` is left out of the format sweep
+with its isolated numbers recorded in prose instead. `close_log_root` does not give the memory
+back — a cold open, close, `gc.collect()` and reopen still leaves 6.6 GB resident against 2.9 GB
+for a single fresh open.
 It times every tool at two or three sizes and fits `cost ≈ fixed + marginal × n` per series where
 one exists — every tool with a comparison-folder, target-folder, or target-file selector gets one,
 including `plot_folder_content`'s scatter, added after the first pass left it as the one tool with
@@ -324,6 +352,21 @@ unit from the format string and a `%3f` pattern otherwise yields a frame that si
 `pl.concat` with every other loader's output. When every file in a tree agrees it delegates the
 whole tree to one loader; only a genuinely mixed folder pays for one loader per file, stacked with
 `diagonal_relaxed`.
+**The per-file probe runs on a sample of the files, not on all of them** (`max_detect_files`, 50 by
+default; 0 means every file). It is a read per file, ~20ms, which is the entire cost of opening a
+large log root — 13.4s of Hadoop's 978 files, 102s of hdfs_balanced_5k's 5,000 — and a log root
+split one file per unit is routinely bigger than either; sampled, those are 1.9s and 2.7s for the
+same frame. Two things make it safe enough to be the default. The sample is spread across the
+distinct **file-name shapes** (`name_shape()`: the name with its digits collapsed, so 978
+`container_…_01_000001.log` files are one shape), because a file in another format is nearly always
+named differently, and 50 probes of one shape say nothing about the `stderr.json` beside them. And a
+sample that disagrees with itself is *not* extrapolated from — a mixed tree needs a decision per
+file anyway, so the rest are probed then; the sample only ever short-circuits the unanimous case.
+What remains uncovered is a file that shares its siblings' name shape and not their format, which is
+why the peek result, the `open_log_root` result and the docstrings all name `max_detect_files=0`.
+`detections()` keeps one row per file but fills the evidence columns only for the probed ones
+(`probed` says which) — a match rate for a file nobody read would be evidence invented after the
+fact.
 
 The newer ones are **spec-driven**: one class per *format family*, configured by a YAML spec rather
 than subclassed per dataset — a format then costs a `.yml` file rather than a Python class, which is
@@ -492,8 +535,59 @@ Three question types × four granularities, one function per cell:
 | **L3** file | `distance_file_content` | `anomaly_file_content` | `plot_file_content` |
 | **L4** line | `distance_line_content` | `anomaly_line_content` | — |
 
-Supporting modules: `log_root.py` (loading, and resolving the `"ALL"`/list/int/`"Prefix*"` selectors for
-log folders and files), `masking.py` (named regex sets — **only ever resolve these by name via `get_pattern()`,
+**A single log file is not a log root, and `split.py` is what turns it into one.** Everything here
+judges a log folder against the others, so one file — `BGL.log`, 743 MB of 4,747,963 lines — has
+nothing to be compared with. `split_log_file` cuts it into slices written **flat**, one file per
+slice (`BGL_slice_000.log`, …), because a log file sitting directly in a log root is already a log
+folder of its own: the output directory *is* a log root and `read_log_root` needs no help with it.
+That is `hdfs_balanced_5k`'s shape, and it is a deliberate one rather than a compromise. **A flat log
+root is right whenever the log file *is* the unit of comparison** — an HDFS block, a slice of one
+long log — and wrapping each file in a directory of its own would add a level that carries no
+information. LogDelta has no such shape; it always compares directories of files, and flat is
+LogLead's own extension for data that is naturally one-file-per-unit.
+
+What follows from it is that **L2 is the level**, not that L3/L4 are broken. When a log folder holds
+one file, "which file inside this unit is odd" is not a question, and all four L3/L4 tools — which
+match a file with its namesake in the other log folders — correctly find nothing. L1 likewise has a
+single-valued axis, which `plot_folder_filename` already warns about. `split_log_file`'s own result
+says which tools to use, since the alternative is a client running four that return nothing.
+
+Two things about `split.py` worth knowing before editing it. It is the second module in this
+package that writes files (`export.py` is the other), which cannot be helped for something whose
+job is producing them — it keeps the other two halves of the invariant, no module state and no
+`os.chdir`. And **neither mode reads the file into memory**: both stream it through an 8 MB buffer,
+so the cost is bytes moved and a 70 GB log costs no more memory than a 700 MB one. `by="lines"`
+(the default) counts the lines in one pass and writes in a second, giving every slice the same
+number of *events*, which is what makes slices comparable; `by="bytes"` is the single pass
+`split -n l/K` makes, and on BGL that leaves a 306k–390k line spread across ten slices. Measured on
+the full BGL: 2.6s to split by lines, against 0.74s for GNU `split` doing the byte version — which
+is why nothing here shells out to `split`. It would buy nothing and cost the portability.
+
+**`peek_log_root()` is the cheap call that comes before the expensive one.** `read_log_root` reads
+and parses everything; peek stats the files and reads a few hundred lines from a handful of them,
+reporting the counts, sizes, `detect_format()`'s answer per probed file, real sample lines, and
+`notes` saying what to do next — including "this is one file, split it first". It is also the
+survey: pointed at a directory of datasets it lists each child. **What the files are called is part
+of the answer** (`file_names`, `n_distinct_file_names`): the files are grouped by `name_shape()`,
+the same grouping `AutoLoader`'s format sampling spreads itself across, and the count of shapes is
+what says whether one detected format can speak for the whole log root — one shape (Hadoop's 978
+container logs) and it can; 274 of them (`~/Datasets` read as one root) and the 50-file sample
+cannot reach them all, which is what the note then says. The files probed follow the same grouping:
+the largest file of each shape first, then the largest files left over, so a log root of 900
+container logs and one `stderr.json` probes the odd one rather than a fifth container log. Two other
+details are load-bearing. It
+walks **once**, attributing every file to its top-level log folder as it goes; an early version
+walked again per child and took 17s on `~/Datasets`, against 0.47s now. And that walk is **bounded**
+(`_PEEK_FILE_BUDGET`, 20,000 files), because `~/Datasets` holds 765,416 of them and an accurate
+count costs one `stat` each — past the budget it stops, sets `truncated`, and marks the children it
+never reached `status="not_counted"` rather than leaving them showing zero files, which is
+indistinguishable from empty. `estimated_lines` is sampled from 8 seek points of 125 lines, not
+counted: measured +1.3% against BGL's true count, where reading the head alone is +5.8%, since a
+log's opening lines are not representative of it — the same fact `AutoLoader`'s `_MID_CHUNK_BYTES`
+exists for.
+
+Supporting modules: `log_root.py` (loading, peeking, and resolving the `"ALL"`/list/int/`"Prefix*"`
+selectors for log folders and files), `split.py` (cutting one file into a log root), `masking.py` (named regex sets — **only ever resolve these by name via `get_pattern()`,
 because `EventLogEnhancer.normalize()` `eval()`s what it is handed**), `scoring.py` (`zscore_sum` and
 `rank_sum` over the four measures; prefer `rank_sum`, the raw detector scales differ by orders of
 magnitude), `export.py` (the only thing that writes files).
@@ -561,24 +655,47 @@ and never write files — they return DataFrames. Functions that may add an `e_*
 `(results, df)` so the caller can keep the enhanced frame. Keeping it is the whole point; LogDelta
 discarded it and re-parsed on every step.
 
+**`anomaly_file_content`: LogLead's baseline differs from LogDelta's, and the difference is not
+settled.** Both group the baseline by `file_name`. LogDelta builds it *outside* the per-file loop
+(`df_other_runs_files = _aggregate_dataframe(df_other_runs, 'file_name', field)`), so the training
+set is one document per distinct file name, each merging every comparison run's copy — 47 documents
+on `hadoop_renamed`. LogLead currently filters that by the file being scored and groups by `folder`,
+so the training set is one document per comparison log folder holding that file — 53 documents for
+`container__01_000001.log` on the same log root. Both are "matched by name" in the sense that the
+grouping key is the file name; they differ in whether the *other* file names are in the training
+set too. LogLead's variant also skips a file no comparison log folder has, which is what
+`tests/mcp/server.py` asserts. **Do not change this without asking** — it is a semantic choice about
+what a file is judged against, not a defect to be tidied up in either direction.
+
 ### MCP server (`loglead/mcp/`)
 
-Exposes `loglead/delta/` as 20 MCP tools. Optional install: `uv sync --extra mcp`; entry point
+Exposes `loglead/delta/` as 22 MCP tools. Optional install: `uv sync --extra mcp`; entry point
 `loglead-mcp` (`[project.scripts]`).
 
 - `session.py` — `Session` holds one log root's enhanced frame and grows it in place;
   `Session.ensure_content()` adds only the missing column and keeps it. `SessionStore` mirrors each
   frame to a parquet cache keyed on the on-disk fingerprint (file count, total bytes, max mtime) plus
-  the preprocessing options (`format`, mask pattern, `file_name_normalizer`,
+  the preprocessing options (`format`, `max_detect_files`, mask pattern, `file_name_normalizer`,
   `folder_names`/`keep_original`) and a `_PREPROCESSING_VERSION`, so a restart
   re-attaches in ~0.2s instead of re-reading. Bump that version whenever a change inside LogLead
   makes the same inputs produce a different frame — nothing else in the key would notice. Anything that rewrites the frame **must** be in that
   key — a cache hit skips preprocessing entirely and would otherwise serve a wrongly-shaped frame.
   `format` is the heaviest entry: it decides which loader ran and therefore every column, so the same
-  logs read as `raw` and as `json` share nothing but their paths.
+  logs read as `raw` and as `json` share nothing but their paths. `max_detect_files` is in the key
+  for the same reason at one remove — it decides how many files `"auto"` looked at, and a log root
+  whose sample missed a second format is read differently at 0 than at 50.
   This module has no `mcp` dependency and is usable on its own — that is how
   `demo/mcp_demo.py` runs.
-- `server.py` — one tool per analysis, named exactly like the LogDelta config keys. The local `@tool`
+- `server.py` — one tool per analysis, named exactly like the LogDelta config keys. The two
+  non-analysis tools are `peek_log_root` (what is on disk, without loading it) and `split_log_file`,
+  which wraps `delta/split.py`. `split_log_file` is the only tool that chooses a path for the caller:
+  with no `out_dir` it writes under `STORE.cache_dir/splits/<stem>-<digest>`, the digest taken over
+  the source file's fingerprint and the split parameters, so asking for the same split twice reuses
+  the slices instead of writing a second copy of a 743 MB log. That default lives in `server.py` and
+  not in `delta/split.py` — `delta` must not import `mcp`, so the library function requires an
+  explicit `out_dir`. The manifest is written beside the slices as `split_manifest.json` so a reused
+  split reports what a fresh one does, line counts included, without reading them back; its
+  `elapsed_seconds` is dropped on reuse, since that number is how long the *original* split took. The local `@tool`
   decorator wraps each in `redirect_stdout(sys.stderr)`: LogLead prints freely and stdout carries
   JSON-RPC under the stdio transport. Imports `MCPServer` (SDK 2.x) with a fallback to `FastMCP`
   (SDK 1.x).
@@ -652,7 +769,7 @@ maps its preprocessing steps. Keep those three tables in LogDelta's vocabulary a
 match ours. Without `_STEP_ARGS` the kwargs filter in `run_config` would drop those arguments
 **silently**, and tools whose target defaults to `"ALL"` would score the wrong thing without erroring.
 
-`demo/mcp_demo.py` exercises all 20 tools against a real log root without an MCP client attached
+`demo/mcp_demo.py` exercises all 22 tools against a real log root without an MCP client attached
 — the fastest way to check a change here.
 
 ### WSL Browser Integration

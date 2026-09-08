@@ -8,7 +8,7 @@ the exit code is non-zero if anything failed.
 Run it with::
 
     uv run tests/mcp/server.py                     # everything
-    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs
+    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect
     uv run tests/mcp/server.py --regenerate        # rebuild the log roots first
     uv run tests/mcp/server.py --keep-artifacts    # keep the tables and plots written
 
@@ -46,6 +46,7 @@ asserted.
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -60,7 +61,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy  # noqa: E402
 import polars as pl  # noqa: E402
 import make_test_data  # noqa: E402  (sits next to this file)
-from loglead.delta import visualize  # noqa: E402
+from loglead import loaders  # noqa: E402
+from loglead.delta import log_root, split, visualize  # noqa: E402
 
 try:  # the MCP server is an optional extra, and its absence is not a test failure
     from loglead.mcp import server  # noqa: E402
@@ -96,6 +98,11 @@ HDFS_FORMAT = "text/%y%m%d %H%M%S"
 HDFS_FOLDERS = 2 * make_test_data.BLOCKS_PER_CLASS
 HDFS_ROWS = make_test_data.EXPECTED_LINES
 
+#: BGL is one 743 MB file of 4,747,963 lines -- the shape split_log_file exists
+#: for. Unlike the two derived log roots it is a plain loghub download, so this
+#: count is a property of the dataset rather than of a generator.
+BGL_LINES = 4747963
+
 #: The tools an MCP client should see. A function here that lost its @tool
 #: decorator still works from Python and simply disappears from every client,
 #: which is the one failure nothing else in this file would notice.
@@ -106,6 +113,7 @@ TOOLS = (
     "distance_line_content", "anomaly_folder_filename", "anomaly_folder_content",
     "anomaly_file_content", "anomaly_line_content", "plot_folder_filename",
     "plot_folder_content", "plot_file_content", "run_config",
+    "peek_log_root", "split_log_file",
 )
 
 
@@ -310,6 +318,21 @@ def stage_hadoop_open(check, log_root, session_id):
     """open_log_root, its cache, and the arguments it refuses."""
     check.section("2. open_log_root (hadoop_renamed)")
 
+    # The cheap call that comes before the expensive one. What a client reads off
+    # it here is that 978 files share one name shape, which is what makes reading
+    # them all as one format a safe default.
+    peeked = timed("peek_log_root", server.peek_log_root, str(log_root))
+    check.eq("peek counts the files without reading them",
+             (peeked["n_files"], peeked["n_folders"]), (HADOOP_FILES_ON_DISK, HADOOP_FOLDERS))
+    check.eq("...and finds one file-name shape behind all of them",
+             [(entry["name_shape"], entry["n_files"]) for entry in peeked["file_names"]],
+             [("container_#_#_#_#.log", HADOOP_FILES_ON_DISK)])
+    check.eq("...though every file is named differently",
+             peeked["n_distinct_file_names"], HADOOP_FILES_ON_DISK)
+    check.ok("...so it says one sample can speak for the log root",
+             any("named like" in note for note in peeked["notes"]),
+             str(peeked["notes"])[:160])
+
     # refresh=True forces the read even if a cache is lying around, so the cold
     # path is exercised on every run and the cache check below means something.
     info = timed("cold read", server.open_log_root,
@@ -325,6 +348,13 @@ def stage_hadoop_open(check, log_root, session_id):
     check.eq("dropped_rows", info["dropped_rows"], 0)
     check.eq("AutoLoader detected log4j text",
              info["detected_formats"], {HADOOP_FORMAT: HADOOP_FILES_ON_DISK})
+    # 978 files agreeing is what the count above says; 50 of them being looked at
+    # is what made the call seconds rather than twenty of them.
+    check.eq("...from a sample of the files, not all of them",
+             info["probed_files"], loaders.DEFAULT_MAX_DETECT_FILES)
+    check.ok("...and says which of the two it did",
+             any("detected from 50 of the 978" in note for note in info.get("notes", [])),
+             str(info.get("notes"))[:160])
     check.eq("parsers ran at open time", info["parsers"], ["tip"])
     check.ok("masking produced e_message_normalized",
              "e_message_normalized" in info["enhanced_columns"],
@@ -650,6 +680,35 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     check.eq("one row per scored file", l3["n_rows"], 3)
     check.ok("each row names its file", all("file_name" in row for row in l3["rows"]))
     worst_file = l3["rows"][0]["file_name"]
+
+    # anomaly_file_content compares a file with its namesake in the other log
+    # folders -- security.log against the other runs' security.log -- which is
+    # the comparison the whole level exists to make. The ported original built
+    # its baseline outside the per-file loop and so never filtered it by name,
+    # scoring each file against the other *kinds* of file instead. That is
+    # invisible in the output (it still returns a row per file with plausible
+    # scores) and shows up only as this: a file no comparison log folder has
+    # must be skipped, not scored against whatever else is lying around.
+    unmatched = "no_other_folder_has_this_file.log"
+    session = server.STORE.get(session_id)
+    server.STORE._sessions[session_id].df = session.df.with_columns(
+        pl.when((pl.col("folder") == target) & (pl.col("file_name") == worst_file))
+        .then(pl.lit(unmatched)).otherwise(pl.col("file_name")).alias("file_name")
+    )
+    try:
+        renamed = server.anomaly_file_content(
+            session_id, target, comparison_folders="ALL", target_files=[unmatched],
+            content_format="Words")
+        check.eq("a file no other log folder has is skipped, not scored",
+                 renamed["n_rows"], 0)
+    finally:
+        server.STORE._sessions[session_id].df = session.df.with_columns(
+            pl.when((pl.col("folder") == target) & (pl.col("file_name") == unmatched))
+            .then(pl.lit(worst_file)).otherwise(pl.col("file_name")).alias("file_name")
+        )
+    check.eq("...and the log root is back as it was",
+             server.STORE.get(session_id).df.filter(
+                 pl.col("file_name") == unmatched).height, 0)
 
     l4 = timed("anomaly_line_content", server.anomaly_line_content,
                session_id, target, comparison_folders="ALL", target_files=[worst_file],
@@ -987,6 +1046,22 @@ def stage_hdfs(check, log_root, session_id):
     if not info["cache_hit"]:
         check.eq("AutoLoader detected HDFS's timestamp format",
                  info["detected_formats"], {HDFS_FORMAT: HDFS_FOLDERS})
+        check.eq("...from a sample, which is what keeps 5,000 files off two minutes",
+                 info["probed_files"], loaders.DEFAULT_MAX_DETECT_FILES)
+
+    # Four name shapes here rather than Hadoop's one -- the sign of the block id
+    # is part of the name -- and the sample is spread over all four.
+    peeked = timed("peek_log_root", server.peek_log_root, str(log_root))
+    check.eq("peek counts 5,000 files without reading them", peeked["n_files"], HDFS_FOLDERS)
+    check.eq("...in four name shapes, one per label and sign",
+             sorted(entry["name_shape"] for entry in peeked["file_names"]),
+             ["Anomaly_blk_#.log", "Anomaly_blk_-#.log",
+              "Normal_blk_#.log", "Normal_blk_-#.log"])
+    check.eq("...covering every file between them",
+             sum(entry["n_files"] for entry in peeked["file_names"]), HDFS_FOLDERS)
+    check.ok("...and the sample reaches all four",
+             any("all 4 file-name shapes" in note for note in peeked["notes"]),
+             str(peeked["notes"])[:160])
 
     folders = server.STORE.get(session_id).folders
     anomalies = [name for name in folders if name.startswith("Anomaly_")]
@@ -1079,8 +1154,295 @@ def stage_hdfs(check, log_root, session_id):
 
 
 # --------------------------------------------------------------------------- #
+# Stage 13 -- splitting a single log file, on a log that fits in this file
+# --------------------------------------------------------------------------- #
 
-STAGES = ("data", "hadoop", "hdfs")
+def stage_split(check, workdir):
+    """Cutting one file into slices, checked on a synthetic log.
+
+    Needs no dataset, which is the point: the invariant being checked -- that the
+    slices are the source file and nothing else -- is a property of the splitter,
+    not of any corpus, and a check that only runs when ~/Datasets/bgl exists is a
+    check that mostly does not run.
+    """
+    check.section("13. split_log_file (synthetic)")
+
+    source = os.path.join(workdir, "synthetic.log")
+    # Deliberately uneven line lengths: equal-byte and equal-line splitting only
+    # differ on a file whose lines vary, and a fixed-width one would hide it.
+    lines = [f"2024-01-01 00:00:{index % 60:02d} event {index} {'x' * (index % 40)}"
+             for index in range(1000)]
+    with open(source, "w") as handle:
+        handle.write("\n".join(lines) + "\n")
+    original = open(source, "rb").read()
+
+    for mode in ("lines", "bytes"):
+        out = os.path.join(workdir, f"split-{mode}")
+        manifest = split.split_log_file(source, out, n_slices=10, by=mode)
+        counts = [entry["lines"] for entry in manifest["slices"]]
+
+        check.eq(f"{mode}: ten slices", manifest["n_slices"], 10)
+        check.eq(f"{mode}: every line accounted for", manifest["total_lines"], len(lines))
+        check.eq(f"{mode}: named after the source",
+                 manifest["slices"][0]["file"], "synthetic_slice_000.log")
+        # The one thing that must never fail: the slices are the file, in order,
+        # byte for byte. Anything else is a splitter that drops or duplicates log
+        # lines, which no later analysis could detect.
+        rejoined = b"".join(
+            open(os.path.join(out, entry["file"]), "rb").read()
+            for entry in manifest["slices"]
+        )
+        check.ok(f"{mode}: the slices rejoin into the original file",
+                 rejoined == original,
+                 "" if rejoined == original else f"{len(rejoined)} vs {len(original)} bytes")
+        check.info(f"{mode}: lines per slice {min(counts)}-{max(counts)}")
+
+        if mode == "lines":
+            check.eq("lines: every slice holds the same count", max(counts) - min(counts), 0)
+        else:
+            # Equal bytes on uneven lines cannot also be equal lines; if it ever
+            # were, the two modes would be the same code and one should go.
+            check.ok("bytes: slices differ in line count, as equal bytes implies",
+                     max(counts) > min(counts), f"{min(counts)}-{max(counts)}")
+
+    # A split root is a log root: this is the whole reason for the flat layout.
+    out = os.path.join(workdir, "split-lines")
+    df, info = log_root.read_log_root(out)
+    check.eq("a split directory reads back as a log root of 10 log folders",
+             info["n_folders"], 10)
+    check.eq("...and gives back every line", info["n_rows"], len(lines))
+    check.eq("...with the log folder named after the slice file",
+             sorted(df["folder"].unique())[0], "synthetic_slice_000.log")
+
+    check.raises("one slice is refused, having nothing to compare against",
+                 ValueError, split.split_log_file, source,
+                 os.path.join(workdir, "split-1"), n_slices=1)
+    check.raises("a non-empty output directory is refused without overwrite",
+                 FileExistsError, split.split_log_file, source, out, n_slices=10)
+    check.raises("a directory is refused: it is already a log root",
+                 FileNotFoundError, split.split_log_file, workdir,
+                 os.path.join(workdir, "split-dir"), n_slices=10)
+
+    # peek on the same two shapes, which is what a client meets first.
+    peeked = server.peek_log_root(source)
+    check.eq("peek calls a single file a file", peeked["kind"], "file")
+    check.ok("...and says it must be split before it can be compared",
+             any("split" in note.lower() for note in peeked["notes"]),
+             str(peeked["notes"])[:100])
+    check.eq("peek reads the first lines of it",
+             peeked["probed"][0]["sample"][0], lines[0])
+
+    peeked = server.peek_log_root(out)
+    check.eq("peek calls a split directory a log root", peeked["kind"], "log_root")
+    check.eq("...with a log folder per slice", peeked["n_folders"], 10)
+    check.ok("...and nothing to warn about", not peeked["notes"], str(peeked["notes"])[:100])
+
+    empty = os.path.join(workdir, "empty-peek")
+    os.makedirs(os.path.join(empty, "child"), exist_ok=True)
+    peeked = server.peek_log_root(empty)
+    check.eq("a directory of directories with no logs is a 'parent'",
+             peeked["kind"], "parent")
+
+
+# --------------------------------------------------------------------------- #
+# Stage 15 -- format detection sampling, on a synthetic log root
+# --------------------------------------------------------------------------- #
+
+def stage_detect(check, workdir):
+    """Detecting the format from a sample of the files rather than all of them.
+
+    Synthetic and in the default set for the same reason as the split stage: what
+    is checked -- that reading a log root gives the same frame whether 50 files
+    were probed or every one of them -- is a property of AutoLoader, not of any
+    corpus, and the two built log roots are both single-format, so neither can
+    show what happens when the sample meets a file that disagrees.
+    """
+    check.section("15. format detection sampling (synthetic)")
+
+    # 120 log folders of log4j text, plus 3 of NDJSON. The odd ones are named
+    # differently, which is the case the sampling leans on: files of different
+    # formats are nearly always named differently too.
+    root = os.path.join(workdir, "mixed-root")
+    for index in range(120):
+        folder = os.path.join(root, f"folder_{index:03d}")
+        os.makedirs(folder)
+        with open(os.path.join(folder, f"app_{index:03d}.log"), "w") as handle:
+            for line in range(20):
+                handle.write(f"2024-03-0{line % 9 + 1} 10:11:12,345 INFO task {line} started\n")
+    for index in range(3):
+        folder = os.path.join(root, f"json_{index}")
+        os.makedirs(folder)
+        with open(os.path.join(folder, f"events_{index}.log"), "w") as handle:
+            for line in range(20):
+                handle.write(json.dumps({"timestamp": f"2024-03-01T10:11:{line:02d}",
+                                         "message": f"event {line}", "level": "INFO"}) + "\n")
+
+    # The sampler on its own: a budget is a cap, and every name shape is covered
+    # before any shape is covered twice.
+    paths = ([f"/root/f{i}/app_{i:03d}.log" for i in range(120)]
+             + [f"/root/json_{i}/events_{i}.log" for i in range(3)])
+    picked = loaders.sample_paths(paths, 50)
+    check.eq("the sample honours its budget", len(picked), 50)
+    check.eq("...and covers every file-name shape",
+             sorted({loaders.name_shape(p) for p in picked}),
+             ["app_#.log", "events_#.log"])
+    check.eq("a budget of 0 means every file", loaders.sample_paths(paths, 0), paths)
+    check.eq("so does a budget bigger than the log root",
+             loaders.sample_paths(paths, 500), paths)
+
+    peeked = server.peek_log_root(root)
+    check.eq("peek groups the files by name shape",
+             [(entry["name_shape"], entry["n_files"]) for entry in peeked["file_names"]],
+             [("app_#.log", 120), ("events_#.log", 3)])
+    check.eq("...and counts the distinct names too", peeked["n_distinct_file_names"], 123)
+    check.eq("...and probes each shape rather than the largest files only",
+             sorted({entry["name_shape"] for entry in peeked["probed"]}),
+             ["app_#.log", "events_#.log"])
+    check.ok("...so it reports both formats",
+             {entry["format"] for entry in peeked["probed"]} ==
+             {"json/ndjson", "text/%Y-%m-%d %H:%M:%S,%3f"},
+             str({entry["format"] for entry in peeked["probed"]}))
+    check.ok("...and says the sample will cover every shape",
+             any("all 2 file-name shapes" in note for note in peeked["notes"]),
+             str(peeked["notes"])[:160])
+
+    # The claim the default rests on: a sample that disagrees is not extrapolated
+    # from. It probes the rest instead, so a mixed log root reads identically.
+    sampled, sampled_info = log_root.read_log_root(root, max_detect_files=50)
+    every, every_info = log_root.read_log_root(root, max_detect_files=0)
+    check.eq("a disagreeing sample falls back to probing every file",
+             sampled_info["probed_files"], 123)
+    check.eq("sampling reads the same rows as probing every file",
+             sampled.height, every.height)
+    check.eq("...and reads them as the same formats",
+             sampled_info["detected_formats"], every_info["detected_formats"])
+    check.eq("...which is one loader per format, not one per file",
+             sorted(sampled_info["detected_formats"].items()),
+             [("json/ndjson", 3), ("text/%Y-%m-%d %H:%M:%S,%3f", 120)])
+
+    # Same again with the odd files removed: now the sample agrees and speaks for
+    # the other 70, which is the whole point of the default.
+    shutil.rmtree(os.path.join(root, "json_0"))
+    shutil.rmtree(os.path.join(root, "json_1"))
+    shutil.rmtree(os.path.join(root, "json_2"))
+    sampled, sampled_info = log_root.read_log_root(root, max_detect_files=50)
+    every, every_info = log_root.read_log_root(root, max_detect_files=0)
+    check.eq("a unanimous sample is not extended into a full probe",
+             sampled_info["probed_files"], 50)
+    check.eq("...but the format is reported for every file it was applied to",
+             sampled_info["detected_formats"], {"text/%Y-%m-%d %H:%M:%S,%3f": 120})
+    check.eq("...and the frame is the one a full probe produces",
+             (sampled.height, sampled_info["detected_formats"]),
+             (every.height, every_info["detected_formats"]))
+
+    # detections() must not invent evidence for a file nobody looked at.
+    loader = loaders.AutoLoader(root, filename_pattern="*.log", max_detect_files=50)
+    loader.load()
+    table = loader.detections()
+    check.eq("one detection row per file", table.height, 120)
+    check.eq("...of which the sampled ones are marked probed",
+             int(table["probed"].sum()), 50)
+    check.eq("...and the rest carry no match rate of their own",
+             table.filter(~pl.col("probed"))["rate"].null_count(), 70)
+
+    # The session cache is keyed on it, because 0 and 50 can read a log root
+    # differently and a cache hit skips the reading entirely.
+    previous = server.STORE
+    server.STORE = SessionStore(cache_dir=os.path.join(workdir, "detect-cache"),
+                                output_root=os.path.join(workdir, "detect-output"))
+    try:
+        opened = server.open_log_root(path=root, session_id="detect-sampled", mask=False)
+        check.eq("open_log_root reports how many files it probed",
+                 opened["probed_files"], 50)
+        check.ok("...and says the answer came from a sample",
+                 any("detected from 50 of the 120" in note for note in opened.get("notes", [])),
+                 str(opened.get("notes"))[:160])
+        exhaustive = server.open_log_root(path=root, session_id="detect-every", mask=False,
+                                          max_detect_files=0)
+        check.ok("a different max_detect_files is a different cache entry",
+                 exhaustive["cache_path"] != opened["cache_path"],
+                 f"both at {opened['cache_path']}")
+        check.ok("...and says nothing about sampling, having probed everything",
+                 not any("came from a sample" in note or "detected from" in note
+                         for note in exhaustive.get("notes", [])),
+                 str(exhaustive.get("notes"))[:160])
+    finally:
+        server.STORE = previous
+
+
+# --------------------------------------------------------------------------- #
+# Stage 14 -- BGL: the real single-file case, opt-in
+# --------------------------------------------------------------------------- #
+
+def stage_bgl(check, datasets_folder, workdir):
+    """Split the real 743 MB BGL.log and analyse the slices.
+
+    Opt-in (``--only bgl``) because it needs the loghub BGL download and writes a
+    second copy of it. Everything asserted here is exact: BGL is a plain download,
+    so its line count is a property of the dataset.
+    """
+    check.section("14. BGL (single 743 MB log file)")
+
+    source = os.path.join(datasets_folder, "bgl", "BGL.log")
+    if not os.path.isfile(source):
+        check.info(f"{source} not found -- skipped. "
+                   f"Get it with: uv run downloader/download_data.py --config "
+                   f"downloader/datasets.yml")
+        return
+
+    peeked = timed("peek_log_root", server.peek_log_root,
+                   os.path.join(datasets_folder, "bgl"))
+    check.eq("peek finds one log folder, so nothing to compare", peeked["n_folders"], 1)
+    check.eq("...and detects BGL without reading it", peeked["probed"][0]["format"], "bgl")
+    check.info(f"estimated {peeked['probed'][0]['estimated_lines']:,} lines "
+               f"(true {BGL_LINES:,})")
+
+    out = os.path.join(workdir, "bgl-slices")
+    manifest = timed("split_log_file (10 slices)", split.split_log_file,
+                     source, out, n_slices=10)
+    check.eq("ten slices", manifest["n_slices"], 10)
+    check.eq("every line of BGL is in one of them", manifest["total_lines"], BGL_LINES)
+    counts = [entry["lines"] for entry in manifest["slices"]]
+    check.ok("the slices hold the same number of lines to within one",
+             max(counts) - min(counts) <= 1, f"{min(counts)}-{max(counts)}")
+    check.eq("no bytes gained or lost",
+             manifest["total_bytes"], os.path.getsize(source))
+
+    session_id = "bgl-test"
+    info = timed("open_log_root", server.open_log_root, path=out, session_id=session_id)
+    check.eq("ten log folders", info["n_folders"], 10)
+    check.eq("each read as the BGL dataset", info["detected_formats"], {"bgl": 10})
+    check.eq("rows plus dropped rows account for every line",
+             info["n_rows"] + info["dropped_rows"], BGL_LINES)
+
+    # L2 is the level a split file can be compared at: one file per log folder
+    # means L1 has a single-valued axis and L3/L4 share no file names.
+    result = timed("anomaly_folder_content", server.anomaly_folder_content,
+                   session_id, target_folder="ALL", content_format="Words")
+    check.eq("every slice is scored", len(result["rows"]), 10)
+    check.ok("rank_sum is in range", all(4 <= row["rank_sum"] <= 40 for row in result["rows"]),
+             str([row["rank_sum"] for row in result["rows"]]))
+
+    # BGL marks alert lines in its first column, and that column survives the
+    # split, so the slices can be described even though nothing here used it.
+    df = server.STORE.get(session_id).df
+    alerts = (df.group_by("folder")
+                .agg((pl.col("label") != "-").sum().alias("alerts"))
+                .sort("folder"))
+    check.eq("the BGL label column survives the split", alerts.height, 10)
+    check.info("alerts per slice: " + ", ".join(str(row["alerts"]) for row in alerts.to_dicts()))
+
+    server.close_log_root(session_id)
+
+
+# --------------------------------------------------------------------------- #
+
+STAGES = ("data", "hadoop", "hdfs", "split", "detect", "bgl")
+
+#: What runs when no --only is given. 'bgl' is out because it needs the 743 MB
+#: loghub download and writes a second copy of it; everything else here runs on
+#: data this suite builds for itself.
+DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect")
 
 
 def main():
@@ -1090,7 +1452,8 @@ def main():
                         help="Where the log roots live. Defaults to root_folder in "
                              "downloader/datasets.yml.")
     parser.add_argument("--only", choices=STAGES, action="append", dest="stages",
-                        help="Run just this stage; repeatable. 'data' always runs.")
+                        help="Run just this stage; repeatable. 'data' always runs. 'bgl' needs "
+                             "the loghub BGL download and is not in the default set.")
     parser.add_argument("--regenerate", action="store_true",
                         help="Rebuild the log roots before testing. Note this redraws "
                              "hdfs_balanced_5k's sample.")
@@ -1106,7 +1469,7 @@ def main():
 
     datasets_folder = os.path.expanduser(
         args.datasets or make_test_data.default_source_folder())
-    stages = tuple(args.stages or STAGES)
+    stages = tuple(args.stages or DEFAULT_STAGES)
 
     # Two of the four detectors are stochastic and take no seed: KMeans and
     # IsolationForest are built without a random_state, so sklearn draws from
@@ -1133,37 +1496,22 @@ def main():
 
     try:
         run_stage(check, stage_tools, check)
-        # Stage 1 is not optional: everything below reads what it verifies, and
-        # a crash here is not a bug in the server.
-        hadoop, hdfs = stage_data(check, datasets_folder, args.regenerate)
 
-        if "hadoop" in stages:
-            session_id = "hadoop-test"
-            run_stage(check, stage_hadoop_open, check, hadoop, session_id)
-            open_sessions = [s["session_id"] for s in server.list_log_roots()["sessions"]]
-            if session_id not in open_sessions:
-                check.ok("hadoop_renamed opened", False, "later stages skipped")
-            else:
-                run_stage(check, stage_hadoop_describe, check, session_id, hadoop)
-                # Every later hadoop stage works on the same target log folder and
-                # the same widely-shared file, so both are picked once here.
-                target = server.STORE.get(session_id).folders[0]
-                file_name = run_stage(check, stage_hadoop_read, check, session_id, target)
-                if file_name:
-                    run_stage(check, stage_hadoop_distance,
-                              check, session_id, target, file_name)
-                    scored = run_stage(check, stage_hadoop_anomaly,
-                                       check, session_id, target, file_name)
-                    if scored:
-                        run_stage(check, stage_hadoop_query, check, session_id, *scored)
-                    run_stage(check, stage_hadoop_plots,
-                              check, session_id, target, file_name)
-                run_stage(check, stage_hadoop_config, check, hadoop, workdir)
-                run_stage(check, stage_hadoop_incremental, check, session_id)
-                run_stage(check, stage_hadoop_mask_off, check, hadoop)
+        # The two log roots are only built when something is going to read them:
+        # the split and detect stages need no corpus, and `--only split` should
+        # not go looking for one.
+        if {"data", "hadoop", "hdfs"} & set(stages):
+            # Stage 1 is not optional for the stages below it: they read what it
+            # verifies, and a crash here is not a bug in the server.
+            hadoop, hdfs = stage_data(check, datasets_folder, args.regenerate)
+            run_dataset_stages(check, stages, hadoop, hdfs, workdir)
 
-        if "hdfs" in stages:
-            run_stage(check, stage_hdfs, check, hdfs, "hdfs-test")
+        if "split" in stages:
+            run_stage(check, stage_split, check, workdir)
+        if "detect" in stages:
+            run_stage(check, stage_detect, check, workdir)
+        if "bgl" in stages:
+            run_stage(check, stage_bgl, check, datasets_folder, workdir)
     finally:
         if args.keep_artifacts:
             print(f"\nArtifacts kept in {workdir}")
@@ -1172,6 +1520,37 @@ def main():
 
     print(f"\nTotal time: {time.time() - started:.0f}s")
     return check.report()
+
+
+def run_dataset_stages(check, stages, hadoop, hdfs, workdir):
+    """Everything that reads the two built log roots, in stage order."""
+    if "hadoop" in stages:
+        session_id = "hadoop-test"
+        run_stage(check, stage_hadoop_open, check, hadoop, session_id)
+        open_sessions = [s["session_id"] for s in server.list_log_roots()["sessions"]]
+        if session_id not in open_sessions:
+            check.ok("hadoop_renamed opened", False, "later stages skipped")
+        else:
+            run_stage(check, stage_hadoop_describe, check, session_id, hadoop)
+            # Every later hadoop stage works on the same target log folder and
+            # the same widely-shared file, so both are picked once here.
+            target = server.STORE.get(session_id).folders[0]
+            file_name = run_stage(check, stage_hadoop_read, check, session_id, target)
+            if file_name:
+                run_stage(check, stage_hadoop_distance,
+                          check, session_id, target, file_name)
+                scored = run_stage(check, stage_hadoop_anomaly,
+                                   check, session_id, target, file_name)
+                if scored:
+                    run_stage(check, stage_hadoop_query, check, session_id, *scored)
+                run_stage(check, stage_hadoop_plots,
+                          check, session_id, target, file_name)
+            run_stage(check, stage_hadoop_config, check, hadoop, workdir)
+            run_stage(check, stage_hadoop_incremental, check, session_id)
+            run_stage(check, stage_hadoop_mask_off, check, hadoop)
+
+    if "hdfs" in stages:
+        run_stage(check, stage_hdfs, check, hdfs, "hdfs-test")
 
 
 def run_stage(check, stage, *args):

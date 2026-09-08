@@ -47,15 +47,16 @@ Typical use::
 Keeping the returned ``df`` is what lets a long-lived session avoid re-parsing.
 """
 
-from . import anomaly, distance, export, log_root, masking, scoring, visualize
+from . import anomaly, distance, export, log_root, masking, scoring, split, visualize
 from .anomaly import (
     anomaly_file_content,
     anomaly_line_content,
     anomaly_folder,
     run_anomaly_detection,
 )
-from .log_root import (available_formats, prepare_content, prepare_files, prepare_folders,
-                       read_folders, read_log_root, resolve_format)
+from .log_root import (available_formats, peek_log_root, prepare_content, prepare_files,
+                       prepare_folders, read_folders, read_log_root, resolve_format)
+from .split import split_log_file
 from .distance import (
     distance_file_content,
     distance_line_content,
@@ -71,9 +72,12 @@ __all__ = [
     "export",
     "masking",
     "scoring",
+    "split",
     "visualize",
     "read_log_root",
     "read_folders",
+    "peek_log_root",
+    "split_log_file",
     "available_formats",
     "resolve_format",
     "prepare_folders",

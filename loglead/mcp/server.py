@@ -1,13 +1,25 @@
-#TODO add ability to select which distance measures to compute
+#CLAUDE DO NOT TOUCH OR EDIT THESE TODO comments. 
+# TODO add ability to select which distance measures to compute
 #Add also info which are more heavy to compute than others.
 #TODO we need performance tests to determine some baseline numbers for many
 #analysis. Now we have. Report is not optimal yet. 
 # TODO need a way to work with single file logs like BGL. Split to pieces approach?
 # TODO: One should be able to supply own mask patterns also in openlog_root
-# We also want away to for MCP client to inpect a sample of log lines
+# We also want away to for MCP client to inspect a sample of log lines
 # max diversity of log lines to sample for mask pattern detection. 
 # Also saving a mask is needed as it can be expensive to figure out
 # a good mask and we do want to repeat
+#TODO the autodetector on by default maybe not the greatest. as: 
+# "open_log_root is the single most expensive call here: 
+# about 20s for Hadoop's 978 files, about 127s for HDFS's 5,000. 
+# Nearly all of that is the auto format probe, which runs per file. "
+# And those are small logs. 
+#TODO file splitting should support even splits (DONE)
+#Timestamp splits NOT DONE
+#Splits by block_ID as in HDFS and other custom splits. NOT DONE.abs
+#The last two require reading in the the file
+
+
 
 """MCP server exposing LogLead's log folder comparison analyses.
 
@@ -24,9 +36,12 @@ from __future__ import annotations
 import argparse
 import contextlib
 import functools
+import hashlib
+import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Optional, Sequence, Union
 
 import polars as pl
@@ -37,14 +52,18 @@ try:  # MCP SDK 2.x
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
 
-from ..delta import anomaly, distance, export, scoring, visualize
+from ..delta import anomaly, distance, export, log_root, scoring, split, visualize
+from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import formatting
 from .session import SessionStore
 
 mcp = _Server("loglead", instructions="""\
 Compares log folders (test runs, deployments, nodes -- any set of logs that
 belong together) to find which one looks wrong, with no labels required.
-Start with open_log_root, then drill down: File names -> Whole log
+Start with peek_log_root to see what is on disk without loading it -- it also
+says when a path is one big log file rather than a set of log folders, which
+split_log_file turns into slices you can compare. Then open_log_root, and drill
+down: File names -> Whole log
 text of all logs -> One log file text across folders -> Individual lines. distance_* pairs
 performs pairwise distance measurement; anomaly_* trains on given set and 
 scores on another (automatically avoids using train data in test) and ranks 
@@ -110,10 +129,169 @@ def _write(session, df, analysis, level, **name_parts):
 # --------------------------------------------------------------------------- #
 
 @tool
+def peek_log_root(
+    path: str,
+    filename_pattern: str = "*.log",
+    probe_files: int = 5,
+    sample_lines: int = 5,
+    max_children: int = 50,
+    max_file_names: int = 20,
+) -> dict:
+    """Look at a directory without loading it. Call this before open_log_root.
+
+    Reports how many log folders and files are there, how big they are, what
+    they are called, what format they look like, and what a few of the actual
+    log lines say -- by stat'ing the files and reading a few hundred lines,
+    never by parsing them. open_log_root reads everything and can take minutes;
+    this takes under a second and tells you whether it is worth it.
+
+    `file_names` groups the files by name with the digits collapsed, e.g.
+    978 files named `container_#_#_#_#.log`. One shape means one kind of file,
+    and open_log_root's default format sampling can speak for all of them;
+    several shapes mean the log root may hold several formats, so check what
+    `probed` says about each and consider max_detect_files=0 or a pinned
+    format.
+
+    Point it at a directory holding several datasets and it lists each of them,
+    so you can see what is available before choosing one. Point it at a single
+    log file and it says so: one file is one log folder, and every analysis here
+    compares log folders against each other, so a single file has to be cut into
+    slices first with split_log_file.
+
+    Read `notes` in the result -- it says what is wrong or what to do next.
+
+    Args:
+        path: A directory, or a single log file.
+        filename_pattern: Glob deciding which files count. The same pattern you
+            would pass to open_log_root, so a peek reporting zero files is
+            telling you that open_log_root would find none either.
+        probe_files: How many files to detect the format of and sample lines
+            from. The largest file of each distinct file-name shape is taken
+            first, so two kinds of file get one probe each.
+        sample_lines: Raw log lines returned per probed file.
+        max_children: Subdirectories listed.
+        max_file_names: File-name shapes listed in `file_names`.
+    """
+    return log_root.peek_log_root(
+        path,
+        filename_pattern=filename_pattern,
+        probe_files=probe_files,
+        sample_lines=sample_lines,
+        max_children=max_children,
+        max_file_names=max_file_names,
+    )
+
+
+def _split_out_dir(path, n_slices, by):
+    """Where a split goes when the caller does not say.
+
+    Keyed on the source file's fingerprint and the split parameters, so asking
+    for the same split twice reuses the slices instead of rewriting them -- the
+    same bargain SessionStore's parquet cache makes, and worth more here, since
+    the slices are a second copy of the log on disk.
+    """
+    stat = os.stat(path)
+    payload = "|".join([
+        os.path.abspath(path), str(stat.st_size), f"{stat.st_mtime:.0f}", str(n_slices), by,
+    ])
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return STORE.cache_dir / "splits" / f"{stem}-{digest}"
+
+
+@tool
+def split_log_file(
+    path: str,
+    n_slices: int = 10,
+    by: str = "lines",
+    out_dir: Optional[str] = None,
+    stem: Optional[str] = None,
+    refresh: bool = False,
+) -> dict:
+    """Cut one big log file into slices, so it can be analysed as a log root.
+
+    Every analysis here compares log folders against each other, so a single log
+    file -- one long stream of lines -- has nothing to compare and cannot be
+    analysed as it stands. Cutting it into slices gives it something: the slices
+    become log folders, and asking which slice looks unlike the others is asking
+    whether the log changed part way through.
+
+    The slices are written side by side as `<name>_slice_000.log`,
+    `<name>_slice_001.log`, ... in one directory, which is itself a log root --
+    pass that directory to open_log_root next. Nothing is read into memory, so
+    the file can be far larger than RAM.
+
+    Splitting the same file the same way twice reuses the slices already on
+    disk rather than writing them again.
+
+    Because each slice is one file in its own log folder, the folder-level
+    tools are the ones to use on a split file: distance_folder_content,
+    anomaly_folder_content and plot_folder_content. The file-level and
+    line-level tools (distance_file_content, anomaly_file_content,
+    distance_line_content, anomaly_line_content) match files by name across log
+    folders, and no two slices share a file name, so they find nothing here.
+
+    Args:
+        path: The log file to cut. A .gz is decompressed on the way in.
+        n_slices: How many slices. More slices means finer resolution on where
+            the log changed, and less text in each one to judge it by.
+        by: "lines" gives every slice the same number of log lines, which is
+            what makes slices comparable; "bytes" gives them the same size on
+            disk in a single pass, which is faster but leaves the line counts
+            uneven wherever line lengths vary.
+        out_dir: Where to write the slices. Defaults to a directory beside the
+            session cache, named after the file and the split.
+        stem: Name the slices after this instead of the file's own name.
+        refresh: Split again even if these slices already exist.
+    """
+    source = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isfile(source):
+        raise FileNotFoundError(
+            f"Not a file: {source}. split_log_file cuts up one log file; a directory of logs is "
+            f"already a log root, so pass it to open_log_root instead."
+        )
+    chosen = Path(os.path.expanduser(out_dir)) if out_dir else _split_out_dir(
+        source, n_slices, by
+    )
+    # The manifest is written beside the slices so a reused split reports the
+    # same thing a fresh one does, line counts included, without reading them
+    # back. It also makes a half-written split visible: slices with no manifest
+    # are not treated as a usable result.
+    record = chosen / "split_manifest.json"
+    reused = record.is_file() and not refresh
+    if reused:
+        manifest = json.loads(record.read_text())
+        # The stored one is how long the original split took; this call did
+        # not split anything, and @tool fills in what it actually cost.
+        manifest.pop("elapsed_seconds", None)
+    else:
+        # Clearing the directory first is only safe when we picked it: it is
+        # ours, keyed on this exact split. A caller-supplied out_dir that
+        # already holds something raises instead, unless refresh says otherwise.
+        manifest = split.split_log_file(
+            source, str(chosen), n_slices=n_slices, by=by, stem=stem,
+            overwrite=out_dir is None or refresh,
+        )
+        record.write_text(json.dumps(manifest, indent=2))
+    manifest["reused_existing_slices"] = reused
+    manifest["notes"] = [
+        f"These slices are a log root. Open it with "
+        f"open_log_root(path={str(chosen)!r}) to analyse them.",
+        "Each slice is one file in its own log folder, so the log folders are named after the "
+        "files, extension included (e.g. 'BGL_slice_000.log'). set_folder_names can rename them.",
+        "Compare the slices with distance_folder_content, anomaly_folder_content or "
+        "plot_folder_content. The file-level and line-level tools match files by name across log "
+        "folders, and no two slices share a name, so those come back empty.",
+    ]
+    return manifest
+
+
+@tool
 def open_log_root(
     path: str,
     filename_pattern: str = "*.log",
     format: str = "auto",
+    max_detect_files: int = DEFAULT_MAX_DETECT_FILES,
     mask: bool = True,
     mask_pattern: str = "myllari_extended",
     parsers: Optional[Sequence[str]] = None,
@@ -151,6 +329,15 @@ def open_log_root(
             "access_log/combined", "syslog/rfc5424". These are the same names
             `detected_formats` reports, so you can take a guess it made and
             feed it back in to force every file to use it.
+        max_detect_files: With format="auto", how many files to look at before
+            reading the rest the same way. Detection costs a read per file, so
+            a log root of thousands of files -- one per block, one per slice --
+            would spend minutes on it; the files probed are spread over the
+            distinct file-name shapes, since files of different formats are
+            nearly always named differently. peek_log_root's `file_names` says
+            how many shapes there are. Pass 0 to detect every file, which is
+            worth it when one odd file among thousands would have to be read
+            differently. Ignored unless format="auto".
         mask: Replace volatile tokens (ids, IPs, timestamps, hex) with
             placeholders. Almost always wanted.
         mask_pattern: One of "myllari_extended", "myllari", "drain_loglead",
@@ -180,6 +367,7 @@ def open_log_root(
         path=path,
         filename_pattern=filename_pattern,
         format=format,
+        max_detect_files=max_detect_files,
         mask=mask,
         mask_pattern=mask_pattern,
         parsers=parsers or (),
@@ -203,6 +391,13 @@ def open_log_root(
                      "Use describe_log_root for the rest.")
     # "text/<format>" is timestamped text and a good outcome; a bare "text" is the fallback that
     # matched nothing, which is the one case worth naming a format by hand for.
+    probed = info.get("probed_files")
+    n_read = sum(summary.get("detected_formats", {}).values())
+    if probed is not None and probed < n_read:
+        notes.append(f"The format was detected from {probed} of the {n_read} files and applied to "
+                     f"all of them -- they agreed, but files that were not probed could still "
+                     f"differ. Re-open with max_detect_files=0 to detect every file, or with "
+                     f"format= to pin one.")
     unmatched = summary.get("detected_formats", {}).get("text", 0)
     if unmatched:
         notes.append(f"{unmatched} file(s) matched no known format and were read as plain text, "
@@ -251,7 +446,8 @@ def describe_log_root(session_id: str, include_files: bool = False) -> dict:
             "Files present in many log folders are the comparable ones; a file "
             "present in only one has nothing to compare against in "
             "distance_file_content, anomaly_file_content, distance_line_content, "
-            "or anomaly_line_content."
+            "or anomaly_line_content, which all pair a file with its namesake in "
+            "another log folder."
         ]
     return out
 
@@ -890,6 +1086,12 @@ def anomaly_file_content(
     then score each file of the target log folder against the same file elsewhere.
 
     Narrows a suspicious log folder down to the file worth reading.
+
+    Files are matched by name across log folders: the baseline for security.log
+    is the other log folders' security.log, one document each. A target file
+    that no comparison log folder has is skipped, so this level needs log
+    folders that share file names -- if each log folder holds one uniquely-named
+    file, use anomaly_folder_content instead.
 
     Args:
         session_id: Handle from open_log_root.

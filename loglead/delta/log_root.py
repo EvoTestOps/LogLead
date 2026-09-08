@@ -17,6 +17,7 @@ functions have no module-level state, never ``os.chdir``, and never write
 files.
 """
 
+import fnmatch
 import glob
 import os
 import re
@@ -25,8 +26,9 @@ import polars as pl
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from ..enhancers import EventLogEnhancer
-from ..loaders import (AccessLogLoader, AutoLoader, DelimitedLoader, JsonLoader, LogfmtLoader,
-                       RawLoader, SyslogLoader)
+from ..loaders import (DEFAULT_MAX_DETECT_FILES, AccessLogLoader, AutoLoader, DelimitedLoader,
+                       JsonLoader, LogfmtLoader, RawLoader, SyslogLoader, detect_format,
+                       name_shape)
 
 CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 
@@ -126,7 +128,8 @@ def resolve_format(format="auto"):
                      f"Valid: {', '.join(valid) or '(none installed)'} - or just {family!r}.")
 
 
-def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"):
+def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto",
+                  max_detect_files=DEFAULT_MAX_DETECT_FILES):
     """Load every matching log file under ``root`` into one event-level frame.
 
     :param root: the log root. Each subdirectory of it becomes a log folder; a
@@ -137,11 +140,17 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
     :param format: how to read the files -- a name from :func:`available_formats`.
         ``"auto"`` detects per file, so a log root of JSON, syslog or CSV logs
         arrives parsed into columns instead of as one blob per line.
+    :param max_detect_files: with ``format="auto"``, how many files to probe
+        before applying their answer to the rest; 0 probes every file. A log
+        root split one file per unit holds thousands of them and detection is a
+        read each, so the default samples -- see :class:`AutoLoader`. Ignored
+        when a format is pinned, since then nothing is detected at all.
     :returns: ``(df, info)``. ``df`` always has ``m_message``, ``file_name``
         (relative to its log folder), ``orig_file_name`` and ``folder``; every
         other column depends on what the chosen loader could read. ``info``
-        reports the format asked for, what detection actually chose, and the
-        counts, so a wrong guess is visible rather than silently analyzed.
+        reports the format asked for, what detection actually chose, how many
+        files it looked at to choose it, and the counts, so a wrong guess is
+        visible rather than silently analyzed.
 
     Rows with null messages or a U+FFFD replacement character are dropped, so
     ``df.height`` can be lower than the raw line count; ``info["dropped_rows"]``
@@ -160,6 +169,7 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
         # probe applies. Hadoop forces the issue rather than merely suggesting it: LogDelta's demo
         # log root keeps Hadoop's own abnormal_label.txt next to the application_* directories.
         kwargs["dataset_probe"] = False
+        kwargs["max_detect_files"] = max_detect_files
 
     loader = loader_class(
         root,
@@ -200,15 +210,21 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
         )
 
     detected = {}
+    probed_files = None
     if isinstance(loader, AutoLoader):
         table = loader.detections()
         if table.height:
             detected = dict(
                 table.group_by("format").len().sort("len", descending=True).iter_rows()
             )
+            # How each file was *read* is the count above; how many of them were looked at is this,
+            # and the two differ whenever max_detect_files bit. A caller weighing whether a format
+            # is right needs to know the answer came from a sample.
+            probed_files = int(table["probed"].sum())
     info = {
         "format": str(format),
         "detected_formats": detected,
+        "probed_files": probed_files,
         "n_folders": df.select("folder").n_unique(),
         "n_files": df.select("orig_file_name").n_unique(),
         "n_rows": df.height,
@@ -217,13 +233,14 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
     return df, info
 
 
-def read_folders(root, filename_pattern="*.log", min_file_size=0, format="auto"):
+def read_folders(root, filename_pattern="*.log", min_file_size=0, format="auto",
+                 max_detect_files=DEFAULT_MAX_DETECT_FILES):
     """:func:`read_log_root` returning only ``(df, n_folders)``.
 
     The two-value shape ``loglead.delta`` has always exported. Use
     :func:`read_log_root` when the format actually chosen matters.
     """
-    df, info = read_log_root(root, filename_pattern, min_file_size, format)
+    df, info = read_log_root(root, filename_pattern, min_file_size, format, max_detect_files)
     return df, info["n_folders"]
 
 
@@ -249,6 +266,348 @@ def count_log_root_files(root, filename_pattern="*.log", min_file_size=0):
             total_bytes += stat.st_size
             max_mtime = max(max_mtime, stat.st_mtime)
     return n_files, total_bytes, max_mtime
+
+
+# --------------------------------------------------------------------------- #
+# Looking before loading
+# --------------------------------------------------------------------------- #
+
+#: Seek points and lines per point used to estimate a file's line count. Eight
+#: points measured +1.3% against BGL's true 4,747,963 lines, where reading the
+#: head alone is +5.8% (its opening lines are shorter than its average) and 32
+#: shorter runs are -9.3%: each seek lands inside one locally-repetitive burst,
+#: so a few longer reads spread widely beat many short ones.
+_ESTIMATE_POINTS = 8
+_ESTIMATE_LINES_PER_POINT = 125
+
+
+def _estimate_lines(path, size):
+    """Line count from a sample, without reading the file.
+
+    Returned as an estimate and labelled one. A caller deciding whether a log
+    root is worth opening needs the order of magnitude, not the exact number --
+    and the exact number costs a full pass.
+    """
+    if size == 0:
+        return 0
+    sampled_bytes = sampled_lines = 0
+    with open(path, "rb") as handle:
+        for point in range(_ESTIMATE_POINTS):
+            if point:
+                handle.seek(size * point // _ESTIMATE_POINTS)
+                handle.readline()  # discard the partial line the seek landed in
+            for _ in range(_ESTIMATE_LINES_PER_POINT):
+                line = handle.readline()
+                if not line:
+                    break
+                sampled_bytes += len(line)
+                sampled_lines += 1
+    if not sampled_bytes:
+        return 0
+    return round(size / (sampled_bytes / sampled_lines))
+
+
+def _head_lines(path, limit):
+    """The first ``limit`` lines, decoded leniently. What the log actually says."""
+    lines = []
+    with open(path, "rb") as handle:
+        for _ in range(limit):
+            line = handle.readline()
+            if not line:
+                break
+            lines.append(line.decode("utf-8", errors="replace").rstrip("\r\n"))
+    return lines
+
+
+def _probe_file(path, sample_lines):
+    """Format, match rate and a few real lines for one file. Nothing is loaded."""
+    size = os.path.getsize(path)
+    entry = {
+        "file": os.path.basename(path),
+        # Which group of files this one was probed on behalf of. See file_names.
+        "name_shape": name_shape(path),
+        "bytes": size,
+        "estimated_lines": _estimate_lines(path, size),
+        "sample": _head_lines(path, sample_lines),
+    }
+    try:
+        detection = detect_format(path)
+        entry["format"] = detection.format
+        entry["match_rate"] = round(detection.rate, 3)
+    except Exception as error:  # a probe must never be the thing that fails
+        entry["format"] = None
+        entry["error"] = str(error)
+    return entry
+
+
+def _scale_estimate(probed, total_bytes):
+    """Scale the probed files' bytes-per-line up to the whole log root."""
+    sampled_bytes = sum(entry["bytes"] for entry in probed)
+    sampled_lines = sum(entry["estimated_lines"] for entry in probed)
+    if not sampled_bytes or not sampled_lines:
+        return 0
+    return round(total_bytes / (sampled_bytes / sampled_lines))
+
+
+#: Files stat'ed before a peek stops counting and says so. A peek has to be
+#: cheap enough to use for orientation, and an accurate count costs one stat per
+#: file: ~/Datasets holds 765,416 of them, which is 17s. Stopping at this many
+#: keeps every peek under a second, and the exact counts are read_log_root's job.
+_PEEK_FILE_BUDGET = 20_000
+
+
+def peek_log_root(path, filename_pattern="*.log", probe_files=5, sample_lines=5,
+                  max_children=50, max_file_names=20, max_files=_PEEK_FILE_BUDGET):
+    """Report what is at ``path`` without loading any of it.
+
+    :func:`read_log_root` is the expensive call in this package: it reads and
+    parses every file. This one stats them and reads a few hundred lines from a
+    handful, so a caller can find out what it is pointing at -- how many log
+    folders, how big, in what format, and what the lines actually say -- before
+    paying for it. It is also how a directory of candidate log roots gets
+    surveyed: point it at the parent and every child is listed with its size.
+
+    :param path: a directory, or a single log file.
+    :param filename_pattern: glob deciding which files count, as in
+        :func:`read_log_root`.
+    :param probe_files: how many files to detect the format of and sample. The
+        largest file of each distinct file-name shape is taken first, so a log
+        root holding two kinds of file gets one probe of each rather than five
+        of whichever is biggest.
+    :param sample_lines: log lines returned per probed file.
+    :param max_children: subdirectories listed.
+    :param max_file_names: file-name shapes listed in ``file_names``.
+    :param max_files: stop stat'ing after this many files and report
+        ``truncated``. See :data:`_PEEK_FILE_BUDGET`.
+    :returns: a dict with ``kind`` (``"file"``, ``"log_root"``, ``"parent"`` or
+        ``"empty"``), the counts and sizes, ``children``, ``file_names``,
+        ``probed``, and ``notes`` saying what to do next.
+
+    ``file_names`` groups the files by name with their digits collapsed
+    (:func:`loglead.loaders.name_shape`), which is what says whether a log root
+    is one kind of file or several: files of different formats nearly always
+    have differently shaped names, and it is the same grouping
+    :func:`read_log_root`'s format sampling spreads itself across. A log root of
+    one shape can be opened on the default sample; several shapes, and it is
+    worth probing every file or pinning a format.
+
+    ``estimated_lines`` is sampled, not counted -- see :data:`_ESTIMATE_POINTS`.
+    """
+    path = os.path.abspath(os.path.expanduser(str(path)))
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Nothing at {path}.")
+
+    if os.path.isfile(path):
+        # A single file is not a log root, and saying so is the whole point:
+        # every analysis here compares log folders, and one file is one folder.
+        return {
+            "path": path,
+            "kind": "file",
+            "n_folders": 1,
+            "n_files": 1,
+            "total_bytes": os.path.getsize(path),
+            "truncated": False,
+            "children": [],
+            "n_children": 0,
+            "n_distinct_file_names": 1,
+            "file_names": [{"name_shape": name_shape(path), "n_files": 1,
+                            "total_bytes": os.path.getsize(path),
+                            "example": os.path.basename(path)}],
+            "probed": [_probe_file(path, sample_lines)],
+            "notes": [
+                f"{os.path.basename(path)} is a single log file, so there is nothing to compare "
+                f"it against. Split it into slices first, then open the directory of slices as "
+                f"the log root."
+            ],
+        }
+
+    # One walk, stat'ing each matching file once. Every number below comes from
+    # this pass; walking again per child is what made an early version 17s on a
+    # directory of datasets.
+    n_files = 0
+    total_bytes = 0
+    min_mtime = max_mtime = None
+    folders = set()
+    per_child = {}
+    per_shape = {}
+    distinct_names = set()
+    biggest = []
+    truncated = False
+    # Which top-level children the walk actually entered, and the one it was
+    # inside when the budget ran out. Without these, a child the walk never
+    # reached is indistinguishable from an empty one.
+    visited = []
+    stopped_in = None
+    for subdir, dirnames, filenames in os.walk(path):
+        dirnames.sort()
+        if subdir != path:
+            top = os.path.relpath(subdir, path).split(os.sep)[0]
+            if top not in visited:
+                visited.append(top)
+        for name in sorted(filenames):
+            if not fnmatch.fnmatch(name, filename_pattern):
+                continue
+            if n_files >= max_files:
+                truncated = True
+                stopped_in = visited[-1] if visited else None
+                break
+            match = os.path.join(subdir, name)
+            try:
+                stat = os.stat(match)
+            except OSError:
+                continue
+            n_files += 1
+            total_bytes += stat.st_size
+            min_mtime = stat.st_mtime if min_mtime is None else min(min_mtime, stat.st_mtime)
+            max_mtime = stat.st_mtime if max_mtime is None else max(max_mtime, stat.st_mtime)
+            # Same rule read_log_root applies: the first path segment is the log
+            # folder, and a file directly in the root is its own log folder.
+            top = os.path.relpath(match, path).split(os.sep)[0]
+            folders.add(top)
+            child = per_child.setdefault(top, {"n_files": 0, "total_bytes": 0})
+            child["n_files"] += 1
+            child["total_bytes"] += stat.st_size
+            # What the files are *called*, grouped the way format detection samples them. One
+            # shape means one kind of file; several mean this log root may hold several formats,
+            # and that is the thing a caller cannot see from a count of files.
+            shape = per_shape.setdefault(name_shape(name), {
+                "n_files": 0, "total_bytes": 0, "example": name, "largest": (-1, None)})
+            shape["n_files"] += 1
+            shape["total_bytes"] += stat.st_size
+            distinct_names.add(name)
+            if stat.st_size > shape["largest"][0]:
+                shape["largest"] = (stat.st_size, match)
+            # Biggest first: a probe says most about a file with something in
+            # it, and the large files are what opening this root would cost.
+            biggest.append((stat.st_size, match))
+            if len(biggest) > max(probe_files * 20, 200):
+                biggest.sort(reverse=True)
+                del biggest[probe_files:]
+        if truncated:
+            break
+
+    # Subdirectories that matched nothing are still worth listing: on a survey
+    # the pattern is exactly what tends to be wrong.
+    children = []
+    seen = set(visited)
+    for entry in sorted(os.listdir(path))[:max_children]:
+        if not os.path.isdir(os.path.join(path, entry)):
+            continue
+        if truncated and entry not in seen:
+            # Never looked at, which is not the same as holding nothing.
+            children.append({"name": entry, "n_files": None, "total_bytes": None,
+                             "status": "not_counted"})
+            continue
+        counts = per_child.get(entry, {"n_files": 0, "total_bytes": 0})
+        status = "partial" if entry == stopped_in else "counted"
+        children.append({"name": entry, **counts, "status": status})
+
+    # The largest file of each name shape, biggest shape group first, then the largest files left
+    # over. A log root of one shape therefore gets the largest files, as it always did; one holding
+    # a stray 'stderr.json' among 900 container logs gets that file probed rather than a fifth
+    # container log, which is the case a probe of the five largest could never see.
+    shapes_by_size = sorted(per_shape.values(), key=lambda group: -group["n_files"])
+    chosen = [group["largest"][1] for group in shapes_by_size[:probe_files]]
+    biggest.sort(reverse=True)
+    for _, match in biggest:
+        if len(chosen) >= probe_files:
+            break
+        if match not in chosen:
+            chosen.append(match)
+    probed = [_probe_file(match, sample_lines)
+              for match in sorted(chosen, key=lambda m: -os.path.getsize(m))]
+
+    file_names = [
+        {"name_shape": shape, "n_files": group["n_files"], "total_bytes": group["total_bytes"],
+         "example": group["example"]}
+        for shape, group in sorted(per_shape.items(), key=lambda item: -item[1]["n_files"])
+    ]
+
+    kind = "log_root" if n_files else ("parent" if children else "empty")
+    notes = []
+    if truncated:
+        where = f" inside {stopped_in!r}" if stopped_in else ""
+        notes.append(
+            f"More than {max_files:,} files here, so counting stopped{where} and the totals "
+            f"below are partial. Children marked status='not_counted' were never reached -- that "
+            f"is not the same as holding nothing. This is a big tree; peek at one subdirectory "
+            f"instead."
+        )
+    if kind == "parent":
+        notes.append(
+            f"No files matching {filename_pattern!r} here, but {len(children)} subdirector"
+            f"{'y' if len(children) == 1 else 'ies'} that may each be a log root. Peek at one "
+            f"of them, or pass a filename_pattern matching the files these hold."
+        )
+    elif kind == "empty":
+        notes.append(f"{path} holds nothing matching {filename_pattern!r} and no subdirectories.")
+    else:
+        if len(folders) < 2:
+            only = next(iter(folders), path)
+            notes.append(
+                f"Only one log folder ({only}), so there is nothing to compare it against. "
+                f"Every analysis judges a log folder against the others. If this is one big log "
+                f"file, split it into slices first."
+            )
+        formats = {entry.get("format") for entry in probed}
+        if len(formats) > 1:
+            notes.append(
+                f"The {len(probed)} probed files were detected as "
+                f"{sorted(str(f) for f in formats)}. Files this different are usually separate "
+                f"log roots sharing a parent directory rather than one log root -- peek at a "
+                f"subdirectory to check. If it really is one, it is read one loader per file, "
+                f"which is slower; pass format= to pin one."
+            )
+        if n_files > DEFAULT_MAX_DETECT_FILES:
+            # The sample open_log_root takes is spread over the name shapes, so whether it can
+            # speak for the whole log root is decided by how many shapes there are, not by how
+            # many files: one shape, or fewer shapes than the sample size, and every kind of file
+            # here gets looked at. More, and some kind of file will not be.
+            shapes = len(per_shape)
+            if shapes == 1:
+                detail = (f"every file here is named like {file_names[0]['example']}, so one "
+                          f"answer for all of them is a safe bet")
+            elif shapes <= DEFAULT_MAX_DETECT_FILES:
+                detail = (f"the sample is spread over all {shapes} file-name shapes here (see "
+                          f"file_names), so each kind of file is looked at")
+            else:
+                detail = (f"there are {shapes} file-name shapes here (see file_names) and the "
+                          f"sample reaches at most {DEFAULT_MAX_DETECT_FILES} of them, so a "
+                          f"format used only by one of the rest would be missed")
+            notes.append(
+                f"open_log_root detects the format from {DEFAULT_MAX_DETECT_FILES} of these "
+                f"{n_files:,} files and reads the rest the same way -- {detail}. Pass "
+                f"max_detect_files=0 to detect every file, or format= to skip detection."
+            )
+        if "text" in formats:
+            notes.append(
+                "At least one file matched no known format and would be read as plain text, one "
+                "event per line. Pass format= explicitly if it is structured."
+            )
+
+    return {
+        "path": path,
+        "kind": kind,
+        "filename_pattern": filename_pattern,
+        "n_folders": len(folders),
+        "n_files": n_files,
+        "total_bytes": total_bytes,
+        # Scaled from the probed files' mean line length to the whole log root,
+        # so the number is there whether 5 files were probed or all of them.
+        "estimated_lines": _scale_estimate(probed, total_bytes),
+        "truncated": truncated,
+        "oldest_mtime": min_mtime,
+        "newest_mtime": max_mtime,
+        "children": children,
+        "n_children": len(children),
+        # Both counts, because they answer different questions: how many distinct names there are
+        # says whether file-level analyses have anything to match across log folders, while the
+        # shapes say whether one format can be assumed for all of them.
+        "n_distinct_file_names": len(distinct_names),
+        "file_names": file_names[:max_file_names],
+        "probed": probed,
+        "notes": notes,
+    }
 
 
 # --------------------------------------------------------------------------- #

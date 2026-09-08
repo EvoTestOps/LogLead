@@ -93,6 +93,21 @@ exception. When every file agrees, the whole tree goes to one loader and keeps i
 multi-file read; only a genuinely mixed folder pays for one loader per file, and those results are
 stacked into a single frame.
 
+**A sample of the files is probed, not all of them.** Detection costs a read per file — around 20ms,
+which is nothing on ten files and two minutes on five thousand, and a tree holding one file per unit
+(one per HDFS block, one per slice of a split log) routinely has more than that. So at most
+`max_detect_files` of them are probed (50 by default; 0 means every file), and if those agree their
+answer is applied to the rest — 978 Hadoop container logs read in 1.9s instead of 13.4s, 5,000 HDFS
+blocks in 2.7s instead of 102s, the same frame either way. A sample that *disagrees* with itself is
+a mixed tree, which needs a decision per file regardless, so the remaining files are probed then:
+the sample is only ever a shortcut past the unanimous case, never a guess that survives evidence
+against it. The files sampled are spread across the distinct **file-name shapes** — the name with
+its digits collapsed, so `container_1445062781478_0011_01_000001.log` and its 977 siblings are one
+shape — because a file in a different format is nearly always named differently too, and 50 probes
+of one shape say nothing about the one `stderr.json` beside them. `detections()` marks which files
+were probed and leaves the evidence columns empty for the rest, rather than reporting a match rate
+for a file nobody looked at.
+
 Nothing is ever refused: an unrecognized file is read as plain text and said so. Files that did not
 decode cleanly are reported separately from files whose format was guessed, since otherwise a
 mis-decoded file and a mis-detected one look identical downstream.

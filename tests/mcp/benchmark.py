@@ -9,7 +9,7 @@ not made.
 
 Run it with::
 
-    uv run tests/mcp/benchmark.py                    # both log roots
+    uv run tests/mcp/benchmark.py                    # all three log roots
     uv run tests/mcp/benchmark.py --only hadoop      # one of them
     uv run tests/mcp/benchmark.py --repeat 5         # steadier medians
     uv run tests/mcp/benchmark.py --markdown cost.md # table to paste into docs
@@ -29,12 +29,18 @@ cost is the number that matters -- ``target_folder="ALL"`` reads as innocuous an
 is the most expensive thing in the API.
 
 The log roots are the ones ``tests/mcp/server.py`` uses; see ``make_test_data.py``.
+``bgl`` is the third shape and the odd one: a plain loghub download rather than a
+derived corpus, and a single 743 MB file that ``split_log_file`` turns into ten
+log folders of ~471,000 lines each. It is where a cost charged per log folder is
+at its worst, and it is skipped if the download is not there.
 Timings are hardware- and load-dependent, so treat the ratios as the durable part
 and re-run for absolute numbers.
 """
 
 import argparse
+import gc
 import json
+import resource
 import os
 import shutil
 import statistics
@@ -46,6 +52,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import make_test_data  # noqa: E402  (sits next to this file)
+from loglead import loaders  # noqa: E402
 
 try:
     from loglead.mcp import server  # noqa: E402
@@ -169,6 +176,22 @@ def bench_hadoop(report, log_root, repeat):
                cold, cached, n=info["n_files_on_disk"], unit="file")
     report.note(f"the parquet cache turns {cold:.0f}s into {cached:.2f}s -- "
                 f"{cold / max(cached, 1e-6):.0f}x, and it is why sessions exist")
+
+    # What the sampled format detection saves, which is the whole difference
+    # between the two rows: same files, same frame, every file probed instead of
+    # 50. Measured rather than argued, because it is the one knob a client would
+    # otherwise have to guess the price of.
+    started = time.perf_counter()
+    server.open_log_root(path=str(log_root), format="auto", mask=True, parsers=["tip"],
+                         file_name_normalizer="strip_folder_id", session_id=sid + "-every",
+                         refresh=True, max_detect_files=0)
+    every = time.perf_counter() - started
+    server.close_log_root(sid + "-every")
+    report.add("open_log_root", "hadoop", "same, max_detect_files=0 (probe all 978)",
+               every, every, n=info["n_files_on_disk"], unit="file")
+    report.note(f"probing every file instead of {loaders.DEFAULT_MAX_DETECT_FILES} costs "
+                f"{every - cold:.0f}s more here, {every / max(cold, 1e-6):.1f}x, "
+                f"for the same frame")
 
     folders = server.STORE.get(sid).folders
     target = folders[0]
@@ -320,8 +343,19 @@ def bench_hdfs(report, log_root, repeat):
     server.close_log_root(sid + "-2")
     report.add("open_log_root", "hdfs", "read + mask + parse tip (5,000 files)",
                cold, cached, n=info["n_files_on_disk"], unit="file")
-    report.note(f"detection runs per file, so {cold:.0f}s of this is 5,000 format probes; "
-                f"the cached open is {cached:.2f}s")
+    report.note(f"the format is detected from {loaders.DEFAULT_MAX_DETECT_FILES} of the 5,000 "
+                f"files and applied to the rest; the cached open is {cached:.2f}s")
+
+    started = time.perf_counter()
+    server.open_log_root(path=str(log_root), format="auto", mask=True, parsers=["tip"],
+                         session_id=sid + "-every", refresh=True, max_detect_files=0)
+    every = time.perf_counter() - started
+    server.close_log_root(sid + "-every")
+    report.add("open_log_root", "hdfs", "same, max_detect_files=0 (probe all 5,000)",
+               every, every, n=info["n_files_on_disk"], unit="file")
+    report.note(f"a format probe per file is {every - cold:.0f}s of it -- "
+                f"{every / max(cold, 1e-6):.0f}x the sampled open, for the same frame. This is "
+                f"the log root shape that makes the sampling worth having: one file per unit")
 
     folders = server.STORE.get(sid).folders
     anomalies = [name for name in folders if name.startswith("Anomaly_")]
@@ -397,6 +431,192 @@ def bench_hdfs(report, log_root, repeat):
     server.close_log_root(sid)
 
 
+def peak_rss_gb():
+    """Process high-water memory, in GB. Linux reports ru_maxrss in kilobytes."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+
+
+def current_rss_gb():
+    """Resident memory *now*, in GB.
+
+    Distinct from :func:`peak_rss_gb` on purpose: the peak is a high-water mark
+    that never comes down, so it reports a transient double-allocation forever.
+    What a caller wants to know about a session is what it is still holding.
+    """
+    try:
+        with open("/proc/self/statm") as handle:
+            pages = int(handle.read().split()[1])
+        return pages * os.sysconf("SC_PAGE_SIZE") / 1e9
+    except (OSError, ValueError, IndexError):
+        return peak_rss_gb()
+
+
+def bench_bgl(report, source, workdir, repeat):
+    """One 743 MB log file, split into 10 slices -- the third shape, and the one
+    where memory rather than the clock is what stops a call.
+
+    Hadoop and HDFS differ in how *many* log folders there are. BGL differs in
+    how big one is: ten slices of ~471,000 lines each, against Hadoop's ~3,300
+    and HDFS's ~18. Every cost charged per log folder is at its worst here, and
+    two of them stop fitting in a 16 GB machine rather than merely taking a
+    while -- which is why this function reports peak RSS and the other two do
+    not.
+
+    Heavy rows are measured once rather than three times: one ``Words`` call at
+    nine comparison folders is two and a half minutes, and its third digit is
+    not what a caller needs.
+    """
+    report.section("bgl -- one 743 MB log file, split into 10 slices")
+    sid = "bench-bgl"
+
+    # -- the two tools that come before a session exists --
+    report.add("peek_log_root", "bgl", "the unsplit 743 MB file",
+               *measure(lambda: server.peek_log_root(str(source)), repeat))
+    report.note("peek stats the file and samples a few hundred lines; it never reads it, so a "
+                "743 MB log costs what a small one does")
+
+    out_dir = os.path.join(workdir, "bgl-slices")
+    started = time.perf_counter()
+    server.split_log_file(str(source), n_slices=10, out_dir=out_dir)
+    first_split = time.perf_counter() - started
+    # Every later call finds the manifest beside the slices and reuses them, so
+    # the cold number has to be taken by hand rather than from measure().
+    _, reused = measure(lambda: server.split_log_file(
+        str(source), n_slices=10, out_dir=out_dir), repeat)
+    report.add("split_log_file", "bgl", "743 MB -> 10 slices, by=lines",
+               first_split, reused, n=743, unit="MB")
+    report.note(f"{first_split:.1f}s to write 743 MB of slices, and {reused:.2f}s to be handed "
+                "the same split again -- the slices are on disk and a manifest beside them says "
+                "what they are")
+
+    # The other two log roots measure the cached open by holding a second session
+    # open beside the first. Here that would mean two 3 GB frames at once, which
+    # is 6.5 GB of floor before a single analysis runs -- and this is the log
+    # root with no headroom to spare. So the cold session is closed and reopened
+    # instead: same measurement, one frame at a time.
+    started = time.perf_counter()
+    info = server.open_log_root(path=out_dir, format="auto", mask=True, parsers=["tip"],
+                                session_id=sid, refresh=True)
+    cold = time.perf_counter() - started
+    server.close_log_root(sid)
+    gc.collect()
+    started = time.perf_counter()
+    server.open_log_root(path=out_dir, format="auto", mask=True, parsers=["tip"],
+                         session_id=sid)
+    cached = time.perf_counter() - started
+    report.add("open_log_root", "bgl", "read + mask + parse tip (10 files, 4.7M lines)",
+               cold, cached, n=info["n_rows"], unit="line")
+    report.note(f"there are only 10 files to probe, so unlike the other two log roots almost "
+                f"none of the {cold:.0f}s is format detection -- it is masking and parsing 4.7M "
+                f"lines. The frame it leaves behind is {current_rss_gb():.1f} GB resident, which "
+                f"is the floor every row below sits on")
+
+    folders = server.STORE.get(sid).folders
+    target = folders[0]
+    # Every log folder here holds one file with a name of its own, so the file to
+    # read has to come from the target's own row rather than from a list of file
+    # names shared across folders -- there are none.
+    file_of = dict(server.STORE.get(sid).df
+                   .select(["folder", "file_name"]).unique().iter_rows())
+    only_file = file_of[target]
+
+    report.add("describe_log_root", "bgl", "10 log folders",
+               *measure(lambda: server.describe_log_root(sid), repeat))
+    report.add("read_log_lines", "bgl", "100 lines out of 471k",
+               *measure(lambda: server.read_log_lines(sid, target, only_file, limit=100), repeat))
+    report.add("search_log_lines", "bgl", "regex over 4.7M lines",
+               *measure(lambda: server.search_log_lines(sid, r"kernel panic"), repeat))
+    report.note("scanning every line is the one cost here that scales with the log rather than "
+                "with the number of log folders, and it is still the cheapest row in the table")
+
+    # -- L1: degenerate on this shape, one file per log folder --
+    report.add("distance_folder_filename", "bgl", "comparison_folders=ALL (9)",
+               *measure(lambda: server.distance_folder_filename(
+                   sid, target, comparison_folders="ALL"), repeat),
+               n=9, unit="folder")
+
+    # -- L3/L4: not applicable to this shape, and cheap enough to find out --
+    empty = report.add("distance_file_content", "bgl", "target_files=ALL, comparison=ALL",
+                       *measure(lambda: server.distance_file_content(
+                           sid, target, comparison_folders="ALL", target_files="ALL",
+                           content_format="Parse-Tip"), repeat))
+    report.note(f"{empty['warm_s']:.1f}s to return zero rows: every slice is one uniquely-named "
+                "file in its own log folder, so no file name is shared and the file- and "
+                "line-level tools have nothing to match on. Use the folder-level tools instead")
+
+    # -- anomaly first, not last: it is the heaviest thing here in memory, and
+    # -- on this log root that is what decides whether a call runs at all.
+    report.section("bgl -- anomaly, where this log root stops fitting in memory")
+    # Deliberately one point, not a sweep. Every other cost model in this file
+    # comes from calling a tool at two or three sizes in one process; that is not
+    # possible here. anomaly_folder_content holds roughly a gigabyte per target
+    # log folder on top of a 3 GB session, and a sweep to 4 targets was killed by
+    # the OOM killer three times before this became the measurement. The rate
+    # below is the honest one: two points from separate processes.
+    single = report.add("anomaly_folder_content", "bgl", "target_folder=1, comparison=ALL",
+                        *measure(lambda: server.anomaly_folder_content(
+                            sid, target_folder=[folders[0]], comparison_folders="ALL",
+                            content_format="Words"), 1),
+                        n=1, unit="target")
+    report.note(f"one target is {single['warm_s']:.0f}s. Measured on its own in a fresh process, "
+                'target_folder="ALL" -- the default -- is 76s and peaks at 14.6 GB, so the rate '
+                "is about 7s per target log folder. There is no fitted model for this row "
+                "because a sweep cannot be run: 4 targets in the same process as anything else "
+                "is an out-of-memory kill on a 16 GB machine. On this log root the default "
+                "argument is not merely slow")
+    report.note(f"RSS here: {current_rss_gb():.1f} GB held, {peak_rss_gb():.1f} GB peak")
+
+    report.section("bgl -- distance")
+    # -- L2: the level a split file is actually compared at --
+    report.scaling([
+        report.add("distance_folder_content", "bgl",
+                   f"comparison_folders={n}, Words" + (" (= ALL)" if n == 9 else ""),
+                   *measure(lambda n=n: server.distance_folder_content(
+                       sid, target, comparison_folders=n, content_format="Words"), 1),
+                   n=n, unit="folder")
+        for n in (1, 3, 9)], "comparison folder")
+    report.note("each comparison folder is ~471k lines to vectorize and compress, which is what "
+                "puts the marginal cost two orders of magnitude above Hadoop's 0.285s per folder")
+
+    # -- content formats, at a comparison count this log root can afford --
+    report.section("bgl -- what each content_format costs")
+    report.note("held at 3 comparison folders, not Hadoop's 10, because Words alone is 38s at "
+                "that size here. 3grams is not in this sweep: measured on its own it is 187s and "
+                "11.6 GB at these same 3 comparison folders, which runs the benchmark out of "
+                "memory when anything else has run first. It fits in a fresh process and "
+                "nowhere else")
+    for content_format in ("Parse-Tip", "Words", "Sklearn"):
+        report.add("distance_folder_content", "bgl", f"comparison=3, {content_format}",
+                   *measure(lambda cf=content_format: server.distance_folder_content(
+                       sid, target, comparison_folders=3, content_format=cf), 1))
+
+    # -- plots --
+    report.section("bgl -- plots")
+    scatter = report.add("plot_folder_content", "bgl",
+                         'comparison_folders=ALL (9), plots=["scatter"]',
+                         *measure(lambda: server.plot_folder_content(
+                             sid, target, comparison_folders="ALL", content_format="Words"), 1),
+                         n=9, unit="folder")
+    umap = report.add("plot_folder_content", "bgl", 'plots=["umap","scatter"]',
+                      *measure(lambda: server.plot_folder_content(
+                          sid, target, comparison_folders="ALL", content_format="Words",
+                          random_seed=42, plots=["umap", "scatter"]), 1))
+    report.note(f"the UMAP is free here ({umap['warm_s']:.1f}s against the scatter's "
+                f"{scatter['warm_s']:.1f}s) -- the opposite of HDFS, where it is 32x the "
+                "scatter. It lays out one point per log folder and there are ten of them, so "
+                "what both calls actually pay for is the term matrix over 4.7M lines. The gap "
+                f"between its first call ({umap['first_s']:.1f}s) and its warm one is numba "
+                "compiling the layout code")
+
+    scored = server.plot_folder_content(sid, target, comparison_folders="ALL",
+                                        content_format="Words")
+    report.add("query_result", "bgl", "filter + sort a 10-row result",
+               *measure(lambda: server.query_result(
+                   sid, scored["result_id"], where=[["lines", ">", 1]], sort_by="lines"), repeat))
+
+    server.close_log_root(sid)
+
+
 # --------------------------------------------------------------------------- #
 
 def main():
@@ -405,8 +625,10 @@ def main():
     parser.add_argument("--datasets", default=None,
                         help="Where the log roots live. Defaults to root_folder in "
                              "downloader/datasets.yml.")
-    parser.add_argument("--only", choices=("hadoop", "hdfs"), action="append", dest="roots",
-                        help="Benchmark one log root; repeatable.")
+    parser.add_argument("--only", choices=("hadoop", "hdfs", "bgl"), action="append",
+                        dest="roots", help="Benchmark one log root; repeatable. 'bgl' needs "
+                                           "<datasets>/bgl/BGL.log and writes a 743 MB copy of "
+                                           "it into the workdir.")
     parser.add_argument("--repeat", type=int, default=3,
                         help="Warm runs per measurement; the median is reported (default 3).")
     parser.add_argument("--markdown", default=None, help="Write the table to this file.")
@@ -417,8 +639,11 @@ def main():
 
     datasets_folder = os.path.expanduser(
         args.datasets or make_test_data.default_source_folder())
-    paths = make_test_data.ensure_datasets(dest_folder=datasets_folder)
-    roots = tuple(args.roots or ("hadoop", "hdfs"))
+    roots = tuple(args.roots or ("hadoop", "hdfs", "bgl"))
+    # Building the two derived log roots is minutes of work, and 'bgl' needs
+    # neither of them.
+    paths = (make_test_data.ensure_datasets(dest_folder=datasets_folder)
+             if {"hadoop", "hdfs"} & set(roots) else {})
 
     cache_dir = args.cache_dir or os.path.join(datasets_folder, "test_data", "mcp_cache")
     workdir = tempfile.mkdtemp(prefix="loglead-mcp-bench-")
@@ -433,6 +658,15 @@ def main():
             bench_hadoop(report, paths[make_test_data.HADOOP_RENAMED], args.repeat)
         if "hdfs" in roots:
             bench_hdfs(report, paths[make_test_data.HDFS_BALANCED_5K], args.repeat)
+        if "bgl" in roots:
+            # Not one of make_test_data's derived log roots: a plain loghub
+            # download, skipped rather than built if it is not there.
+            bgl = Path(datasets_folder) / "bgl" / "BGL.log"
+            if bgl.is_file():
+                bench_bgl(report, bgl, workdir, args.repeat)
+            else:
+                print(f"\nSkipping bgl: {bgl} not found. Get it with "
+                      f"'uv run downloader/download_data.py'.")
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
