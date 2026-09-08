@@ -42,6 +42,9 @@ datasets:
   - name: awsctd
     url: https://github.com/DjPasco/AWSCTD/raw/master/CSV.7z
     download: true
+  - name: openstack
+    url: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv
+    download: true
   - name: nginx_json
     url: https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_logs/nginx_json_logs
     download: true

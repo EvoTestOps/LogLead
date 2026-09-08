@@ -272,7 +272,7 @@ def download_all_parts(name, urls, dest_folder):
                 # else: a bare file (no archive extension) - it's already the payload in its
                 # final place, so leave it. Removing it unconditionally here used to delete the
                 # only copy of any dataset shipped as a plain file (e.g. nginx_json).
-    
+
     # Clean up cloned repositories
     for repo_url, repo_folder in cloned_repos.items():
         shutil.rmtree(repo_folder)
@@ -333,13 +333,16 @@ def copy_local_dataset(name, source_folder, dest_folder):
     shutil.copytree(source_folder, dest_folder)
 
 
-def main(dest_base_folder, yaml_file):
+def main(dest_base_folder, yaml_file, only_datasets=None):
     """
-    Downloads and unzips all datasets to the specified base folder.
+    Downloads and unzips datasets to the specified base folder.
 
     Args:
         dest_base_folder (str): The base folder where datasets should be downloaded.
         yaml_file (str): Path to the YAML file containing dataset information.
+        only_datasets (list): Names of the datasets to fetch. Nothing else is fetched.
+            None (the default) falls back to
+            the flags: every entry marked `download: true`.
     """
     data = load_datasets(yaml_file)
     root_folder = dest_base_folder if dest_base_folder else os.path.expanduser(data['root_folder'])
@@ -347,10 +350,28 @@ def main(dest_base_folder, yaml_file):
     if local_copy_folder:
         local_copy_folder = os.path.expanduser(local_copy_folder)
 
+    available = [dataset['name'] for dataset in data['datasets']]
+    if only_datasets is not None:
+        # Validate the names up front. A misspelled name matches no entry, so without this the
+        # script would exit 0 having downloaded nothing - indistinguishable from success.
+        unknown = [name for name in only_datasets if name not in available]
+        if unknown:
+            raise SystemExit(
+                f'Unknown dataset(s) {", ".join(unknown)} in {yaml_file}.\n'
+                f'Available: {", ".join(available)}')
+        only_datasets = set(only_datasets)
+        ignored = len(available) - len(only_datasets)
+        print(f'Downloading only: {", ".join(sorted(only_datasets))} '
+              f'({ignored} other dataset(s) in {yaml_file} ignored).')
+
     for dataset in data['datasets']:
         name = dataset['name']
-        skip_download = not dataset.get('download', True)
-        if skip_download:
+        if only_datasets is not None:
+            if name not in only_datasets:
+                continue
+            if not dataset.get('download', True):
+                print(f'{name} has download: false but was requested by name. Downloading it.')
+        elif not dataset.get('download', True):
             print(f'Skipping download for {name}.')
             continue
         dataset_folder = os.path.join(root_folder, name)
@@ -380,14 +401,30 @@ def main(dest_base_folder, yaml_file):
             download_all_parts(name, urls, dataset_folder)
 
 def cli():
-    parser = argparse.ArgumentParser(description='Download datasets to a specified location.')
+    parser = argparse.ArgumentParser(
+        description='Download datasets to a specified location.',
+        epilog='Without --datasets this downloads every dataset the config enables, which for the '
+               'default datasets.yml is ~104 GB unzipped. Use --list to see the names and '
+               '--datasets to fetch only the ones you want.')
     parser.add_argument('--location', type=str, help='The base folder where datasets should be downloaded. This overrides the location in the YAML file.')
     parser.add_argument('--config', type=str,
                          default=str(Path(__file__).parent / 'datasets.yml'),
                          help='Path to the YAML file containing dataset information. '
                               'Defaults to the datasets.yml next to this script.')
+    parser.add_argument('--datasets', '--dataset', nargs='+', metavar='NAME', dest='datasets',
+                        help='Download only these datasets, by name (e.g. --datasets openstack '
+                             'bgl).')
+    parser.add_argument('--list', action='store_true',
+                        help='List the dataset names in the config and exit, downloading nothing.')
     args = parser.parse_args()
-    main(args.location, args.config)
+    if args.list:
+        data = load_datasets(args.config)
+        print(f'Datasets in {args.config}:')
+        for dataset in data['datasets']:
+            state = '' if dataset.get('download', True) else '  (download: false)'
+            print(f'  {dataset["name"]}{state}')
+        return
+    main(args.location, args.config, args.datasets)
 
 if __name__ == '__main__':
     cli()

@@ -139,7 +139,16 @@ datasets = [
         'anomaly_detection': False,
         'expected_length': 174847810,
         'reduction_fraction': 0.0057
-    }
+    },
+    {
+        'name': 'openstack',
+        'url': 'https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv',
+        'download': True,
+        'load': True,
+        'enhance': True,
+        'anomaly_detection': True,
+        'expected_length': 217534
+    },
 ]
 
 
