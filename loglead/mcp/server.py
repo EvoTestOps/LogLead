@@ -1,3 +1,14 @@
+#TODO add ability to select which distance measures to compute
+#Add also info which are more heavy to compute than others.
+#TODO we need performance tests to determine some baseline numbers for many
+#analysis. Now we have. Report is not optimal yet. 
+# TODO need a way to work with single file logs like BGL. Split to pieces approach?
+# TODO: One should be able to supply own mask patterns also in openlog_root
+# We also want away to for MCP client to inpect a sample of log lines
+# max diversity of log lines to sample for mask pattern detection. 
+# Also saving a mask is needed as it can be expensive to figure out
+# a good mask and we do want to repeat
+
 """MCP server exposing LogLead's log folder comparison analyses.
 
 Wraps :mod:`loglead.delta` in a session model so a log root is loaded, masked,
@@ -104,11 +115,6 @@ def open_log_root(
     filename_pattern: str = "*.log",
     format: str = "auto",
     mask: bool = True,
-    # TODO: One should be able to supply own mask patterns also
-    # We also want away to for MCP client to inpect a sample of log lines
-    # max diversity of log lines to sample for mask pattern detection. 
-    # Also saving a mask is needed as it can be expensive to figure out
-    # a good mask and we do want to repeat
     mask_pattern: str = "myllari_extended",
     parsers: Optional[Sequence[str]] = None,
     file_name_normalizer: str = "none",
@@ -572,10 +578,7 @@ def distance_folder_filename(
         notes=["Distances: 1.0 means no file names in common, 0.0 means identical sets."],
     )
 
-#TODO add ability to select which distance measures to compute
-#Add also info which are more heavy to compute than others.
-#TODO we need performance tests to determine some baseline numbers for many
-#analysis 
+
 @tool
 def distance_folder_content(
     session_id: str,
@@ -1385,7 +1388,7 @@ def plot_file_content(
 # --------------------------------------------------------------------------- #
 # Reading LogDelta's YAML config format
 # --------------------------------------------------------------------------- #
-# TODO this LogDelta thing might bot be needed here or at all. 
+# TODO this LogDelta thing might not be needed here or at all. Delete?
 #: LogDelta's step keys. These are a published *file format*, not an import --
 #: nothing here depends on LogDelta -- so they keep its "run" vocabulary
 #: verbatim. Only the values move with our renames.
