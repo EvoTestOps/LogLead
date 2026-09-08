@@ -146,13 +146,21 @@ it — they already point `root_folder` straight at `~/Datasets`.
 
 Downloading datasets directly (independent of running tests):
 ```
+uv run downloader/download_data.py --list                             # names in the config, downloads nothing
+uv run downloader/download_data.py --datasets openstack hdfs          # just these two
 uv run downloader/download_data.py                                    # everything in downloader/datasets.yml
 uv run downloader/download_data.py --config tests/datasets_json.yml   # one test-specific set instead
 ```
-Edit the `datasets:` list in the relevant YAML and set `download: false` per-entry to skip datasets you
-don't need. Disk space: the full set in `downloader/datasets.yml` is ~7 GB to download and ~104 GB
-unzipped (Liberty/Spirit/Thunderbird dominate at 30-38 GB each) — make sure ~110 GB is free before running
-the unrestricted downloader.
+`--datasets` (alias `--dataset`) is the per-dataset selector, and it is the one to reach for: without
+it the command downloads the whole config. It is a **whitelist that replaces the `download:` flags
+rather than filtering them** — only the named datasets are fetched (every other entry is skipped
+however its flag reads), and a named one is fetched even where its flag says `download: false`,
+since asking for it by name is explicit. An unknown name raises `SystemExit` listing the valid ones
+*before* any network traffic, so a typo cannot silently download nothing, and the run opens by
+printing the selection plus how many entries it ignored. Setting `download: false` per-entry in the
+YAML is the other way to skip datasets, and is what governs a run with no `--datasets`. Disk space: the full set in `downloader/datasets.yml` is ~7 GB to
+download and ~104 GB unzipped (Liberty/Spirit/Thunderbird dominate at 30-38 GB each) — make sure
+~110 GB is free before running the unrestricted downloader.
 
 A dataset entry that carries `local_archive: '~/path/to/archive.zip'` instead of `url:`/`urls:` is one
 the downloader cannot fetch — it sits behind a login, Kaggle being the usual case. The archive is

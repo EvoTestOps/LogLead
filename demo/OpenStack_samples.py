@@ -1,5 +1,9 @@
-# This is an example using OpenStack data from samples folder.
+# This is an example using the full OpenStack dataset from your own data folder.
 # Source: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH
+# There is no bundled OpenStack sample. Like the RawLoader demos, this script reads the data from
+# the single dataset location given by LOG_DATA_PATH (see .env.sample). Download the data with:
+#   uv run downloader/download_data.py --datasets openstack
+# which places OpenStack_data_original.csv into <LOG_DATA_PATH>/openstack/
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
@@ -9,19 +13,29 @@ import polars as pl
 
 from loglead.enhancers import EventLogEnhancer
 from loglead import AnomalyDetector
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+full_data = os.getenv("LOG_DATA_PATH")
+if not full_data:
+    print("WARNING!: LOG_DATA_PATH is not set. This will most likely fail")
 
 # Ensure this always gets executed in the same location
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
-# Location of our sample data
-sample_data = os.path.join(script_dir, 'samples', 'OpenStack_data_original.csv')
+# Location of the OpenStack data inside the dataset folder
+openstack_data = os.path.join(full_data or "", "openstack", "OpenStack_data_original.csv")
 
 # _________________________________________________________________________________
-# Part 2 load data from sample file
-# Load TB from sample data
-df = pl.read_csv(sample_data)
-print(f"Read OpenStack sample. Numbers of events: {len(df)}")
+# Part 2 load data from the dataset folder
+if not os.path.isfile(openstack_data):
+    raise FileNotFoundError(
+        f"OpenStack data not found at {openstack_data}. Set LOG_DATA_PATH in your .env "
+        f"(see .env.sample) and download the data with:\n"
+        f"  uv run downloader/download_data.py --datasets openstack")
+
+df = pl.read_csv(openstack_data)
+print(f"Read OpenStack data. Numbers of events: {len(df)}")
 ano_count = df["anom_label"].sum()
 print(f"Anomaly count {ano_count}. Anomaly percentage in Events {ano_count / len(df) * 100:.2f}%")
 

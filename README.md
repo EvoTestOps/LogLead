@@ -73,7 +73,6 @@ Or with `pip` (after installing LogLead into your environment):
 cd LogLead/demo
 python HDFS_samples.py
 python TB_samples.py
-python OpenStack_samples.py
 ```
 `uv run` syncs the environment from `pyproject.toml`/`uv.lock` on first use, so there's no separate install step before running anything.
 
@@ -85,13 +84,22 @@ Or with `pip`:
 ```
 python RawLoader_NoLabels.py
 ```
-Finally, you can try downloading all data. The [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script downloads the public datasets listed in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml):
+Finally, you can try downloading data. The [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script fetches the public datasets listed in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml). See what's on offer, then pick what you want with `--datasets`:
+```
+uv run downloader/download_data.py --list
+uv run downloader/download_data.py --datasets openstack hdfs
+```
+`--datasets` is a whitelist: **only** the datasets you name are fetched and every other entry in the
+config is skipped, whatever its `download:` flag says. Conversely a dataset you do name is fetched
+even if its entry says `download: false`. An unknown name stops the script before anything is
+downloaded, and the run starts by printing what it selected and how many entries it ignored. Leave `--datasets` off to download **everything** the config
+enables — that's ~104 GB unzipped for `datasets.yml`, so check the disk space note below first:
 ```
 uv run downloader/download_data.py
 ```
 Or with `pip` (after cloning the repo):
 ```
-python downloader/download_data.py
+python downloader/download_data.py --datasets openstack
 ```
 If you've cloned the repo and want to run the test suite too, point it at one of the
 [tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead — e.g.
@@ -106,7 +114,7 @@ python downloader/download_data.py --config tests/datasets_mid_labels.yml
 ```
 **Disk space:** downloading everything in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) transfers roughly 7 GB and the datasets expand to about 104 GB once unzipped. Make sure you have **at least ~110 GB free** before running the full downloader. The three supercomputer logs — Liberty, Spirit, and Thunderbird — account for most of it, at 30-38 GB each once unzipped.
 
-If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or the relevant `tests/datasets_*.yml` if you're using `--config tests/datasets_*.yml`) and set `download: false` for datasets you don't need.
+If you're short on space, pass `--datasets <name> ...` to fetch only what you need, or edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or the relevant `tests/datasets_*.yml` if you're using `--config tests/datasets_*.yml`) and set `download: false` for datasets you don't need.
 
 | Dataset | Download size | Unzipped size |
 |---|---|---|
@@ -292,7 +300,17 @@ The underlying analyses are also importable directly, without MCP — see
 ### OpenStack Log Demo
 - **Script**: [OpenStack_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/OpenStack_samples.py)
 - **Log Snapshot**: View the log [here](https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH).
-- **Dataset**: The demo includes a xlsx file containing a subset of 217,534 log events, with 84,760 anomalies.
+- **Dataset**: 217,534 log events with 1,204 anomalies (0.55%). Unlike the HDFS and TB demos, there is
+  no bundled sample - the script reads `OpenStack_data_original.csv` from your own data folder, like
+  the RawLoader demos do. Set `LOG_DATA_PATH` in a `.env` file (see
+  [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample)) and download the data with:
+```
+uv run downloader/download_data.py --datasets openstack
+```
+  which fetches just that 82 MB CSV into `<LOG_DATA_PATH>/openstack/`. Then run:
+```
+uv run demo/OpenStack_samples.py
+```
 
 ## Testing
 Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
@@ -307,7 +325,6 @@ Or with `pip`:
 cd demo
 python HDFS_samples.py
 python TB_samples.py
-python OpenStack_samples.py
 ```
 
 Parser benchmark
