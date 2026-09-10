@@ -56,23 +56,27 @@ belong together) to find which one looks wrong, with no labels required.
 Start with peek_log_root to see what is on disk without loading it -- it also
 says when a path is one big log file rather than a set of log folders, which
 split_log_file turns into slices you can compare. Then open_log_root, and drill
-down: File names -> Whole log
-text of all logs -> One log file text across folders -> Individual lines. distance_* pairs
-performs pairwise distance measurement; anomaly_* trains on given set and 
-scores on another (automatically avoids using train data in test) and ranks 
-many folders/files/lines by anomaly score; plot_* draws them. Every result
-keeps its full table server-side under a result_id -- use query_result to
-filter or page through it instead of re-running the analysis. You can also
-inspect raw log files directly: search_log_lines finds lines by regex or
-substring with line numbers, and query_result filters/pages any result
-table.
+down through folder-name, folder-content, file-content, and line-content, in
+that order.
+
+WORK TOP DOWN, NOT SEARCH OR READ LOGS FIRST. This server is built around narrowing a
+haystack, not searching it. Top level approaches are statistics plots and machine learning.
+learning approaches. The intended path is: folder/file/line and in tools
+plot_* first followed by distance_* or anomaly_* funciotns. First, look
+folder level to see which folder is the outlier, then the same at the file
+level within that folder to see which file is the outlier, then at the line
+level within that file to see which lines are the outliers. It is recommended
+to run line level anomaly detection and look at lines that have high 
+anomaly scores. Finally only after all statistics based approaches have been 
+tried resort functions read_log_lines or search_log_lines to look at the specific 
+lines that the narrowing surfaced. Jumping straight to 
+search_log_lines or read_log_lines on a whole log root is starting from a guess 
+about what might be wrong; the distance/anomaly/plot tools exist precisely so 
+you don't have to guess. Prefer statistics ML stuff and treat search/read as the 
+last step that inspects a result, not the first step that produces one.
 
 COST. These tools span milliseconds to hours. Every result reports its own
-elapsed_seconds: make one narrow call. A call big enough can be killed by the
-operating system, which takes this server with it and closes the connection with
-no answer -- if that happens, reconnect and open_log_root the same path again
-(the cache makes it fast); the next result names the call that died and which
-argument to make smaller.""")
+elapsed_seconds: make one narrow call.""")
 
 #: Set by main(); tests and demos construct their own.
 STORE = SessionStore()
