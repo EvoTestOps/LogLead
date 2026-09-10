@@ -34,9 +34,12 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
         other_series = other_files.get_column("file_name")
         target_series = target_files.get_column("file_name")
 
-        only_in_target = target_files.filter(~pl.col("file_name").is_in(other_series)).height
-        only_in_comparison = other_files.filter(~pl.col("file_name").is_in(target_series)).height
-        intersection = target_files.filter(pl.col("file_name").is_in(other_series)).height
+        # .implode() because polars 1.x deprecated passing a bare Series here:
+        # a same-dtype collection is ambiguous between "is in this set" and an
+        # element-wise comparison, and imploding says which one is meant.
+        only_in_target = target_files.filter(~pl.col("file_name").is_in(other_series.implode())).height
+        only_in_comparison = other_files.filter(~pl.col("file_name").is_in(target_series.implode())).height
+        intersection = target_files.filter(pl.col("file_name").is_in(other_series.implode())).height
         union = pl.concat([target_files, other_files]).unique().height
 
         smaller = min(target_files.height, other_files.height)
@@ -108,28 +111,32 @@ def distance_file_content(
     if target_files != "ALL":
         wanted = set(log_root.prepare_files(target_df, target_files))
 
-    results = []
-    for other_folder in comparison_folder_names:
-        other_df = df.filter(pl.col("folder") == other_folder)
-        other_names = other_df.get_column("file_name").unique()
-        matching = (
-            target_df.select("file_name")
-            .unique()
-            .filter(pl.col("file_name").is_in(other_names))
-            .get_column("file_name")
-            .to_list()
-        )
-        if wanted is not None:
-            matching = [name for name in matching if name in wanted]
-        if not matching:
-            continue
+    target_names = set(target_df.get_column("file_name").unique().to_list())
+    if wanted is not None:
+        target_names &= wanted
 
-        for file_name in sorted(matching):
-            target_file_df = target_df.filter(pl.col("file_name") == file_name)
-            other_file_df = other_df.filter(pl.col("file_name") == file_name)
+    pairs, target_files_df = {}, {}
+    if target_names:
+        wanted_names = list(target_names)
+        pairs = (df.filter(pl.col("folder").is_in(comparison_folder_names)
+                           & pl.col("file_name").is_in(wanted_names))
+                 .partition_by(["folder", "file_name"], as_dict=True))
+        target_files_df = {key[0]: part for key, part in
+                           target_df.filter(pl.col("file_name").is_in(wanted_names))
+                           .partition_by("file_name", as_dict=True).items()}
+    names_per_folder = {}
+    for folder_name, file_name in pairs:
+        names_per_folder.setdefault(folder_name, []).append(file_name)
+
+    results = []
+    # Comparison-folder order, then file name sorted within it -- the order the
+    # per-folder loop produced, so the table reads the same as before.
+    for other_folder in comparison_folder_names:
+        for file_name in sorted(names_per_folder.get(other_folder, ())):
             # LogDelta dropped `vectorizer` here, silently always using Count.
             distance = LogDistance(
-                target_file_df, other_file_df, vectorizer=vectorizer_class, field=field
+                target_files_df[file_name], pairs[(other_folder, file_name)],
+                vectorizer=vectorizer_class, field=field
             )
             results.append({
                 "file_name": file_name,
