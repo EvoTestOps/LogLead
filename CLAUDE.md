@@ -139,6 +139,21 @@ should be >= n_clusters=2`), not a failed run. One rule instead of a hand-mainta
 cells: a cold call slower than `HEAVY_SECONDS` (20s) gets one warm repeat rather than `--repeat`,
 because the third digit of a two-minute call is not what anyone reads.
 
+**A memory cell is one number, the peak**, and the fix for a peak that is mostly something else
+is to measure it somewhere else — not to print a second number beside it. Every cell of a block
+runs with the log root open, so the peak carries the session's frame: the first grid to record
+memory reported 5.14 GB for `peek_log_root` on bgl at 100%, ~0.02 GB of which was peek. So
+`peek_log_root` and `split_log_file` are measured **before** `GridContext.open()`, neither
+needing a session — keep new session-free tools in `session_free_cells`, not in `grid_cells`. A
+`peak (+own)` cell format was tried for the rest and **removed**: a grid is read by scanning a
+column for the figure that stands out, and a second figure in every cell is what stops that
+working. `Measure.floor_gb` still records the RSS before each call and still lands in the cell
+JSON, as the thing to look at when a peak looks wrong; `_fmt_gb` renders the peak alone and
+should stay that way. Two other properties to keep: a block whose session-needing cells are all
+recorded **skips the open entirely**, so re-measuring one row costs seconds rather than an 8.5 GB
+read; and `cell_pending` only forces a redo when a cell has no memory at all, so adding a field
+does not silently re-run the whole grid — clearing the cell directory is how that is asked for.
+
 **What a fraction means differs by log root**, because the two shapes differ in what makes them big.
 `hadoop_renamed` and `hdfs_balanced_5k` are many log folders, so a fraction is a fraction of the
 *log folders*, hard-linked into a reduced copy — 5,000 folders cost directory entries rather than
@@ -609,6 +624,24 @@ counted: measured +1.3% against BGL's true count, where reading the head alone i
 log's opening lines are not representative of it — the same fact `AutoLoader`'s `_MID_CHUNK_BYTES`
 exists for.
 
+**Peek's cost is its imports, not its work**, which is why `loglead/__init__.py` and
+`loglead/delta/__init__.py` resolve their public names **lazily** (PEP 562 `__getattr__`) and
+`log_root.create_vectorizer` imports sklearn inside the function. Importing any submodule runs
+its package `__init__`, so `from loglead.delta import log_root` used to load sklearn, xgboost,
+plotly and umap — 0.45 GB and ~8s — before peek stat'ed a file; it is 0.057 GB and ~0.5s now, and
+peek's own work is a flat **20–30 MB** whether the log root is 10 log folders or 5,000, 0.01 GB
+or 0.74 GB (it counts files and samples lines, so nothing about it scales with the data). Two
+rules follow. **Do not add a heavy top-level import to `loglead/__init__.py`,
+`loglead/delta/__init__.py`, `delta/log_root.py` or `delta/visualize.py`** — put it in the
+function that needs it, as `EventLogEnhancer`'s `parse_*` methods already do for the parsers. And
+when a *new* public name is added to either package, add it to that package's `_LAZY` table; a
+name missing from the table is an `AttributeError` at first use rather than an ImportError at
+import, which is the one way this can fail quietly. `loglead/mcp/server.py` deliberately keeps
+its eager `from ..delta import anomaly, distance, ... visualize`: a server exists to run
+analyses, `visualize.PLOTS`/`DEFAULT_PLOTS` are default argument values evaluated at import, and
+the ~0.19 GB of sklearn is a one-time startup cost shared by every tool rather than a per-call
+one.
+
 Supporting modules: `log_root.py` (loading, peeking, and resolving the `"ALL"`/list/int/`"Prefix*"`
 selectors for log folders and files), `split.py` (cutting one file into a log root), `masking.py` (named regex sets — **only ever resolve these by name via `get_pattern()`,
 because `EventLogEnhancer.normalize()` `eval()`s what it is handed**), `scoring.py` (`zscore_sum` and
@@ -642,7 +675,11 @@ accepts the sparse matrix but takes its sparse nearest-neighbour path and is *sl
 13s on the same 5,000 folders). Two costs no flag can remove, so don't go looking: `random_state`
 makes umap-learn single-threaded (13s vs 5s warm on 12 cores), which is the price of `random_seed`
 being reproducible, and the first layout in a process pays ~29s of numba JIT on top of `import
-umap`'s own 14s at `delta/__init__` time.
+umap` itself. That import is **inside `_umap_2d`**, not at module level: it costs ~380 MB of
+numba/llvmlite and 6-14s, the default plot never asks for a layout, and at module level every
+entry point paid it merely by importing `loglead.delta` — `peek_log_root`, whose whole point is
+being cheap, opened at 0.45 GB resident before it stat'ed a single file and at 0.24 GB after.
+Keep it lazy; the cost simply moves onto the call that actually needs a layout.
 
 Flipping that default put one thing at risk that `_STEP_DEFAULTS` (`mcp/server.py`) exists to hold:
 LogDelta's plot steps always draw **both** figures and its config format has no key to say so, so
@@ -737,6 +774,15 @@ expression string, because the clause arrives from a model and nothing here `eva
 "re-run the analysis" rather than resurrect anything; and the cache is bounded **twice**
 (`MAX_RESULTS`, `MAX_RESULT_ROWS`) because one `plot_file_content` call stashes a tiny table per file
 while one `anomaly_line_content` call stashes a scored frame per file with a row per log line.
+
+**Project before you group.** An eager Polars `group_by` carries the whole frame through the
+hash partitioning, so grouping a session frame directly costs the width of the frame, not the
+width of the aggregation: on bgl at 50% (2.4M rows x 19 columns) `describe_log_root`'s per-folder
+count peaked at 0.55 GB and 0.19s, against 0.006 GB and 0.05s for `df.select(cols).group_by(...)`
+— 90x the memory to count lines. Every `group_by` in `delta/` and `mcp/` names its columns first
+for this reason (`describe_log_root`, `search_log_lines`, `visualize`'s line counts,
+`aggregate_dataframe`); keep new ones that way. It is invisible on a small frame and is the
+difference between a flat memory column and a climbing one on a big one.
 
 **The three plot tools return no rows at all, and have no `max_rows`** (`_plot_result`) — the only
 analysis tools without one, and the only ones that do not build their envelope through

@@ -23,7 +23,6 @@ import os
 import re
 
 import polars as pl
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 from ..enhancers import EventLogEnhancer
 from ..loaders import (DEFAULT_MAX_DETECT_FILES, AccessLogLoader, AutoLoader, DelimitedLoader,
@@ -1021,7 +1020,10 @@ def aggregate_dataframe(df, group_by_col, field):
             .agg(pl.col(field))
         )
     if dtype == pl.Utf8:
-        return df.group_by(group_by_col).agg(pl.col(field).alias(field))
+        # Projected first for the same reason as the List branch above: an eager
+        # group_by drags every other column of the frame through the grouping.
+        return (df.select(group_by_col, field)
+                .group_by(group_by_col).agg(pl.col(field).alias(field)))
     raise ValueError(
         f"Unsupported datatype {dtype} in field {field}. Supported: Utf8, List[Utf8]"
     )
@@ -1032,7 +1034,13 @@ def create_vectorizer(vectorizer_type):
 
     A class, not an instance: ``LogDistance`` and ``AnomalyDetector`` both
     instantiate it themselves.
+
+    sklearn is imported here rather than at module level: it costs ~150MB and
+    ~1.1s, and this module is also the home of :func:`peek_log_root`, which
+    vectorizes nothing. A peek-only process now never loads it.
     """
+    from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+
     if vectorizer_type == "Count":
         return CountVectorizer
     if vectorizer_type == "Tfidf":

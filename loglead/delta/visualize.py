@@ -18,7 +18,6 @@ the positions.
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
-import umap
 
 from . import log_root, scoring
 
@@ -177,7 +176,14 @@ def _umap_2d(dtm, random_seed=None):
     Densified on the way in deliberately: UMAP accepts the sparse matrix, but
     takes its sparse nearest-neighbour path for it and is slower there (34s
     against 13s on 5,000 HDFS log folders).
+
+    ``umap`` is imported *here* rather than at module level. It costs ~380MB and
+    ~7s of numba/llvmlite at import time, the default plot asks for no layout at
+    all, and every other entry point -- ``peek_log_root`` above all, whose whole
+    point is being cheap -- paid all of it merely by importing this package.
     """
+    import umap
+
     reducer = umap.UMAP(random_state=random_seed) if isinstance(random_seed, int) else umap.UMAP()
     return reducer.fit_transform(dtm.toarray())
 
@@ -340,7 +346,7 @@ def plot_folder(
     unique_terms = (dtm > 0).sum(axis=1)
     embeddings_2d = _umap_2d(dtm, random_seed) if "umap" in plots else None
     line_counts = (
-        included.group_by("folder").agg(pl.len().alias("lines")).sort("folder")
+        included.select("folder").group_by("folder").agg(pl.len().alias("lines")).sort("folder")
         .get_column("lines").to_numpy()
     )
 
@@ -390,8 +396,8 @@ def plot_file_content(
         unique_terms = (dtm > 0).sum(axis=1)
         embeddings_2d = _umap_2d(dtm, random_seed) if "umap" in plots else None
         line_counts = (
-            file_df.group_by("folder").agg(pl.len().alias("lines")).sort("folder")
-            .get_column("lines").to_numpy()
+            file_df.select("folder").group_by("folder").agg(pl.len().alias("lines"))
+            .sort("folder").get_column("lines").to_numpy()
         )
         points = _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, grouped)
         fig_umap, fig_scatter = _figures(

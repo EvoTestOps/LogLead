@@ -55,6 +55,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import polars as pl
 import yaml
@@ -342,13 +343,35 @@ class _RSSMonitor:
         return False
 
 
+class Measure(NamedTuple):
+    """What one call cost: how long, the process peak, and the floor it started from.
+
+    ``peak_gb`` is what the tables print: what has to fit in RAM while the call
+    runs, which is the number that OOM-kills a machine.
+
+    ``floor_gb`` is resident memory the instant before the call -- the frames
+    already open, the libraries already imported. It is recorded in the cell
+    JSON but **not** rendered: it is there to keep a peak interpretable when one
+    looks wrong, since most of a bgl cell's peak is the 3GB frame sitting beside
+    it rather than the call. That is how ``peek_log_root`` came to read 5.14GB
+    in the first grid that measured memory, ~0.02 of which was peek -- the fix
+    for which was to measure it before anything is open, not to print a second
+    number in every cell.
+    """
+
+    seconds: float
+    peak_gb: float
+    floor_gb: float
+
+
 def time_and_mem(call):
-    """One call's elapsed time and peak resident memory, as ``(seconds, GB)``."""
+    """One call's elapsed time, peak resident memory and starting floor."""
     with _RSSMonitor() as monitor:
+        floor = monitor.peak  # seeded with the RSS at entry
         started = time.perf_counter()
         call()
         elapsed = time.perf_counter() - started
-    return elapsed, monitor.peak
+    return Measure(elapsed, monitor.peak, floor)
 
 
 def measure_adaptive(call, repeat=3, heavy_seconds=HEAVY_SECONDS):
@@ -362,13 +385,12 @@ def measure_adaptive(call, repeat=3, heavy_seconds=HEAVY_SECONDS):
     the max across repeats rather than the median that time uses: a peak that
     only showed up once is still the one a client should plan for.
     """
-    first, first_mem = time_and_mem(call)
-    times, mems = [], []
-    for _ in range(1 if first > heavy_seconds else max(1, repeat)):
-        elapsed, mem = time_and_mem(call)
-        times.append(elapsed)
-        mems.append(mem)
-    return first, statistics.median(times), first_mem, max(mems)
+    cold = time_and_mem(call)
+    warm = [time_and_mem(call)
+            for _ in range(1 if cold.seconds > heavy_seconds else max(1, repeat))]
+    return cold, Measure(statistics.median(run.seconds for run in warm),
+                         max(run.peak_gb for run in warm),
+                         max(run.floor_gb for run in warm))
 
 
 #: One canonical call per tool, as ``(table, label)`` in the order
@@ -464,16 +486,16 @@ class GridContext:
         """Cold read against cached re-attach -- the one row where the cold
         number is the interesting one, and the justification for sessions."""
         sid = self.sid + "-cold"
-        cold, cold_mem = time_and_mem(
+        cold = time_and_mem(
             lambda: server.open_log_root(**open_kwargs(self.kind, self.path, sid),
                                          refresh=True))
         server.close_log_root(sid)
         gc.collect()
-        cached, cached_mem = time_and_mem(
+        cached = time_and_mem(
             lambda: server.open_log_root(**open_kwargs(self.kind, self.path, sid)))
         server.close_log_root(sid)
         gc.collect()
-        return cold, cached, cold_mem, cached_mem
+        return cold, cached
 
     def measured_split(self):
         """Cut the log root's largest file into ten slices.
@@ -486,20 +508,20 @@ class GridContext:
         biggest = max(files, key=os.path.getsize)
         out_dir = os.path.join(self.workdir, "split-cell")
         shutil.rmtree(out_dir, ignore_errors=True)
-        cold, cold_mem = time_and_mem(
+        cold = time_and_mem(
             lambda: server.split_log_file(biggest, n_slices=10, out_dir=out_dir))
-        _, warm, _, warm_mem = measure_adaptive(
+        _, warm = measure_adaptive(
             lambda: server.split_log_file(biggest, n_slices=10, out_dir=out_dir),
             self.repeat)
         shutil.rmtree(out_dir, ignore_errors=True)
-        return cold, warm, cold_mem, warm_mem
+        return cold, warm
 
     def measured_close(self):
         """A close is a one-shot: closing an already-closed session is a no-op,
         so this is measured once and the same numbers stand as both."""
-        elapsed, mem = time_and_mem(lambda: server.close_log_root(self.sid))
+        closed = time_and_mem(lambda: server.close_log_root(self.sid))
         self.session = None
-        return elapsed, elapsed, mem, mem
+        return closed, closed
 
     def measured_run_config(self):
         """A minimal LogDelta config over this log root: one content-distance
@@ -529,16 +551,33 @@ class GridContext:
         runs after every analysis cell and puts the names back afterwards."""
         names = {name: f"Bench{index:04d}"
                  for index, name in enumerate(self.session.folders)}
-        first, warm, first_mem, warm_mem = measure_adaptive(
+        cold, warm = measure_adaptive(
             lambda: server.set_folder_names(self.sid, names), self.repeat)
         server.set_folder_names(self.sid, {})
-        return first, warm, first_mem, warm_mem
+        return cold, warm
 
     def query_target(self):
         """A stashed table to query, produced by the cheapest tool that makes
         one. Untimed: the cell measures the query, not the analysis."""
         result = server.plot_folder_filename(self.sid, self.target)
         return result["result_id"]
+
+
+def session_free_cells(ctx):
+    """``[(table, label, run)]`` for the tools that need no session open.
+
+    Measured **before** the block opens the log root, and that ordering is the
+    whole point. Both of these are questions about what is on disk -- peek
+    stats files and reads a few hundred lines, split streams a file through an
+    8MB buffer -- so neither should be reported carrying the weight of a frame
+    it never touches. Run after the open, ``peek_log_root`` on bgl at 100%
+    measured 5.14GB, all but ~0.02 of it the session sitting beside it.
+    """
+    return [
+        ("aux", "peek_log_root",
+         lambda: measure_adaptive(lambda: server.peek_log_root(ctx.path), ctx.repeat)),
+        ("aux", "split_log_file", ctx.measured_split),
+    ]
 
 
 def grid_cells(ctx):
@@ -561,7 +600,6 @@ def grid_cells(ctx):
             sid, rid, where=[["lines", ">", 0]], sort_by="lines"))
 
     cells = [
-        ("aux", "peek_log_root", lambda: call(lambda: server.peek_log_root(ctx.path))),
         ("aux", "open_log_root", ctx.measured_open),
         ("aux", "list_log_roots", lambda: call(lambda: server.list_log_roots())),
         ("aux", "describe_log_root", lambda: call(lambda: server.describe_log_root(sid))),
@@ -606,7 +644,6 @@ def grid_cells(ctx):
              plots=["umap", "scatter"]))),
 
         ("aux", "query_result", query_cell),
-        ("aux", "split_log_file", ctx.measured_split),
         ("aux", "run_config", ctx.measured_run_config),
         ("aux", "set_folder_names", ctx.measured_folder_names),
         ("aux", "close_log_root", ctx.measured_close),
@@ -630,28 +667,71 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
     """
     os.makedirs(cell_dir, exist_ok=True)
     inflight_path = os.path.join(cell_dir, "inflight.json")
-    ctx = GridContext(kind, fraction, path, workdir, repeat).open()
+    ctx = GridContext(kind, fraction, path, workdir, repeat)
+
+    print(f"\n{'=' * 100}\n {ROOT_LABELS[kind]} at {fraction:.0%} -- "
+          f"{shape['n_folders']} log folders\n{'=' * 100}")
+
+    # The tools that ask about files on disk, measured while nothing is open:
+    # a floor of bare imports is the one they should be read against.
+    session_free = session_free_cells(ctx)
+    record_cells(session_free, kind, fraction, cell_dir, inflight_path)
+
+    # Opening is the expensive thing in the block -- minutes and gigabytes on
+    # bgl -- so it is skipped when nothing left to measure needs a session. That
+    # is not a rare case: it is every relaunch that only has session-free cells
+    # left, and every targeted re-measure of one row.
+    session_labels = {label for _, label, _ in session_free}
+    pending = [label for _, label in GRID_ROWS if label not in session_labels
+               and cell_pending(os.path.join(cell_dir,
+                                             cell_slug(kind, fraction, label) + ".json"))]
+    if not pending:
+        print(" ...every cell needing a session is already recorded; not opening")
+        return
+
+    ctx.open()
     shape = {**shape, "n_lines": shape.get("n_lines") or ctx.n_rows,
              "n_folders": shape.get("n_folders") or ctx.n_folders}
     with open(os.path.join(cell_dir, f"shape-{kind}-{fraction_tag(fraction)}.json"),
               "w") as handle:
         json.dump({"root": kind, "fraction": fraction, **shape}, handle)
+    print(f" ...open: {shape['n_folders']} log folders, {shape['n_lines']:,} lines")
 
-    print(f"\n{'=' * 100}\n {ROOT_LABELS[kind]} at {fraction:.0%} -- "
-          f"{shape['n_folders']} log folders, {shape['n_lines']:,} lines\n{'=' * 100}")
+    record_cells(grid_cells(ctx), kind, fraction, cell_dir, inflight_path)
 
-    for table, label, run in grid_cells(ctx):
+    if ctx.session is not None:
+        server.close_log_root(ctx.sid)
+    gc.collect()
+
+
+def cell_pending(out_path):
+    """Whether this cell still has to be measured.
+
+    A cell recorded before memory instrumentation existed has a status but no
+    memory fields -- redo it rather than skip it, so an old PERFORMANCE.md-only
+    cache grows PERF_MEMORY.md data in place. An "error"/"oom" cell never called
+    ``run()`` and never will produce memory either, so those stay skipped.
+
+    A cell that has ``*_mem_gb`` but no ``*_floor_gb`` predates the floor
+    measurement and is **kept**: the floor is not rendered anyway, so the cell
+    prints exactly what a fresh one would. Forcing those to be redone would
+    mean re-measuring the whole grid -- hours, and an OOM relaunch or two --
+    every time a field is added, which is a decision for whoever is running it.
+    Clear the cell directory to ask for that deliberately.
+    """
+    if not os.path.isfile(out_path):
+        return True
+    with open(out_path) as handle:
+        existing = json.load(handle)
+    return existing["status"] == "ok" and "cold_mem_gb" not in existing
+
+
+def record_cells(cells, kind, fraction, cell_dir, inflight_path):
+    """Measure and record each cell, skipping the ones already on disk."""
+    for table, label, run in cells:
         out_path = os.path.join(cell_dir, cell_slug(kind, fraction, label) + ".json")
-        if os.path.isfile(out_path):
-            with open(out_path) as handle:
-                existing = json.load(handle)
-            # A cell recorded before memory instrumentation existed has a
-            # status but no memory fields -- redo it rather than skip, so an
-            # old PERFORMANCE.md-only cache grows PERF_MEMORY.md data in place.
-            # An "error"/"oom" cell never called run() and never will produce
-            # memory either, so those stay skipped.
-            if existing["status"] != "ok" or "cold_mem_gb" in existing:
-                continue
+        if not cell_pending(out_path):
+            continue
         with open(inflight_path, "w") as handle:
             json.dump({"root": kind, "fraction": fraction, "table": table,
                        "tool": label, "path": out_path}, handle)
@@ -659,12 +739,15 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
                   "status": "ok"}
         started = time.perf_counter()
         try:
-            cold, warm, cold_mem, warm_mem = run()
-            record.update(cold_s=round(cold, 4), warm_s=round(warm, 4),
-                          cold_mem_gb=round(cold_mem, 3), warm_mem_gb=round(warm_mem, 3),
-                          band=band(warm))
-            print(f"  {label:<38} cold {cold:8.3f}s {cold_mem:6.2f}GB  "
-                  f"warm {warm:8.3f}s {warm_mem:6.2f}GB  {band(warm)}")
+            cold, warm = run()
+            record.update(cold_s=round(cold.seconds, 4), warm_s=round(warm.seconds, 4),
+                          cold_mem_gb=round(cold.peak_gb, 3),
+                          warm_mem_gb=round(warm.peak_gb, 3),
+                          cold_floor_gb=round(cold.floor_gb, 3),
+                          warm_floor_gb=round(warm.floor_gb, 3),
+                          band=band(warm.seconds))
+            print(f"  {label:<38} cold {cold.seconds:8.3f}s {cold.peak_gb:6.2f}GB  "
+                  f"warm {warm.seconds:8.3f}s {warm.peak_gb:6.2f}GB  {band(warm.seconds)}")
         except Exception as exc:  # a tool that cannot run on this shape is data
             record.update(status="error", error=f"{type(exc).__name__}: {exc}",
                           cold_s=round(time.perf_counter() - started, 4))
@@ -672,10 +755,6 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
         with open(out_path, "w") as handle:
             json.dump(record, handle)
         os.remove(inflight_path)
-
-    if ctx.session is not None:
-        server.close_log_root(ctx.sid)
-    gc.collect()
 
 
 def collect_grid(cell_dir):
@@ -709,6 +788,13 @@ def _fmt_seconds(record, key):
 
 
 def _fmt_gb(record, key):
+    """One number per cell: the peak.
+
+    The floor each call started from is recorded too (see :class:`Measure`) and
+    stays in the cell JSON, but it is deliberately **not** rendered here. A
+    grid is read by scanning a column for the number that stands out, and a
+    second figure in every cell is what stops that working. Do not put it back.
+    """
     if record is None:
         return ""
     if record["status"] == "oom":
@@ -814,6 +900,37 @@ def memory_markdown(records, shapes, fractions=FRACTIONS,
         "**warm** -- the max across the repeats, same process, rather than the "
         "median: a peak that",
         "only showed up once is still the one a client should plan for.",
+        "",
+        "**A cell is the whole process's peak while the call ran, not the "
+        "call's own allocation.**",
+        "Every cell of a block runs with the log root already open, so the "
+        "session's frame is",
+        "resident underneath -- on bgl at 100% that is ~3GB before any tool is "
+        "called, and it is why",
+        "the aux column climbs down a bgl column. Read a cell as what a machine "
+        "running this call on",
+        "this log root needs, which is the number that OOM-kills.",
+        "",
+        "`peek_log_root` and `split_log_file` are the exception: they are "
+        "measured **before** the",
+        "block opens anything, since neither needs a session. Peek stats the "
+        "files and reads a few",
+        "hundred lines; split streams its file through an 8MB buffer. Their "
+        "floor is the server's own",
+        "imports (~0.31GB: polars, sklearn, plotly, the MCP SDK), paid once at "
+        "startup and shared by",
+        "every tool. Measured *after* the open, as they were in the first grid "
+        "to record memory, peek",
+        "read 5.14GB on bgl at 100% -- all but ~0.02 of it the frame sitting "
+        "beside it. Neither",
+        "scales with the data: peek is ~20-30MB from 10 log folders to 5,000 "
+        "and from 0.01GB to",
+        "0.74GB of logs, because it counts files and samples lines rather than "
+        "reading them.",
+        "",
+        "Cells recorded before `loglead.delta` stopped importing umap eagerly "
+        "read ~0.2GB high. Clear",
+        "the cell directory to re-measure the grid from scratch.",
     ]
     return _grid_markdown(records, shapes, fractions, roots, "MCP tool memory", intro,
                           (("A", "cold_mem_gb", "cold (first call)"),

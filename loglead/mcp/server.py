@@ -427,17 +427,20 @@ def describe_log_root(session_id: str, include_files: bool = False) -> dict:
     """
     session = STORE.get(session_id)
     aggs = [pl.col("file_name").n_unique().alias("n_files"), pl.len().alias("n_lines")]
+    columns = ["folder", "file_name"]
     if "folder_original" in session.df.columns:
         # Show what each log folder is called on disk, so a new name can still be
         # traced back to its folder.
         aggs.append(pl.col("folder_original").first().alias("folder_original"))
-    per_folder = session.df.group_by("folder").agg(aggs).sort("folder")
+        columns.append("folder_original")
+    
+    per_folder = session.df.select(columns).group_by("folder").agg(aggs).sort("folder")
     out = session.summary()
     out["folders_detail"] = per_folder.to_dicts()
 
     if include_files:
         per_file = (
-            session.df.group_by("file_name")
+            session.df.select("file_name", "folder").group_by("file_name")
             .agg([pl.col("folder").n_unique().alias("n_folders"), pl.len().alias("n_lines")])
             .sort("n_folders", descending=True)
         )
@@ -595,7 +598,8 @@ def search_log_lines(
         matches = df.filter(pl.col("m_message").str.contains(pattern, literal=True))
 
     per_folder = (
-        matches.group_by("folder").agg(pl.len().alias("matches")).sort("matches", descending=True)
+        matches.select("folder").group_by("folder").agg(pl.len().alias("matches"))
+        .sort("matches", descending=True)
     )
     limit = max(1, min(int(limit), 200))
     sample = matches.select(["folder", "file_name", "m_message"]).head(limit)
