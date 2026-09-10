@@ -122,49 +122,72 @@ some other 5,000 blocks is rebuilt rather than quietly failing a count later; ch
 `SEED`/`BLOCKS_PER_CLASS` and the build prints the two new constants to paste back.
 
 `tests/mcp/benchmark.py` is the sibling that answers "how long does this take", and
-`tests/mcp/COST.md` is its committed output:
+`tests/mcp/PERFORMANCE.md` is its committed output:
 ```
-uv run tests/mcp/benchmark.py --markdown tests/mcp/COST.md
-uv run tests/mcp/benchmark.py --only bgl     # the third shape; needs ~/Datasets/bgl/BGL.log
+uv run tests/mcp/benchmark.py                    # three log roots x four fractions
+uv run tests/mcp/benchmark.py --only bgl         # the third shape; needs ~/Datasets/bgl/BGL.log
+uv run tests/mcp/benchmark.py --fractions 0.05   # one fraction
+uv run tests/mcp/benchmark.py --tables-only      # rebuild the tables from recorded cells
 ```
-A third log root was added to it: **bgl**, `BGL.log` split into ten slices — 10 log folders of
-~471,000 lines each, against Hadoop's ~3,300 and HDFS's ~18. It is not a midpoint of the other two;
-it is the only one that stresses the amount of text *inside* a log folder, and the only one where a
-call **fails** rather than merely taking a long time. `anomaly_folder_content(target_folder="ALL")`
-peaks at 14.6 GB and `3grams` at 11.6 GB: each completes in a fresh process and each is an
-out-of-memory kill on a 16 GB machine once anything else has run, which is how both were found —
-by killing the benchmark. Three consequences are baked into `bench_bgl` and must stay: the anomaly
-row is measured at **one** size rather than swept (a sweep to four targets was killed three times),
-the cached open is measured by **close-and-reopen** rather than by holding a second session beside
-the first (which would be two 3 GB frames at once), and `3grams` is left out of the format sweep
-with its isolated numbers recorded in prose instead. `close_log_root` does not give the memory
-back — a cold open, close, `gc.collect()` and reopen still leaves 6.6 GB resident against 2.9 GB
-for a single fresh open.
-It times every tool at two or three sizes and fits `cost ≈ fixed + marginal × n` per series where
-one exists — every tool with a comparison-folder, target-folder, or target-file selector gets one,
-including `plot_folder_content`'s scatter, added after the first pass left it as the one tool with
-no fitted row. A single per-call number is not predictive: `distance_file_content` is ~10s of fixed
-aggregation plus 0.55s per file, while `anomaly_file_content` is 0.13s fixed plus 0.4s per file, and
-only the second rewards a narrower `target_files`. Nor does a fitted rate carry across log roots of
-different shape: `distance_folder_content` is ~0.29s/folder on Hadoop's 3,300-line-average folders,
-but its measured cost at `comparison_folders="ALL"` on HDFS's 18-line-average folders (~35s) is
-nowhere near what that rate predicts for 5,000 of them — use the directly-measured "ALL" number for
-a log root you have, not an extrapolation from a different one. That last point is why **the
-absolute seconds live here and in `COST.md`, and never in the MCP docstrings**: a client opens its
-own log root, of a shape neither benchmark corpus predicts, so "~21 minutes" is at best noise and at
-worst a number it trusts over its own measurement. What the `Cost:` line in each tool's docstring
+It holds the *arguments* still — one canonical call per tool, `GRID_ROWS` — and moves the **data**:
+every tool on each log root at 5, 10, 50 and 100%, reported cold (tables A1–A4) and warm (B1–B4).
+The two numbers are the point, and only visible as two: where they differ, the gap is a column the
+session computed once and kept, so the cold number is the price of that representation and the warm
+one is what the analysis itself costs — the session model's entire justification. A tool that cannot
+run on a shape is data too and prints `err` (Hadoop's `anomaly_file_content` at 5%: `n_samples=1
+should be >= n_clusters=2`), not a failed run. One rule instead of a hand-maintained list of heavy
+cells: a cold call slower than `HEAVY_SECONDS` (20s) gets one warm repeat rather than `--repeat`,
+because the third digit of a two-minute call is not what anyone reads.
+
+**What a fraction means differs by log root**, because the two shapes differ in what makes them big.
+`hadoop_renamed` and `hdfs_balanced_5k` are many log folders, so a fraction is a fraction of the
+*log folders*, hard-linked into a reduced copy — 5,000 folders cost directory entries rather than
+bytes, and `stat` still reports the real sizes, so the session fingerprint and `peek_log_root`'s
+byte counts are the numbers the full log root would give. The folders are taken as a **stride, not
+the first N**: hdfs's names sort into an `Anomaly_` block and a `Normal_` one, so the first 5% is
+250 anomalies with nothing to compare against. `bgl_split_10` is ten large folders, so a fraction
+there is a fraction of `BGL.log`'s *lines*, taken before the split — the slice count stays 10 and
+what shrinks is the text inside each. Reducing bgl by folders would leave one or two slices at 5%,
+which is not a smaller version of the same shape. Both reductions are idempotent through a marker
+file beside the copy, so a re-run — or the relaunch after a kill — reuses them.
+
+**bgl** is the third log root and the odd one: 10 log folders of ~471,000 lines each, against
+Hadoop's ~3,300 and HDFS's ~18. It is not a midpoint of the other two; it is the only one that
+stresses the amount of text *inside* a log folder, and the only one where a call **fails** rather
+than merely taking a long time. `anomaly_folder_content(target_folder="ALL")` peaks at 14.6 GB and
+`3grams` at 11.6 GB: each completes in a fresh process and each is an out-of-memory kill on a 16 GB
+machine once anything else has run, which is how both were found — by killing the benchmark. That is
+why each (log root, fraction) block runs in a **child process** writing one JSON file per cell: an
+OOM kill takes the process with no chance to record anything, so the parent reads the cell named in
+`inflight.json`, records it as `OOM` — which is the measurement, on a log root this size — and
+relaunches the block to finish the rest. The same files make the grid resumable (a re-run skips
+every cell already on disk, under `<datasets>/test_data/mcp_bench_cells`) and `--tables-only` a pure
+rewrite. Two consequences for the cells themselves must stay: the anomaly rows are measured at
+**one** target rather than `"ALL"`, and the cached open is measured by **close-and-reopen** rather
+than by holding a second session beside the first, which would be two 3 GB frames at once. Recorded
+by hand rather than by the grid, and worth knowing anyway: `close_log_root` does not give the memory
+back — a cold open, close, `gc.collect()` and reopen still left 6.6 GB resident against 2.9 GB for a
+single fresh open.
+
+**A rate does not carry across log roots of different shape**, which the grid shows directly: the
+same `distance_folder_content` call at 100% is 18.8s on Hadoop's 3,300-line-average folders, 44.5s
+on HDFS's 5,000 18-line-average ones and 152.8s on bgl's ten large ones. Use the measured number for
+a log root of the shape you have, never an extrapolation from a different one. That is why **the
+absolute seconds live here and in `PERFORMANCE.md`, and never in the MCP docstrings**: a client opens
+its own log root, of a shape neither benchmark corpus predicts, so "~21 minutes" is at best noise and
+at worst a number it trusts over its own measurement. What the `Cost:` line in each tool's docstring
 and the COST paragraph in the server `instructions` carry instead is *what a call is proportional
 to* (per target, per comparison folder, per file, fixed) plus the ratios that are properties of the
 code rather than of a corpus — the ones the measurements settled: `anomaly_*` refit four detectors
 **per target** and `target_folder` defaults to `"ALL"`, so that family is the expensive one;
 `content_format` swings cost 60–80x on identical data (`Parse-Tip` 0.18s, `Words` 2.78s, `3grams`
-11.35s at 10 comparison folders — `Words` ~15x `Parse-Tip`, `3grams` ~4x `Words`); and the UMAP was
-documented at ~41s on 5,000 log folders but measures ~8s against under 0.3s for the default scatter,
-tens of times the scatter and the one big jump in the server — while the scatter itself turned out
-to be 20–40x cheaper per comparison folder than `distance_folder_content`, since it counts terms
-rather than scoring pairs. The client closes the gap with `elapsed_seconds`, which every result
-carries: it is told the shape beforehand and measures the constant itself. Re-run the benchmark when
-the analysis code changes, and update the docstrings only where a *ratio* or a scaling shape moved.
+11.35s at 10 comparison folders — `Words` ~15x `Parse-Tip`, `3grams` ~4x `Words`); and the UMAP is
+tens of times the default scatter and the one big jump in the server (~8s against under 0.3s on
+5,000 log folders), while the scatter itself is far cheaper per comparison folder than
+`distance_folder_content`, since it counts terms rather than scoring pairs. The client closes the gap
+with `elapsed_seconds`, which every result carries: it is told the shape beforehand and measures the
+constant itself. Re-run the benchmark when the analysis code changes, and update the docstrings only
+where a *ratio* or a scaling shape moved.
 
 The one thing that is *not* reproducible is detector output — `train_KMeans`/`train_IsolationForest`
 take no `random_state`, and sklearn's threaded KMeans is not bit-stable regardless — so two identical
