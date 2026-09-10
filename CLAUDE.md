@@ -87,11 +87,11 @@ in step with it — that chain is the reference answer being checked against.
 The MCP server has its own suite, also not chained by `tests/main.py` — it needs the `mcp` extra
 (`uv sync --extra mcp`) and two log roots that no config describes:
 ```
-uv run tests/mcp/server.py                  # the default set: data, hadoop, hdfs, split, detect
+uv run tests/mcp/server.py                  # the default set: data, hadoop, hdfs, split, detect, crash
 uv run tests/mcp/server.py --only hadoop    # one stage; 'data' always runs first
 uv run tests/mcp/server.py --only bgl       # opt-in: needs the 743 MB loghub BGL download
 ```
-Three stages sit outside that pair of log roots. `split` needs no corpus at all — it builds a
+Four stages sit outside that pair of log roots. `split` needs no corpus at all — it builds a
 synthetic 1,000-line log, splits it both ways, and checks the slices rejoin into the original file
 byte for byte, which is a property of the splitter rather than of any dataset; it runs by default
 because a check that only runs when someone has the right download is a check that mostly does not
@@ -99,7 +99,10 @@ run. `detect` is synthetic for a second reason on top of that one: it builds a l
 log4j log folders and 3 NDJSON ones, and both built corpora are single-format, so neither can show
 what `AutoLoader`'s format sampling does when the sample meets a file that disagrees — the frame
 must come out the same at `max_detect_files=50` and at `0`, and it is the mixed case that decides
-whether the sampled default is safe. `bgl` is the real single-file case — `~/Datasets/bgl/BGL.log`, 743 MB and 4,747,963 lines —
+whether the sampled default is safe. `crash` is synthetic for a third reason: it has to kill a
+real child process with a real `SIGKILL` (`--only crash`, 9s, no corpus), because what it checks is
+that nothing gets to run at the end — a stage that wrote the breadcrumb itself would pass while the
+server wrote none. `bgl` is the real single-file case — `~/Datasets/bgl/BGL.log`, 743 MB and 4,747,963 lines —
 and is **not** in the default set because it needs that download and writes a second copy of it.
 Its numbers are exact for the same reason Hadoop's are: BGL is a plain loghub download, so the line
 count is a property of the dataset.
@@ -762,6 +765,29 @@ Exposes `loglead/delta/` as 22 MCP tools. Optional install: `uv sync --extra mcp
 - `formatting.py` — every analysis tool returns the same envelope: full table on disk, plus a preview
   sorted by the column that answers the question (`rank_sum` for anomalies) and truncated to
   `max_rows`. Tool results go into a model's context, so unbounded tables are not an option.
+- `crash.py` — **an OOM kill cannot be caught, so it is reported afterwards instead.** `SIGKILL`
+  leaves no exception, no `atexit`, no last line on stderr, and MCP has no crash channel — the
+  report would travel over the transport that just died — so the only surviving channel is the
+  filesystem. `tool()` writes a breadcrumb (`<cache_dir>/crash/inflight-<pid>.json`) naming the call,
+  its *effective* arguments, its session and the memory already resident, and removes it on return;
+  the next process sweeps whatever a dead pid left behind. A **raised exception is not a crash** —
+  the client was told — so only a call that never returns leaves a breadcrumb. Three properties are
+  load-bearing. The arguments recorded are the effective ones, because the expensive default is the
+  one nobody passes (`target_folder` defaults to `"ALL"`, and the anomaly family refits four
+  detectors per target). The report is **notes on the next result, once**, whichever tool that is,
+  since there is nothing to attach an error to and a restart loop must not bury every later result;
+  the sticky half is a **ledger keyed on the log root**, which `open_log_root` reads, so a client
+  meeting that log root next week is warned too. And nothing here claims to know *why* the process
+  died — an OOM kill is named as the likely cause only when the recorded RSS says so
+  (`OOM_LIKELY_SHARE`), because guessing louder than the evidence teaches a client to shrink calls
+  that were never the problem. The advice it attaches (`smaller_call_advice`) is the scaling shapes
+  `PERFORMANCE.md` measured, not guesses. It runs in front of every tool, since which call is the
+  expensive one is exactly what is not known in advance, so it is kept to one encode and one write
+  (~0.2ms, against 3ms for the cheapest tool there is); the session's folder count is `n_unique` over
+  the whole frame — 0.27s on 4.7M rows — so it is computed once per session and cached, never per
+  call. `LOGLEAD_MCP_CRASH_LOG=0` turns the whole thing off. `Session.open_args()` is the other half
+  of the recovery: the parquet cache survives the kill, so the report hands back a runnable
+  `open_log_root(...)` carrying the same `session_id`.
 
 **A truncated preview is not the end of the table** (`Session.stash_result` / `query_result`). Every
 analysis keeps the frame it previewed in the session and returns a `result_id`, so the follow-up

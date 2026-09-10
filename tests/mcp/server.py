@@ -8,7 +8,7 @@ the exit code is non-zero if anything failed.
 Run it with::
 
     uv run tests/mcp/server.py                     # everything
-    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect
+    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect, crash
     uv run tests/mcp/server.py --regenerate        # rebuild the log roots first
     uv run tests/mcp/server.py --keep-artifacts    # keep the tables and plots written
 
@@ -50,6 +50,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -1371,6 +1372,119 @@ def stage_detect(check, workdir):
 
 
 # --------------------------------------------------------------------------- #
+# Stage 16 -- surviving a kill that cannot be caught
+# --------------------------------------------------------------------------- #
+
+CRASH_CHILD = """
+import os, sys
+from loglead.mcp import server
+from loglead.mcp.session import SessionStore
+
+cache, root = sys.argv[1], sys.argv[2]
+server.STORE = SessionStore(cache_dir=cache, output_root=os.path.join(cache, "out"))
+server.open_log_root(path=root, session_id="crash-demo",
+                     file_name_normalizer="strip_folder_id")
+# The OOM killer does not raise, does not unwind, and lets nothing run
+# afterwards. SIGKILL to self is that same event, on demand.
+server.anomaly.anomaly_folder = lambda *a, **k: os.kill(os.getpid(), 9)
+server.anomaly_folder_content("crash-demo", content_format="3grams")
+print("UNREACHABLE")
+"""
+
+
+def stage_crash(check, workdir):
+    """A killed process names the call that killed it, in the next process.
+
+    Synthetic and in the default set for the same reason as the split stage: what
+    is checked is a property of the server, not of any corpus. It needs a real
+    ``SIGKILL`` in a real child rather than a hand-written breadcrumb, because
+    the thing being checked is precisely that nothing gets to run at the end --
+    no ``finally``, no ``atexit``, no last line on stderr. A test that wrote the
+    breadcrumb itself would pass while the server wrote none.
+
+    Nothing here asserts *why* the child died: the server cannot know that, and
+    its report says so. What it has to get right is the call, its arguments, the
+    session, the advice, and not saying it twice.
+    """
+    check.section("16. crash reporting (synthetic, real SIGKILL)")
+
+    root = os.path.join(workdir, "crash-root")
+    for folder in ("run_a", "run_b", "run_c"):
+        os.makedirs(os.path.join(root, folder), exist_ok=True)
+        for index in range(3):
+            with open(os.path.join(root, folder, f"{folder}_service_{index}.log"), "w") as handle:
+                handle.write(f"2024-01-01 00:0{index}:00 INFO {folder} started job {index}\n"
+                             f"2024-01-01 00:0{index}:01 ERROR {folder} failed job {index}\n")
+
+    # Its own cache directory: a ledger belongs to a cache, and the other stages'
+    # sessions have no business in this one.
+    cache = os.path.join(workdir, "crash-cache")
+    script = os.path.join(workdir, "crash_child.py")
+    with open(script, "w") as handle:
+        handle.write(CRASH_CHILD)
+
+    previous = server.STORE
+    server.STORE = SessionStore(cache_dir=cache, output_root=os.path.join(cache, "out"))
+    try:
+        completed = subprocess.run([sys.executable, script, cache, root],
+                                   capture_output=True, text=True)
+        check.eq("the child was killed rather than raising", completed.returncode, -9)
+        check.ok("nothing ran after the kill", "UNREACHABLE" not in completed.stdout)
+
+        found = server.crash_log().sweep()
+        check.eq("one breadcrumb left behind", len(found), 1)
+        if not found:
+            return
+        record = found[0]
+        check.eq("it names the call", record["tool"], "anomaly_folder_content")
+        # Why effective arguments are recorded rather than the ones spelled out:
+        # the expensive default is the one nobody passes.
+        check.eq("including arguments the caller never passed",
+                 record["args"].get("target_folder"), "ALL")
+        check.eq("and the ones it did", record["args"].get("content_format"), "3grams")
+        check.eq("the session it was running against", record.get("session_id"), "crash-demo")
+        check.eq("the log root", record.get("root"), root)
+        check.ok("and how much memory was already held",
+                 (record.get("memory") or {}).get("rss_gb", 0) > 0)
+
+        # The client hears about it on the next result, whichever tool that is.
+        peeked = server.peek_log_root(root)
+        notes = " ".join(peeked.get("notes", []))
+        check.ok("reported on the next tool result", "anomaly_folder_content" in notes)
+        check.ok("with advice on what to make smaller", "target_folder" in notes)
+        check.ok("and as a structured record", bool(peeked.get("server_crash")))
+        # Once: a restart loop must not bury every later result under the same news.
+        again = server.peek_log_root(root)
+        check.ok("and only once",
+                 not any("died" in note for note in again.get("notes", [])))
+
+        # The ledger outlives the restart that found it.
+        opened = server.open_log_root(path=root, session_id="after-crash",
+                                      file_name_normalizer="strip_folder_id")
+        history = " ".join(opened.get("notes", []))
+        check.ok("open_log_root warns about this log root's history",
+                 "killed a server process before" in history)
+        check.ok("with the structured record", bool(opened.get("previous_crashes")))
+
+        # The recovery advice is a call, not a description of one.
+        recovered = server.open_log_root(**record["open_args"])
+        check.eq("the recorded open_args re-open the dead session",
+                 recovered["session_id"], "crash-demo")
+        check.eq("with the same preprocessing", recovered["n_rows"], opened["n_rows"])
+
+        # A raised exception is not a crash: the client was told about it, so
+        # there is nothing left behind to report on the next call.
+        check.raises("an unknown session still raises", Exception,
+                     server.describe_log_root, "no-such-session")
+        check.eq("and leaves no breadcrumb", len(server.crash_log().sweep()), 0)
+        clean = server.peek_log_root(root)
+        check.ok("so nothing is reported afterwards",
+                 not any("died" in note for note in clean.get("notes", [])))
+    finally:
+        server.STORE = previous
+
+
+# --------------------------------------------------------------------------- #
 # Stage 14 -- BGL: the real single-file case, opt-in
 # --------------------------------------------------------------------------- #
 
@@ -1437,12 +1551,12 @@ def stage_bgl(check, datasets_folder, workdir):
 
 # --------------------------------------------------------------------------- #
 
-STAGES = ("data", "hadoop", "hdfs", "split", "detect", "bgl")
+STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "bgl")
 
 #: What runs when no --only is given. 'bgl' is out because it needs the 743 MB
 #: loghub download and writes a second copy of it; everything else here runs on
 #: data this suite builds for itself.
-DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect")
+DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash")
 
 
 def main():
@@ -1498,7 +1612,7 @@ def main():
         run_stage(check, stage_tools, check)
 
         # The two log roots are only built when something is going to read them:
-        # the split and detect stages need no corpus, and `--only split` should
+        # the split, detect and crash stages need no corpus, and `--only split` should
         # not go looking for one.
         if {"data", "hadoop", "hdfs"} & set(stages):
             # Stage 1 is not optional for the stages below it: they read what it
@@ -1510,6 +1624,8 @@ def main():
             run_stage(check, stage_split, check, workdir)
         if "detect" in stages:
             run_stage(check, stage_detect, check, workdir)
+        if "crash" in stages:
+            run_stage(check, stage_crash, check, workdir)
         if "bgl" in stages:
             run_stage(check, stage_bgl, check, datasets_folder, workdir)
     finally:

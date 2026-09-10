@@ -149,6 +149,33 @@ class Session:
             "last_used_at": self.last_used_at.isoformat(timespec="seconds"),
         }
 
+    def open_args(self):
+        """The ``open_log_root`` arguments that recreate this session.
+
+        A session does not survive the process; the frame behind it does. The
+        parquet cache is keyed on the files and the preprocessing, so re-opening
+        with exactly these arguments re-attaches in seconds instead of re-reading
+        -- and passing the same ``session_id`` back makes the recovery invisible
+        to whatever was using it. Kept as data rather than prose because the
+        caller that needs it most is a crash report, which has to hand over a
+        call rather than a description of one.
+        """
+        return {
+            "path": str(self.root),
+            "filename_pattern": self.filename_pattern,
+            "format": self.format,
+            "max_detect_files": self.max_detect_files,
+            "mask": self.masked,
+            "mask_pattern": self.mask_pattern or "myllari_extended",
+            "parsers": self.parsers,
+            "file_name_normalizer": self.file_name_normalizer,
+            "min_file_size": self.min_file_size,
+            "table_format": self.table_format,
+            "session_id": self.session_id,
+            "folder_names": self.folder_names,
+            "keep_original_folder_name": self.keep_original_folder_name,
+        }
+
     # -- the incremental-enhancement contract ------------------------------ #
 
     def touch(self):

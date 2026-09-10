@@ -29,6 +29,7 @@ import argparse
 import contextlib
 import functools
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -46,7 +47,7 @@ except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
 
 from ..delta import anomaly, distance, export, log_root, scoring, split, visualize
 from ..loaders import DEFAULT_MAX_DETECT_FILES
-from . import formatting
+from . import crash, formatting
 from .session import SessionStore
 
 mcp = _Server("loglead", instructions="""\
@@ -67,10 +68,17 @@ substring with line numbers, and query_result filters/pages any result
 table.
 
 COST. These tools span milliseconds to hours. Every result reports its own
-elapsed_seconds: make one narrow call.""")
+elapsed_seconds: make one narrow call. A call big enough can be killed by the
+operating system, which takes this server with it and closes the connection with
+no answer -- if that happens, reconnect and open_log_root the same path again
+(the cache makes it fast); the next result names the call that died and which
+argument to make smaller.""")
 
 #: Set by main(); tests and demos construct their own.
 STORE = SessionStore()
+
+#: Crash log for whatever cache directory STORE points at. See crash_log().
+_CRASH_LOG = None
 
 #: A log folder selector: an exact name, "ALL", an int N, a "Prefix*" wildcard, or a list.
 FolderSelector = Union[str, int, Sequence[str]]
@@ -93,21 +101,124 @@ def tool(fn):
 
     It also puts ``elapsed_seconds`` on every result.
 
+    And it is where a call is written down before it runs, so that a call which
+    *never returns* -- the OOM killer takes the whole process, uncatchably, and
+    the connection dies with it -- can still be named afterwards. See
+    :mod:`loglead.mcp.crash`. That costs one small file written and removed per
+    call, ~0.2ms, against 3ms for the cheapest tool there is;
+    ``LOGLEAD_MCP_CRASH_LOG=0`` turns it off.
+
     The wrapper is what gets returned, so direct Python callers -- the demo,
     :func:`run_config`, the tests -- get the same behaviour an MCP client does.
     """
+    signature = inspect.signature(fn)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         started = time.perf_counter()
-        with contextlib.redirect_stdout(sys.stderr):
-            result = fn(*args, **kwargs)
+        recorder = crash_log()
+        _record_call(recorder, fn.__name__, signature, args, kwargs)
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                result = fn(*args, **kwargs)
+        finally:
+            # A raised exception is not a crash: the client was told about it.
+            # Only a call that never reaches here leaves its breadcrumb behind.
+            recorder.finish_call()
         if isinstance(result, dict):
             result.setdefault("elapsed_seconds", round(time.perf_counter() - started, 2))
+            _report_crashes(recorder, result)
         return result
 
     mcp.tool()(wrapper)
     return wrapper
+
+
+def crash_log():
+    """The crash log for whatever cache directory ``STORE`` is using.
+
+    Rebuilt when ``STORE`` is replaced -- ``main()``, the tests, the demo -- so
+    the ledger always sits beside the parquet cache whose recovery advice it
+    gives. It sweeps on first use, so a report is ready even when nobody called
+    :meth:`crash.CrashLog.sweep` at startup.
+    """
+    global _CRASH_LOG
+    if _CRASH_LOG is None or _CRASH_LOG.cache_dir != STORE.cache_dir:
+        _CRASH_LOG = crash.CrashLog(STORE.cache_dir)
+    return _CRASH_LOG
+
+
+def _record_call(recorder, name, signature, args, kwargs):
+    """Write the breadcrumb for one call, with its arguments and its session.
+
+    The *effective* arguments are recorded rather than the ones the caller
+    spelled out, because the expensive defaults are exactly the ones nobody
+    passes: ``target_folder`` defaults to ``"ALL"`` and would otherwise be
+    absent from the record of the call it killed. Which ones were explicit is
+    kept alongside, so a report can quote the call as it was written.
+    """
+    if not recorder.enabled:
+        return
+    try:
+        bound = signature.bind_partial(*args, **kwargs)
+        explicit = list(bound.arguments)
+        bound.apply_defaults()
+        effective = dict(bound.arguments)
+    except TypeError:  # a malformed call the tool itself is about to reject
+        explicit, effective = list(kwargs), dict(kwargs)
+    session = None
+    if effective.get("session_id"):
+        try:
+            session = STORE.get(effective["session_id"])
+        except Exception:  # an unknown id is the tool's error to raise, not ours
+            session = None
+    recorder.start_call(name, effective, explicit, session, effective.get("path"))
+
+
+def _open_log_root_defaults():
+    """``open_log_root``'s own defaults, read from its signature rather than copied."""
+    return {name: parameter.default
+            for name, parameter in inspect.signature(open_log_root).parameters.items()
+            if parameter.default is not inspect.Parameter.empty}
+
+
+def _recovery_call(record):
+    """A ready-to-run ``open_log_root`` that brings the dead session back.
+
+    Only the arguments that differ from the defaults, plus the path and the
+    session id: a fifteen-argument call is not one a client will read. An
+    argument the breadcrumb had to cut short is left out and named, since a
+    truncated folder_names would rename twenty log folders of five thousand.
+    """
+    open_args = record.get("open_args")
+    if not open_args:
+        return None
+    defaults = _open_log_root_defaults()
+    truncated = set(record.get("truncated_args") or ())
+    keys = [key for key, value in open_args.items()
+            if key not in truncated
+            and (key in ("path", "session_id") or key not in defaults
+                 or ((value or defaults[key]) and value != defaults[key]))]
+    call = crash.render_call("open_log_root", open_args, keys)
+    if truncated:
+        call += f" (then re-apply {', '.join(sorted(truncated))}, too long to record here)"
+    return call
+
+
+def _report_crashes(recorder, result):
+    """Put any unreported crash in front of the model, once, on the next result.
+
+    Notes rather than an error, because there is nothing to attach an error to:
+    the call that died was never answered and its connection is gone. This is
+    the first moment the server can say anything at all, whichever tool it
+    happens to be answering.
+    """
+    records = recorder.take_pending()
+    if not records:
+        return
+    result["notes"] = (crash.crash_notes(records, _recovery_call)
+                       + list(result.get("notes") or []))
+    result["server_crash"] = [crash.summarize(record) for record in records[-3:]]
 
 
 def _write(session, df, analysis, level, **name_parts):
@@ -378,6 +489,13 @@ def open_log_root(
     summary["folders"] = folders[:50]
 
     notes = []
+    # Before anything about this open: what this log root did to a previous
+    # process. It outlives the restart that found it, so a client meeting this
+    # log root for the first time is warned too.
+    history = crash_log().history(str(session.root))
+    if history:
+        summary["previous_crashes"] = [crash.summarize(record) for record in history[-3:]]
+        notes.append(crash.history_note(history))
     if len(folders) > 50:
         notes.append(f"{len(folders)} log folders total; first 50 listed. "
                      "Use describe_log_root for the rest.")
@@ -1819,6 +1937,13 @@ def main():
 
     global STORE
     STORE = SessionStore(cache_dir=args.cache_dir, output_root=args.output_dir)
+
+    # Anything left in flight belongs to a process that is gone. Say so here for
+    # whoever reads the server log; the client is told on its first tool result.
+    for record in crash_log().sweep():
+        print(f"[loglead-mcp] the previous process died during {record.get('tool')} "
+              f"(started {record.get('started_at')}); reporting it on the first result.",
+              file=sys.stderr)
 
     kwargs = {} if args.transport == "stdio" else {"host": args.host, "port": args.port}
     mcp.run(transport=args.transport, **kwargs)
