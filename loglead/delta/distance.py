@@ -11,12 +11,34 @@ Four functions, mirroring LogDelta's config step names:
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
+
+``distance_folder_content``/``distance_file_content`` compute all four content
+measures (cosine, jaccard, compression, containment) per comparison by default;
+``measures`` narrows that to a subset, run in isolation -- e.g. to isolate the
+cost of ``compression`` (a bz2 pass over the full text, the expensive one) from
+``cosine``/``jaccard``/``containment`` (matrix ops on the vectors already built
+for the comparison). Narrowing weakens ``rank_sum``/``zscore_sum`` the same way
+narrowing ``detectors`` does for the anomaly tools.
 """
 
 import polars as pl
 
 from .. import LogDistance
 from . import log_root, scoring
+
+#: distance measure name -> ``LogDistance`` method name.
+DISTANCE_MEASURES = {"cosine": "cosine", "jaccard": "jaccard",
+                     "compression": "compression", "containment": "containment"}
+
+DEFAULT_MEASURES = list(DISTANCE_MEASURES)
+
+
+def _resolve_measures(measures):
+    measures = DEFAULT_MEASURES if measures is None else list(measures)
+    unknown = [m for m in measures if m not in DISTANCE_MEASURES]
+    if unknown:
+        raise ValueError(f"Unknown measures {unknown}. Valid options: {DEFAULT_MEASURES}")
+    return measures
 
 
 def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
@@ -61,14 +83,19 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
 
 def distance_folder_content(
     df, target_folder, comparison_folders="ALL", mask=True,
-    content_format="Words", vectorizer="Count",
+    content_format="Words", vectorizer="Count", measures=None,
 ):
     """Compare log folders by their whole log text.
 
-    :returns: ``(results_df, df)`` -- one row per comparison log folder with all four
-        distances plus ``zscore_sum``/``rank_sum``, and the (possibly enhanced)
-        input frame so the caller can retain any newly computed column.
+    :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
+        computes all four; a measure left out is skipped entirely, not just
+        hidden -- narrowing this is how one measure's own cost is isolated.
+    :returns: ``(results_df, df)`` -- one row per comparison log folder with the
+        requested distances plus ``zscore_sum``/``rank_sum`` over just those, and
+        the (possibly enhanced) input frame so the caller can retain any newly
+        computed column.
     """
+    measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
     target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
@@ -77,16 +104,15 @@ def distance_folder_content(
     for other_folder in comparison_folder_names:
         other_df = df.filter(pl.col("folder") == other_folder)
         distance = LogDistance(target_df, other_df, vectorizer=vectorizer_class, field=field)
-        results.append({
+        row = {
             "target_folder": target_folder,
             "comparison_folder": other_folder,
             "target_lines": distance.size1,
             "comparison_lines": distance.size2,
-            "cosine": distance.cosine(),
-            "jaccard": distance.jaccard(),
-            "compression": distance.compression(),
-            "containment": distance.containment(),
-        })
+        }
+        for name in measures:
+            row[name] = getattr(distance, DISTANCE_MEASURES[name])()
+        results.append(row)
 
     results = scoring.add_combined_scores(results, scoring.DISTANCE_COLUMNS)
     return pl.DataFrame(results), df
@@ -94,15 +120,21 @@ def distance_folder_content(
 
 def distance_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
-    content_format="Words", vectorizer="Count",
+    content_format="Words", vectorizer="Count", measures=None,
 ):
     """Compare each file against the same-named file in other log folders.
 
     Only files present in *both* log folders are compared. If ``target_files`` is
     given, the comparison is further restricted to that set.
 
-    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder).
+    :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
+        computes all four; a measure left out is skipped entirely, not just
+        hidden -- narrowing this is how one measure's own cost is isolated.
+    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder),
+        with the requested distances plus ``zscore_sum``/``rank_sum`` over
+        just those.
     """
+    measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
     target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
@@ -138,17 +170,16 @@ def distance_file_content(
                 target_files_df[file_name], pairs[(other_folder, file_name)],
                 vectorizer=vectorizer_class, field=field
             )
-            results.append({
+            row = {
                 "file_name": file_name,
                 "target_folder": target_folder,
                 "comparison_folder": other_folder,
                 "target_lines": distance.size1,
                 "comparison_lines": distance.size2,
-                "cosine": distance.cosine(),
-                "jaccard": distance.jaccard(),
-                "compression": distance.compression(),
-                "containment": distance.containment(),
-            })
+            }
+            for name in measures:
+                row[name] = getattr(distance, DISTANCE_MEASURES[name])()
+            results.append(row)
 
     # LogDelta recomputed this inside the comparison loop, over a growing list.
     results = scoring.add_combined_scores(results, scoring.DISTANCE_COLUMNS)

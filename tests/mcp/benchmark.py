@@ -63,7 +63,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import make_test_data  # noqa: E402  (sits next to this file)
-from loglead.delta import split  # noqa: E402
+from loglead.delta import anomaly, distance, split  # noqa: E402
 
 try:
     from loglead.mcp import server  # noqa: E402
@@ -426,6 +426,29 @@ GRID_ROWS = (
 GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
                      ("anomaly", "Anomaly tools"), ("plot", "Plot tools"))
 
+#: The four anomaly tools and the two content-based distance tools, each run
+#: with a single detector/measure instead of the default all-four -- Part C/D
+#: of PERFORMANCE.md and PERF_MEMORY.md. Built from ``anomaly.DEFAULT_DETECTORS``
+#: / ``distance.DEFAULT_MEASURES`` rather than hardcoded, so a detector or
+#: measure added there shows up here without a second edit.
+#: ``distance_folder_filename`` (jaccard/overlap distance over file names only)
+#: and ``distance_line_content`` (a text diff, no measures) have nothing to
+#: isolate -- neither computes multiple vectorized measures in one pass.
+DETAIL_ANOMALY_TOOLS = ("anomaly_folder_filename", "anomaly_folder_content",
+                        "anomaly_file_content", "anomaly_line_content")
+DETAIL_DISTANCE_TOOLS = ("distance_folder_content", "distance_file_content")
+
+DETAIL_GRID_ROWS = tuple(
+    ("anomaly_detail", f"{tool} ({detector})")
+    for tool in DETAIL_ANOMALY_TOOLS for detector in anomaly.DEFAULT_DETECTORS
+) + tuple(
+    ("distance_detail", f"{tool} ({measure})")
+    for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DEFAULT_MEASURES
+)
+
+DETAIL_TABLE_TITLES = (("anomaly_detail", "Anomaly tools detailed"),
+                       ("distance_detail", "Distance tools detailed"))
+
 
 def open_kwargs(kind, path, session_id):
     """The open call every cell of one log root sits on.
@@ -651,6 +674,48 @@ def grid_cells(ctx):
     return cells
 
 
+def grid_detail_cells(ctx):
+    """``[(table, label, run)]`` -- one detector/measure isolated per cell.
+
+    Same target/target_files as ``grid_cells``: the combined-call cost is
+    measured there, this isolates one component's own share of it. Default
+    parameters bind the loop variable at definition time, the usual fix for a
+    lambda otherwise closing over the loop's final value.
+    """
+    call = lambda fn: measure_adaptive(fn, ctx.repeat)  # noqa: E731
+    sid, target, file_name = ctx.sid, ctx.target, ctx.file_name
+
+    cells = []
+    for detector in anomaly.DEFAULT_DETECTORS:
+        cells.append((
+            "anomaly_detail", f"anomaly_folder_filename ({detector})",
+            lambda detector=detector: call(lambda: server.anomaly_folder_filename(
+                sid, target_folder=[target], detectors=[detector]))))
+        cells.append((
+            "anomaly_detail", f"anomaly_folder_content ({detector})",
+            lambda detector=detector: call(lambda: server.anomaly_folder_content(
+                sid, target_folder=[target], detectors=[detector]))))
+        cells.append((
+            "anomaly_detail", f"anomaly_file_content ({detector})",
+            lambda detector=detector: call(lambda: server.anomaly_file_content(
+                sid, target, detectors=[detector]))))
+        cells.append((
+            "anomaly_detail", f"anomaly_line_content ({detector})",
+            lambda detector=detector: call(lambda: server.anomaly_line_content(
+                sid, target, target_files=[file_name], detectors=[detector]))))
+
+    for measure in distance.DEFAULT_MEASURES:
+        cells.append((
+            "distance_detail", f"distance_folder_content ({measure})",
+            lambda measure=measure: call(lambda: server.distance_folder_content(
+                sid, target, measures=[measure]))))
+        cells.append((
+            "distance_detail", f"distance_file_content ({measure})",
+            lambda measure=measure: call(lambda: server.distance_file_content(
+                sid, target, measures=[measure]))))
+    return cells
+
+
 def cell_slug(kind, fraction, label):
     keep = "".join(char if char.isalnum() else "-" for char in label)
     return f"{kind}-{fraction_tag(fraction)}-{keep}"
@@ -682,7 +747,8 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
     # is not a rare case: it is every relaunch that only has session-free cells
     # left, and every targeted re-measure of one row.
     session_labels = {label for _, label, _ in session_free}
-    pending = [label for _, label in GRID_ROWS if label not in session_labels
+    all_rows = GRID_ROWS + DETAIL_GRID_ROWS
+    pending = [label for _, label in all_rows if label not in session_labels
                and cell_pending(os.path.join(cell_dir,
                                              cell_slug(kind, fraction, label) + ".json"))]
     if not pending:
@@ -697,6 +763,10 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
         json.dump({"root": kind, "fraction": fraction, **shape}, handle)
     print(f" ...open: {shape['n_folders']} log folders, {shape['n_lines']:,} lines")
 
+    # Detail cells first: grid_cells' own list ends with set_folder_names and
+    # close_log_root (session must go last), and detail cells need the same
+    # still-open, still-original-names session grid_cells' other rows do.
+    record_cells(grid_detail_cells(ctx), kind, fraction, cell_dir, inflight_path)
     record_cells(grid_cells(ctx), kind, fraction, cell_dir, inflight_path)
 
     if ctx.session is not None:
@@ -807,14 +877,9 @@ def _fmt_gb(record, key):
     return f"{value:.3f}" if value < 1 else f"{value:.2f}"
 
 
-def _grid_markdown(records, shapes, fractions, roots, title, intro_lines, keys, fmt):
-    """Shared table-building code for PERFORMANCE.md and PERF_MEMORY.md.
-
-    Both are the same log-root/fraction grid over the same recorded cells --
-    only the metric (``keys``, ``fmt``) and the prose describing it differ, so
-    a change to the grid's shape (fractions, tools, log roots) only has to be
-    made once.
-    """
+def _grid_header(shapes, fractions, roots, title, intro_lines):
+    """Title, prose, and the "log roots at each fraction" table -- printed once
+    per file, ahead of however many ``_grid_parts`` sections follow it."""
     def shape_cell(kind, fraction):
         shape = shapes.get((kind, fraction))
         if not shape:
@@ -832,21 +897,51 @@ def _grid_markdown(records, shapes, fractions, roots, title, intro_lines, keys, 
         varied = "log lines" if kind == "bgl" else "log folders"
         cells = " | ".join(shape_cell(kind, f) for f in fractions)
         lines.append(f"| {ROOT_LABELS[kind]} | {varied} | {cells} |")
+    return lines
 
+
+def _grid_parts(records, fractions, roots, keys, table_titles, grid_rows, fmt):
+    """One or more "Part X" sections -- each a set of tables, one per entry in
+    ``table_titles``, over the rows in ``grid_rows`` that belong to it.
+
+    Shared by the main grid (``GRID_TABLE_TITLES``/``GRID_ROWS``, Part A/B) and
+    the per-detector/per-measure detail grid (``DETAIL_TABLE_TITLES``/
+    ``DETAIL_GRID_ROWS``, Part C/D) -- same recorded cells, same lookup, only
+    which rows and which tables differ.
+    """
+    lines = []
     for part, key, part_title in keys:
         lines += ["", f"# Part {part} -- {part_title}"]
-        for index, (table, table_title) in enumerate(GRID_TABLE_TITLES, start=1):
+        for index, (table, table_title) in enumerate(table_titles, start=1):
             lines += ["", f"## Table {part}{index} -- {table_title}", "",
                       "| tool | log root | " + " | ".join(f"{f:.0%}" for f in fractions) + " |",
                       "|---|---|" + "---|" * len(fractions)]
-            for row_table, label in GRID_ROWS:
+            for row_table, label in grid_rows:
                 if row_table != table:
                     continue
                 for kind in roots:
                     cells = " | ".join(
                         fmt(records.get((kind, f, label)), key) for f in fractions)
                     lines.append(f"| {label} | {ROOT_LABELS[kind]} | {cells} |")
-    return "\n".join(lines) + "\n"
+    return lines
+
+
+#: Prose introducing Part C/D, printed once between the main grid (Part A/B)
+#: and the detail grid -- what a fraction means (``_FRACTION_INTRO``) does not
+#: need repeating, but what "detailed" narrows down does.
+_DETAIL_INTRO = [
+    "# Detailed breakdowns (per detector / per measure)",
+    "",
+    "The tables above run every anomaly tool with all four detectors, and "
+    "`distance_folder_content`/`distance_file_content` with all four measures, "
+    "at once. Part C/D below break the same figure down per detector / per "
+    "measure run in isolation (`detectors=[\"<name>\"]` / "
+    "`measures=[\"<name>\"]`), so the cost of narrowing either is visible on "
+    "its own rather than folded into the combined call. `distance_folder_filename` "
+    "(jaccard/overlap distance over file names only) and `distance_line_content` "
+    "(a text diff, no measures) are not broken down further -- neither computes "
+    "multiple vectorized measures in one pass.",
+]
 
 
 #: Prose shared by both markdown writers -- what a fraction means is a property
@@ -874,9 +969,17 @@ def performance_markdown(records, shapes, fractions=FRACTIONS,
         "are the same grid **warm**",
         "(repeated call, same process).",
     ]
-    return _grid_markdown(records, shapes, fractions, roots, "MCP tool performance", intro,
-                          (("A", "cold_s", "cold (first call)"),
-                           ("B", "warm_s", "warm (repeated call)")), _fmt_seconds)
+    lines = _grid_header(shapes, fractions, roots, "MCP tool performance", intro)
+    lines += _grid_parts(records, fractions, roots,
+                         (("A", "cold_s", "cold (first call)"),
+                          ("B", "warm_s", "warm (repeated call)")),
+                         GRID_TABLE_TITLES, GRID_ROWS, _fmt_seconds)
+    lines += ["", *_DETAIL_INTRO]
+    lines += _grid_parts(records, fractions, roots,
+                         (("C", "cold_s", "cold (first call)"),
+                          ("D", "warm_s", "warm (repeated call)")),
+                         DETAIL_TABLE_TITLES, DETAIL_GRID_ROWS, _fmt_seconds)
+    return "\n".join(lines) + "\n"
 
 
 def memory_markdown(records, shapes, fractions=FRACTIONS,
@@ -932,9 +1035,17 @@ def memory_markdown(records, shapes, fractions=FRACTIONS,
         "read ~0.2GB high. Clear",
         "the cell directory to re-measure the grid from scratch.",
     ]
-    return _grid_markdown(records, shapes, fractions, roots, "MCP tool memory", intro,
-                          (("A", "cold_mem_gb", "cold (first call)"),
-                           ("B", "warm_mem_gb", "warm (repeated call)")), _fmt_gb)
+    lines = _grid_header(shapes, fractions, roots, "MCP tool memory", intro)
+    lines += _grid_parts(records, fractions, roots,
+                         (("A", "cold_mem_gb", "cold (first call)"),
+                          ("B", "warm_mem_gb", "warm (repeated call)")),
+                         GRID_TABLE_TITLES, GRID_ROWS, _fmt_gb)
+    lines += ["", *_DETAIL_INTRO]
+    lines += _grid_parts(records, fractions, roots,
+                         (("C", "cold_mem_gb", "cold (first call)"),
+                          ("D", "warm_mem_gb", "warm (repeated call)")),
+                         DETAIL_TABLE_TITLES, DETAIL_GRID_ROWS, _fmt_gb)
+    return "\n".join(lines) + "\n"
 
 
 def grid_main(args, datasets_folder, paths, cache_dir, workdir):
@@ -957,7 +1068,7 @@ def grid_main(args, datasets_folder, paths, cache_dir, workdir):
             if path is None:
                 print(f"Skipping {kind} at {fraction:.0%}: BGL.log not found.")
                 continue
-            for attempt in range(len(GRID_ROWS) + 2):
+            for attempt in range(len(GRID_ROWS) + len(DETAIL_GRID_ROWS) + 2):
                 command = [sys.executable, os.path.abspath(__file__),
                            "--grid-block", f"{kind}:{fraction}", "--grid-block-path", path,
                            "--cell-dir", cell_dir, "--datasets", datasets_folder,

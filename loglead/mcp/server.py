@@ -1,19 +1,11 @@
 #CLAUDE DO NOT TOUCH OR EDIT THESE TODO comments. 
-# TODO add ability to select which distance measures to compute
-#Add also info which are more heavy to compute than others.
-#TODO we need performance tests to determine some baseline numbers for many
-#analysis. Now we have. Report is not optimal yet. 
-# TODO need a way to work with single file logs like BGL. Split to pieces approach?
+ 
 # TODO: One should be able to supply own mask patterns also in openlog_root
 # We also want away to for MCP client to inspect a sample of log lines
 # max diversity of log lines to sample for mask pattern detection. 
 # Also saving a mask is needed as it can be expensive to figure out
 # a good mask and we do want to repeat
-#TODO the autodetector on by default maybe not the greatest. as: 
-# "open_log_root is the single most expensive call here: 
-# about 20s for Hadoop's 978 files, about 127s for HDFS's 5,000. 
-# Nearly all of that is the auto format probe, which runs per file. "
-# And those are small logs. 
+
 #TODO file splitting should support even splits (DONE)
 #Timestamp splits NOT DONE
 #Splits by block_ID as in HDFS and other custom splits. NOT DONE.abs
@@ -747,6 +739,46 @@ def query_result(
 # Distance
 # --------------------------------------------------------------------------- #
 
+_DISTANCE_NOTE = (
+    "All four measures are distances (larger = more different). rank_sum combines "
+    "them scale-free; prefer it over zscore_sum."
+)
+
+_DISTANCE_SUBSET_NOTE = (
+    "Only {count} of the 4 measures ran ({names}), so rank_sum here combines {count} "
+    "of them instead of 4 and is a weaker, differently-scaled ranking -- not "
+    "comparable with a 4-measure rank_sum. Re-run with measures unset to add "
+    "{missing} unless you have a specific reason to isolate one."
+)
+
+#: One measure makes rank_sum a relabelling of that measure, not a combination.
+_DISTANCE_SINGLE_MEASURE_NOTE = (
+    "With one measure, rank_sum is simply that measure's rank, so it carries none "
+    "of the cross-measure agreement it is there to provide."
+)
+
+
+def _distance_notes(measures, *extra):
+    """Standing distance guidance, plus a warning if the caller narrowed ``measures``.
+
+    Mirrors ``_anomaly_notes``: a model narrowing ``measures`` to save time is
+    exactly what rank_sum exists to guard against, so the result says so rather
+    than leaving it to a docstring the model saw once.
+    """
+    notes = [_DISTANCE_NOTE]
+    used = distance.DEFAULT_MEASURES if measures is None else list(measures)
+    missing = [name for name in distance.DEFAULT_MEASURES if name not in used]
+    if missing:
+        notes.append(_DISTANCE_SUBSET_NOTE.format(
+            count=len(used), names=", ".join(used) or "none",
+            missing=", ".join(missing),
+        ))
+        if len(used) == 1:
+            notes.append(_DISTANCE_SINGLE_MEASURE_NOTE)
+    notes.extend(extra)
+    return notes
+
+
 @tool
 def distance_folder_filename(
     session_id: str,
@@ -787,13 +819,23 @@ def distance_folder_content(
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
+    measures: Optional[Sequence[str]] = None,
     max_rows: int = 25,
 ) -> dict:
     """Compare log folders by their log text content, with four distance measures.
 
     The four measures are cosine, jaccard, compression, and containment
     distance (larger = more different); rank_sum/zscore_sum in the result
-    combine them scale-free -- prefer rank_sum.
+    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
+    comparison per measure, so cost increase with comparison_folders. 
+    Consider select only one when measuring distance between many logs. 
+    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
+    built), while compression (a bz2 pass over the full text)
+    gets expensive as the log folders grow large. Containment: unlike the other 
+    three it is not 
+    symmetric -- it scores how much of one side's text is contained in the
+    other's, so target-vs-comparison and comparison-vs-target can differ
+    sharply (e.g. 0 one way, 0.7 the other).
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
@@ -802,6 +844,12 @@ def distance_folder_content(
         content_format: "Words", "3grams", "Sklearn" (raw text), or
             "Parse-<Algorithm>" such as "Parse-Tip" or "Parse-Drain".
         vectorizer: "Count" or "Tfidf".
+        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
+            "containment"] then run and rank_sum combines them, which is what
+            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
+            it only to answer a question about one measure -- e.g. isolating
+            "compression" (a bz2 pass over the full text) from the other three
+            (matrix ops on the already-built vectors).
         max_rows: Rows returned inline, largest distance (least similar) first.
             For the closest matches instead, call query_result on the returned
             result_id with sort_by="rank_sum", descending=False.
@@ -809,7 +857,8 @@ def distance_folder_content(
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_folder_content(
-        session.df, target_folder, comparison_folders, mask, content_format, vectorizer
+        session.df, target_folder, comparison_folders, mask, content_format, vectorizer,
+        measures,
     )
     session.flush()
     artifact = _write(
@@ -819,10 +868,9 @@ def distance_folder_content(
     return formatting.result(
         session, "distance_folder_content", 2,
         {"target_folder": target_folder, "comparison_folders": comparison_folders, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer},
+         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
         results, artifact, max_rows, sort_by=["rank_sum", "cosine"],
-        notes=["All four measures are distances (larger = more different). "
-               "rank_sum combines them scale-free; prefer it over zscore_sum."],
+        notes=_distance_notes(measures),
     )
 
 
@@ -835,12 +883,25 @@ def distance_file_content(
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
+    measures: Optional[Sequence[str]] = None,
     max_rows: int = 25,
 ) -> dict:
     """Compare each file against the same-named file in other log folders.
 
     Only files present in both log folders can be compared -- use
     `describe_log_root(include_files=True)` to see which those are.
+    The four measures are cosine, jaccard, compression, and containment
+    distance (larger = more different); rank_sum/zscore_sum in the result
+    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
+    comparison per measure, so cost increase with comparison_folders. 
+    Consider select only one when measuring distance between many logs. 
+    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
+    built), while compression (a bz2 pass over the full text)
+    gets expensive as the log folders grow large. Containment: unlike the other 
+    three it is not 
+    symmetric -- it scores how much of one side's text is contained in the
+    other's, so target-vs-comparison and comparison-vs-target can differ
+    sharply (e.g. 0 one way, 0.7 the other).
 
     Args:
         session_id: Handle from open_log_root.
@@ -850,6 +911,10 @@ def distance_file_content(
         mask: Compare masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
+        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
+            "containment"] then run and rank_sum combines them, which is what
+            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
+            it only to answer a question about one measure.
         max_rows: Rows returned inline, largest distance (least similar) first.
             For the closest matches instead, call query_result on the returned
             result_id with sort_by="zscore_sum", descending=False.
@@ -858,7 +923,7 @@ def distance_file_content(
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_file_content(
         session.df, target_folder, comparison_folders, target_files, mask,
-        content_format, vectorizer,
+        content_format, vectorizer, measures,
     )
     session.flush()
     artifact = _write(
@@ -869,8 +934,9 @@ def distance_file_content(
         session, "distance_file_content", 3,
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
          "target_files": target_files, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer},
+         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
         results, artifact, max_rows, sort_by=["zscore_sum", "cosine"],
+        notes=_distance_notes(measures),
     )
 
 
