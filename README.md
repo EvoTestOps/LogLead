@@ -270,13 +270,24 @@ line**. Three question types across four granularities:
 | **L4** line                 | `distance_line_content`     | `anomaly_line_content`      | —                        |
 
 Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
-`set_folder_names`, `read_log_lines`, `search_log_lines`, and `run_config` for executing an existing
-LogDelta YAML.
+`set_folder_names`, `register_mask_pattern`, `list_mask_patterns`, `remask_log_root`, `read_log_lines`,
+`search_log_lines`, `new_tokens`, `query_result`, and `run_config` for executing an existing LogDelta YAML.
 
 A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
 each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
 about, with the full tables and interactive Plotly HTML written alongside.
+
+A result is a preview of a few rows, since the whole table would not fit in an assistant's context —
+but the table stays in the session, and `query_result` filters it: every log folder under five lines,
+the ones whose name contains `MachineDown`, everything past a `rank_sum` you choose. Nothing is
+recomputed, and the plot tools lean on it hardest — a scatter has no "top N", so they return the
+range of each axis, where the target sits in it, and let you ask for the points you actually want.
+
+`new_tokens` lists the words a log folder has that its comparison folders never have — an error
+message nobody else logged, or an id the mask missed. No model is trained, so it stays fast on
+millions of lines, and `read_log_lines(new_tokens_vs=..., only_new=True)` shows the lines they are
+on. With `content_format="Parse-<Algorithm>"` the rows are new message types instead of new words.
 
 The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
 defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it
@@ -287,6 +298,14 @@ chose per format. Pin it instead by naming a family — `"raw"`, `"json"`, `"sys
 Directory names are often opaque ids, and that name labels every plot and result table, so
 `set_folder_names` (or `open_log_root(folder_names=...)`) gives them meaningful names such as
 `PageRank_MachineDown` or `FailingRunThu`. Nothing on disk is renamed.
+
+Masking replaces volatile tokens — ids, IPs, timestamps, hex — so two lines differing only in a
+request id count as the same event. `open_log_root(mask_pattern=...)` picks a built-in
+(`myllari_extended`, `myllari`, `drain_loglead`, `drain_orig`), and `register_mask_pattern` adds your
+own: replacement/regex pairs, optionally on top of a built-in via `base=`, saved under a name that
+`mask_pattern` accepts from then on. When a better mask turns up mid-investigation,
+`remask_log_root` applies it to the open session rather than re-reading the logs — each masking keeps
+its own cached frame, so switching back restores that one whole, parsing included.
 
 Try it against LogDelta's Hadoop demo data:
 

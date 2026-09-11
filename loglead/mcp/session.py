@@ -22,19 +22,39 @@ import os
 import shutil
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field as dataclass_field
 from datetime import datetime, timezone
 from pathlib import Path
 
 import polars as pl
 
-from ..delta import export, log_root, masking
+from ..delta import export, log_root
 from ..enhancers import EventLogEnhancer
+from ..loaders import DEFAULT_MAX_DETECT_FILES
+from .mask_registry import MaskPatternRegistry
 
 #: Columns present straight from the loader, before any enhancement. Which
 #: columns a session *requires* is :data:`log_root.REQUIRED_COLUMNS`, checked at
 #: load time where the loader can still be named in the error.
 BASE_COLUMNS = ("m_message", "file_name", "orig_file_name", "folder")
+
+#: How many analysis result tables a session keeps for ``query_result``. An
+#: analysis returns a preview; the table it previewed stays here so the caller
+#: can filter it afterwards instead of being handed rows nobody chose.
+#:
+#: Two bounds because the tables differ by orders of magnitude: one
+#: ``plot_file_content`` call over a folder of files stashes a table per file,
+#: each a handful of rows, while one ``anomaly_line_content`` call stashes a
+#: scored frame per file with a row per log line and a column per detector.
+#: Counting alone would evict useful tables for the first and hold far too much
+#: for the second.
+MAX_RESULTS = 50
+MAX_RESULT_ROWS = 1_000_000
+
+#: How many baseline vocabularies a session keeps for new-token lookups -- the
+#: distinct tokens of one set of comparison log folders each. See cached_vocabulary.
+MAX_VOCABULARIES = 8
 
 
 def default_cache_dir():
@@ -65,6 +85,9 @@ class Session:
     #: {detected format: n files} when "auto" chose per file. Empty on a cache
     #: hit -- nothing was read, so there was nothing to detect.
     detected_formats: dict = dataclass_field(default_factory=dict)
+    #: How many files "auto" was allowed to probe before extrapolating. Part of
+    #: the cache key, so it is kept for the recompute in set_folder_names.
+    max_detect_files: int = DEFAULT_MAX_DETECT_FILES
     #: {directory name -> meaningful name} applied to ``folder``. See set_folder_names.
     folder_names: dict = dataclass_field(default_factory=dict)
     #: Whether folder_names kept the folder name as a suffix.
@@ -81,6 +104,15 @@ class Session:
     )
     #: derived column -> source column it was computed from. See ensure_content.
     content_source: dict = dataclass_field(default_factory=dict)
+    #: result_id -> (analysis, table). See stash_result. In memory only: unlike
+    #: the frame these were computed from, results are not worth a parquet --
+    #: recomputing one takes seconds, and a stale id must fail loudly rather
+    #: than resurrect a table from a previous process.
+    results: "OrderedDict[str, tuple]" = dataclass_field(default_factory=OrderedDict)
+    #: key -> baseline vocabulary. See cached_vocabulary. In memory only, and
+    #: cleared whenever the text the tokens came from changes.
+    vocabularies: "OrderedDict[tuple, pl.DataFrame]" = dataclass_field(
+        default_factory=OrderedDict)
     _dirty: bool = False
 
     # -- introspection ----------------------------------------------------- #
@@ -121,14 +153,99 @@ class Session:
             "parsers": self.parsers,
             "enhanced_columns": self.enhanced_columns,
             "output_dir": str(self.output_dir),
+            "result_ids": list(self.results),
             "created_at": self.created_at.isoformat(timespec="seconds"),
             "last_used_at": self.last_used_at.isoformat(timespec="seconds"),
+        }
+
+    def open_args(self):
+        """The ``open_log_root`` arguments that recreate this session.
+
+        A session does not survive the process; the frame behind it does. The
+        parquet cache is keyed on the files and the preprocessing, so re-opening
+        with exactly these arguments re-attaches in seconds instead of re-reading
+        -- and passing the same ``session_id`` back makes the recovery invisible
+        to whatever was using it. Kept as data rather than prose because the
+        caller that needs it most is a crash report, which has to hand over a
+        call rather than a description of one.
+        """
+        return {
+            "path": str(self.root),
+            "filename_pattern": self.filename_pattern,
+            "format": self.format,
+            "max_detect_files": self.max_detect_files,
+            "mask": self.masked,
+            "mask_pattern": self.mask_pattern or "myllari_extended",
+            "parsers": self.parsers,
+            "file_name_normalizer": self.file_name_normalizer,
+            "min_file_size": self.min_file_size,
+            "table_format": self.table_format,
+            "session_id": self.session_id,
+            "folder_names": self.folder_names,
+            "keep_original_folder_name": self.keep_original_folder_name,
         }
 
     # -- the incremental-enhancement contract ------------------------------ #
 
     def touch(self):
         self.last_used_at = datetime.now(timezone.utc)
+
+    # -- result tables ----------------------------------------------------- #
+
+    def stash_result(self, analysis, df):
+        """Keep an analysis result table so ``query_result`` can filter it.
+
+        A tool result goes into a model's context, so an analysis returns a
+        preview of a few rows and the rest of the table used to be unreachable.
+        Keeping the frame here makes the follow-up question -- "every log folder
+        under 5 lines", "the row for this one" -- a query rather than a rerun.
+
+        :returns: the ``result_id`` to pass back to ``query_result``.
+        """
+        self.touch()
+        result_id = f"{analysis}-{uuid.uuid4().hex[:8]}"
+        self.results[result_id] = (analysis, df)
+        # Evict oldest-used first, but never the table just stashed -- however
+        # big it is, it is the one the caller is about to ask about.
+        while len(self.results) > 1 and (
+            len(self.results) > MAX_RESULTS
+            or sum(table.height for _, table in self.results.values()) > MAX_RESULT_ROWS
+        ):
+            self.results.popitem(last=False)
+        return result_id
+
+    def get_result(self, result_id):
+        """Look up a stashed table as ``(analysis, df)``, refreshing its place.
+
+        Reading counts as use, so the tables a caller is working through stay
+        while the ones it has moved on from age out.
+        """
+        self.touch()
+        if result_id not in self.results:
+            raise ValueError(
+                f"Unknown result_id {result_id!r} in session {self.session_id!r}. "
+                f"Result tables live only in this process, and only the {MAX_RESULTS} "
+                "most recent are kept -- re-run the analysis to get a fresh one. "
+                f"Available now: {', '.join(list(self.results)[-10:]) or 'none'}."
+            )
+        self.results.move_to_end(result_id)
+        return self.results[result_id]
+
+    def cached_vocabulary(self, key, build):
+        """The baseline vocabulary for ``key``: kept from an earlier call, else ``build()``.
+
+        Keeps the :data:`MAX_VOCABULARIES` most recently used. The signature is
+        the ``get_vocabulary`` hook of :mod:`loglead.delta.vocabulary`.
+        """
+        self.touch()
+        if key in self.vocabularies:
+            self.vocabularies.move_to_end(key)
+            return self.vocabularies[key]
+        vocab = build()
+        self.vocabularies[key] = vocab
+        while len(self.vocabularies) > MAX_VOCABULARIES:
+            self.vocabularies.popitem(last=False)
+        return vocab
 
     def ensure_content(self, mask, content_format):
         """Guarantee the column for ``content_format`` exists, and keep it.
@@ -158,6 +275,7 @@ class Session:
         if derived and self.content_source.get(target, field) != field:
             stale = [col for col in derived if col in self.df.columns]
             self.df = self.df.drop(stale)
+            self.vocabularies.clear()
             self._dirty = True
 
         before = set(self.df.columns)
@@ -190,6 +308,7 @@ class SessionStore:
         self.output_root = (
             Path(output_root) if output_root else self.cache_dir / "output"
         )
+        self.mask_registry = MaskPatternRegistry(self.cache_dir / "mask_patterns")
         self._sessions = {}
 
     # -- cache keying ------------------------------------------------------ #
@@ -200,9 +319,23 @@ class SessionStore:
     # fewer rows than the cached copy of it does.
     _PREPROCESSING_VERSION = "2"
 
-    def _cache_key(self, root, filename_pattern, mask_pattern, file_name_normalizer,
+    def _resolve_mask(self, mask_pattern):
+        """A mask name's patterns, plus the signature identifying them in a cache key.
+
+        The signature carries the resolved content and not just the name,
+        because a registered pattern's content can change under a name that
+        does not. See :class:`MaskPatternRegistry`.
+
+        :returns: ``(patterns, signature)``, both ``None`` when there is no mask.
+        """
+        if not mask_pattern:
+            return None, None
+        resolved = self.mask_registry.resolve(mask_pattern)
+        return resolved, f"{mask_pattern}:{json.dumps(resolved)}"
+
+    def _cache_key(self, root, filename_pattern, mask_signature, file_name_normalizer,
                    min_file_size, folder_names=None, keep_original_folder_name=True,
-                   format="auto"):
+                   format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
         n_files, total_bytes, max_mtime = log_root.count_log_root_files(
             root, filename_pattern, min_file_size
         )
@@ -219,13 +352,19 @@ class SessionStore:
         # The format is the most load-bearing part of the key, because it
         # decides which loader read the files and so every column in the frame:
         # the same logs read as "raw" and as "json" agree on nothing but paths.
+        # max_detect_files is in the key for the same reason at one remove: it
+        # decides how many files "auto" looked at, and a log root where the
+        # sample missed a second format is read differently at 0 than at 50.
+        # mask_signature carries the *resolved* pattern content, not just its
+        # name, since a custom name's patterns can be redefined (register
+        # overwrite=True) between two opens that both say mask_pattern="foo".
         # sort_keys because dict order is insertion order, and two equal
         # mappings must hash the same.
         payload = "|".join([
-            str(root), filename_pattern, mask_pattern or "", file_name_normalizer,
+            str(root), filename_pattern, mask_signature or "", file_name_normalizer,
             str(min_file_size), str(n_files), str(total_bytes), f"{max_mtime:.0f}",
             json.dumps(folder_names or {}, sort_keys=True), str(keep_original_folder_name),
-            format, self._PREPROCESSING_VERSION,
+            format, str(max_detect_files), self._PREPROCESSING_VERSION,
         ])
         digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
         return digest, n_files
@@ -236,13 +375,16 @@ class SessionStore:
              mask_pattern="myllari_extended", parsers=(), file_name_normalizer="none",
              min_file_size=0, output_dir=None, table_format="csv", session_id=None,
              refresh=False, folder_names=None, keep_original_folder_name=True,
-             format="auto"):
+             format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
         """Load a log root into a session, reusing the parquet cache when possible.
 
         :param mask: run :meth:`EventLogEnhancer.normalize` at open time.
             Required by every ``mask=True`` analysis and by all pre-parsing.
-        :param mask_pattern: name from :data:`loglead.delta.masking.PATTERNS`.
-            Never a raw regex list -- ``normalize()`` ``eval()``s what it is given.
+        :param mask_pattern: a built-in name from
+            :data:`loglead.delta.masking.PATTERNS`, or a name registered via
+            :attr:`mask_registry`. Never a raw regex list -- resolve it through
+            :attr:`mask_registry` (which falls back to
+            :func:`masking.get_pattern`), not by constructing one inline.
         :param parsers: algorithms to pre-parse, e.g. ``["tip"]``. Parsing at
             open time is optional; analyses parse on demand either way.
         :param table_format: ``"csv"`` or ``"xlsx"`` for result tables.
@@ -252,6 +394,8 @@ class SessionStore:
         :param keep_original_folder_name: keep the folder name as a suffix.
         :param format: which loader reads the files -- a name from
             :func:`log_root.available_formats`. ``"auto"`` detects per file.
+        :param max_detect_files: how many files ``"auto"`` probes before
+            applying their answer to the rest; 0 probes every file.
         :returns: ``(session, info)`` where ``info`` records the cache outcome.
         """
         if table_format not in export.TABLE_FORMATS:
@@ -268,8 +412,7 @@ class SessionStore:
         session_id = session_id or f"{root.name}-{uuid.uuid4().hex[:8]}"
 
         effective_mask_pattern = mask_pattern if mask else None
-        if mask:
-            masking.get_pattern(mask_pattern)  # validate before doing any work
+        resolved_mask, mask_signature = self._resolve_mask(effective_mask_pattern)
         if file_name_normalizer not in log_root.FILE_NAME_NORMALIZERS:
             raise ValueError(
                 f"Unknown file_name_normalizer {file_name_normalizer!r}. "
@@ -280,9 +423,10 @@ class SessionStore:
         parsers = [str(p).lower().replace("parse-", "") for p in (parsers or [])]
         folder_names = log_root.validate_folder_names(folder_names)
 
+        max_detect_files = max(int(max_detect_files or 0), 0)
         digest, n_files = self._cache_key(
-            root, filename_pattern, effective_mask_pattern, file_name_normalizer,
-            min_file_size, folder_names, keep_original_folder_name, format,
+            root, filename_pattern, mask_signature, file_name_normalizer,
+            min_file_size, folder_names, keep_original_folder_name, format, max_detect_files,
         )
         cache_path = self.cache_dir / f"{root.name}-{digest}.parquet"
 
@@ -296,11 +440,10 @@ class SessionStore:
             if sidecar.exists():
                 content_source = json.loads(sidecar.read_text())
         else:
-            df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format)
+            df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format,
+                                                   max_detect_files)
             if mask:
-                df = EventLogEnhancer(df).normalize(
-                    regexs=masking.get_pattern(mask_pattern)
-                )
+                df = EventLogEnhancer(df).normalize(regexs=resolved_mask)
             df = log_root.normalize_file_names(df, file_name_normalizer)
             # Strictly after file-name normalization: strip_folder_id derives the
             # id to strip from the raw directory name, so renaming first would leave
@@ -319,6 +462,7 @@ class SessionStore:
             cache_path=cache_path,
             format=format,
             detected_formats=read_info.get("detected_formats", {}),
+            max_detect_files=max_detect_files,
             folder_names=folder_names,
             keep_original_folder_name=keep_original_folder_name,
             min_file_size=min_file_size,
@@ -336,8 +480,82 @@ class SessionStore:
             "cache_hit": cache_hit,
             "cache_path": str(cache_path),
             "n_files_on_disk": n_files,
+            # Only meaningful when files were actually read: a cache hit detected nothing.
+            "probed_files": read_info.get("probed_files"),
             "dropped_rows": read_info.get("dropped_rows", 0),
             "elapsed_seconds": round(time.time() - started, 2),
+        }
+
+    def remask(self, session_id, mask_pattern):
+        """Replace an open session's masking with a different pattern.
+
+        Columns derived from the old masked text -- parser event ids, words,
+        trigrams -- are dropped; those derived from the raw ``m_message``
+        survive. Stashed results are discarded. When this masking already has
+        a cached parquet, that frame is adopted whole, with whatever columns it
+        held; otherwise the masked column is recomputed over the current frame.
+        The cache path is repointed either way.
+
+        Stats the log root to compute the cache key, so it must still exist.
+
+        :param mask_pattern: a built-in or registered pattern name. A session
+            opened with ``mask=False`` can be given a mask this way.
+        :returns: ``(session, info)`` naming what was dropped, discarded, or
+            restored from cache.
+        """
+        session = self.get(session_id)
+        resolved, mask_signature = self._resolve_mask(mask_pattern)  # validate first
+
+        previous_cache_path = session.cache_path
+        cache_path = None
+        if previous_cache_path is not None:
+            digest, _ = self._cache_key(
+                session.root, session.filename_pattern, mask_signature,
+                session.file_name_normalizer, session.min_file_size, session.folder_names,
+                session.keep_original_folder_name, session.format, session.max_detect_files,
+            )
+            cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
+
+        dropped = []
+        restored = cache_path is not None and cache_path.exists()
+        if restored:
+            session.df = pl.read_parquet(cache_path)
+            sidecar = cache_path.with_suffix(".json")
+            session.content_source = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+        else:
+            # Which derived columns came from the masked text, via the same
+            # bookkeeping ensure_content keeps. A column whose source was never
+            # recorded is treated as masked-derived: dropping one that was not
+            # only costs a recompute, while keeping one that was is a wrong answer.
+            formats = ["Words", "3grams"] + [f"Parse-{parser}" for parser in session.parsers]
+            for content_format in formats:
+                target = log_root.content_column(True, content_format)
+                if session.content_source.get(target) == "m_message":
+                    continue
+                dropped.extend(column for column in log_root.derived_columns(content_format)
+                               if column in session.df.columns)
+                session.content_source.pop(target, None)
+            df = session.df.drop(dropped) if dropped else session.df
+            session.df = EventLogEnhancer(df).normalize(regexs=resolved)
+
+        session.masked = True
+        session.mask_pattern = mask_pattern
+        if cache_path is not None:
+            session.cache_path = cache_path
+
+        discarded = list(session.results)
+        session.results.clear()
+        session.vocabularies.clear()
+
+        # A restored frame already matches its parquet; flushing it would only
+        # rewrite the file it was just read from.
+        session._dirty = not restored
+        session.flush()
+        return session, {
+            "dropped_columns": dropped,
+            "discarded_results": discarded,
+            "restored_from_cache": restored,
+            "previous_cache_path": str(previous_cache_path) if previous_cache_path else None,
         }
 
     def set_folder_names(self, session_id, folder_names, keep_original=True):
@@ -356,14 +574,16 @@ class SessionStore:
         # The names are part of the cache key, so a new mapping belongs in a
         # different parquet. Repoint before flushing or the old one is clobbered.
         if session.cache_path is not None:
+            _, mask_signature = self._resolve_mask(session.mask_pattern)
             digest, _ = self._cache_key(
-                session.root, session.filename_pattern, session.mask_pattern,
+                session.root, session.filename_pattern, mask_signature,
                 session.file_name_normalizer, session.min_file_size, folder_names,
-                keep_original, session.format,
+                keep_original, session.format, session.max_detect_files,
             )
             session.cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
 
         session.df = df
+        session.vocabularies.clear()  # keyed on folder names
         session.folder_names = folder_names
         session.keep_original_folder_name = keep_original
         session._dirty = True

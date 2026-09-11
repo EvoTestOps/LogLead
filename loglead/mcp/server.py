@@ -1,9 +1,23 @@
+#CLAUDE DO NOT TOUCH OR EDIT THESE TODO comments. 
+ 
+# TODO: One should be able to supply own mask patterns also in openlog_root
+# We also want away to for MCP client to inspect a sample of log lines
+# max diversity of log lines to sample for mask pattern detection. 
+# Also saving a mask is needed as it can be expensive to figure out
+# a good mask and we do want to repeat
+
+#TODO file splitting should support even splits (DONE)
+#Timestamp splits NOT DONE
+#Splits by block_ID as in HDFS and other custom splits. NOT DONE.abs
+#The last two require reading in the the file
+
+
+
 """MCP server exposing LogLead's log folder comparison analyses.
 
 Wraps :mod:`loglead.delta` in a session model so a log root is loaded, masked,
-and parsed once and then interrogated repeatedly. The tool names mirror
-LogDelta's YAML step names one-for-one, so an existing config translates
-directly into a sequence of calls.
+and parsed once and then interrogated repeatedly. The tool mimics
+LogDelta's logic.
 
 Run it with ``loglead-mcp`` (stdio, what MCP clients expect) or
 ``loglead-mcp --transport http --port 8000``.
@@ -14,8 +28,13 @@ from __future__ import annotations
 import argparse
 import contextlib
 import functools
+import hashlib
+import inspect
+import json
 import os
 import sys
+import time
+from pathlib import Path
 from typing import Optional, Sequence, Union
 
 import polars as pl
@@ -26,14 +45,49 @@ try:  # MCP SDK 2.x
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
 
-from ..delta import anomaly, distance, export, scoring, visualize
-from . import formatting
+from ..delta import (anomaly, distance, export, log_root, masking, scoring, split, visualize,
+                     vocabulary)
+from ..loaders import DEFAULT_MAX_DETECT_FILES
+from . import crash, formatting
 from .session import SessionStore
 
-mcp = _Server("loglead")
+mcp = _Server("loglead", instructions="""\
+Compares log folders (test runs, deployments, nodes -- any set of logs that
+belong together) to find which one looks wrong, with no labels required.
+Start with peek_log_root to see what is on disk without loading it -- it also
+says when a path is one big log file rather than a set of log folders, which
+split_log_file turns into slices you can compare. Then open_log_root, and drill
+down through folder-name, folder-content, file-content, and line-content, in
+that order.
+
+WORK TOP DOWN, NOT SEARCH OR READ LOGS FIRST. This server is built around narrowing a
+haystack, not searching it. Top level approaches are statistics plots and machine learning.
+learning approaches. The intended path is: folder/file/line and in tools
+plot_* first followed by distance_* or anomaly_* funciotns. First, look
+folder level to see which folder is the outlier, then the same at the file
+level within that folder to see which file is the outlier, then at the line
+level within that file to see which lines are the outliers. It is recommended
+to run line level anomaly detection and look at lines that have high 
+anomaly scores. Finally only after all statistics based approaches have been 
+tried resort functions read_log_lines or search_log_lines to look at the specific 
+lines that the narrowing surfaced. Jumping straight to 
+search_log_lines or read_log_lines on a whole log root is starting from a guess 
+about what might be wrong; the distance/anomaly/plot tools exist precisely so 
+you don't have to guess. Prefer statistics ML stuff and treat search/read as the
+last step that inspects a result, not the first step that produces one.
+
+new_tokens is a statistics step too: it lists the words a log folder has that the
+comparison folders never have, and read_log_lines(new_tokens_vs=..., only_new=True)
+shows the lines they are on.
+
+COST. These tools span milliseconds to hours. Every result reports its own
+elapsed_seconds: make one narrow call.""")
 
 #: Set by main(); tests and demos construct their own.
 STORE = SessionStore()
+
+#: Crash log for whatever cache directory STORE points at. See crash_log().
+_CRASH_LOG = None
 
 #: A log folder selector: an exact name, "ALL", an int N, a "Prefix*" wildcard, or a list.
 FolderSelector = Union[str, int, Sequence[str]]
@@ -41,27 +95,139 @@ FolderSelector = Union[str, int, Sequence[str]]
 #: A file selector: same forms, resolved against the target log folder's files.
 FileSelector = Union[str, int, Sequence[str]]
 
+#: Which figures a plot tool should build: any subset of ``visualize.PLOTS``.
+PlotSelector = Sequence[str]
+
 
 def tool(fn):
-    """Register a function as an MCP tool, with stdout kept off the wire.
+    """Register a function as an MCP tool, keep stdout clean, and time it.
 
-    LogLead and its dependencies print freely -- loader warnings, "e_words
-    already found", Drain3's logger. Under the stdio transport stdout carries
-    JSON-RPC frames, so a stray ``print`` would corrupt the stream. MCP SDK 2.x
-    already diverts fd 1 to stderr for exactly this reason; redirecting here as
-    well costs nothing there and keeps 1.x safe too.
+    LogLead and the libraries it uses print a lot of messages while running --
+    warnings, status notes, and so on. Normally that's fine, but the stdio
+    connection to the MCP client also uses stdout to send its own messages, so
+    any of these extra prints would corrupt that connection. This wrapper sends
+    them to stderr instead, where they're harmless.
 
-    The wrapper is returned undecorated so the function stays directly callable
-    from Python (which is how the demo and :func:`run_config` use these).
+    It also puts ``elapsed_seconds`` on every result.
+
+    And it is where a call is written down before it runs, so that a call which
+    *never returns* -- the OOM killer takes the whole process, uncatchably, and
+    the connection dies with it -- can still be named afterwards. See
+    :mod:`loglead.mcp.crash`. That costs one small file written and removed per
+    call, ~0.2ms, against 3ms for the cheapest tool there is;
+    ``LOGLEAD_MCP_CRASH_LOG=0`` turns it off.
+
+    The wrapper is what gets returned, so direct Python callers -- the demo,
+    :func:`run_config`, the tests -- get the same behaviour an MCP client does.
     """
+    signature = inspect.signature(fn)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        with contextlib.redirect_stdout(sys.stderr):
-            return fn(*args, **kwargs)
+        started = time.perf_counter()
+        recorder = crash_log()
+        _record_call(recorder, fn.__name__, signature, args, kwargs)
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                result = fn(*args, **kwargs)
+        finally:
+            # A raised exception is not a crash: the client was told about it.
+            # Only a call that never reaches here leaves its breadcrumb behind.
+            recorder.finish_call()
+        if isinstance(result, dict):
+            result.setdefault("elapsed_seconds", round(time.perf_counter() - started, 2))
+            _report_crashes(recorder, result)
+        return result
 
     mcp.tool()(wrapper)
     return wrapper
+
+
+def crash_log():
+    """The crash log for whatever cache directory ``STORE`` is using.
+
+    Rebuilt when ``STORE`` is replaced -- ``main()``, the tests, the demo -- so
+    the ledger always sits beside the parquet cache whose recovery advice it
+    gives. It sweeps on first use, so a report is ready even when nobody called
+    :meth:`crash.CrashLog.sweep` at startup.
+    """
+    global _CRASH_LOG
+    if _CRASH_LOG is None or _CRASH_LOG.cache_dir != STORE.cache_dir:
+        _CRASH_LOG = crash.CrashLog(STORE.cache_dir)
+    return _CRASH_LOG
+
+
+def _record_call(recorder, name, signature, args, kwargs):
+    """Write the breadcrumb for one call, with its arguments and its session.
+
+    The *effective* arguments are recorded rather than the ones the caller
+    spelled out, because the expensive defaults are exactly the ones nobody
+    passes: ``target_folder`` defaults to ``"ALL"`` and would otherwise be
+    absent from the record of the call it killed. Which ones were explicit is
+    kept alongside, so a report can quote the call as it was written.
+    """
+    if not recorder.enabled:
+        return
+    try:
+        bound = signature.bind_partial(*args, **kwargs)
+        explicit = list(bound.arguments)
+        bound.apply_defaults()
+        effective = dict(bound.arguments)
+    except TypeError:  # a malformed call the tool itself is about to reject
+        explicit, effective = list(kwargs), dict(kwargs)
+    session = None
+    if effective.get("session_id"):
+        try:
+            session = STORE.get(effective["session_id"])
+        except Exception:  # an unknown id is the tool's error to raise, not ours
+            session = None
+    recorder.start_call(name, effective, explicit, session, effective.get("path"))
+
+
+def _open_log_root_defaults():
+    """``open_log_root``'s own defaults, read from its signature rather than copied."""
+    return {name: parameter.default
+            for name, parameter in inspect.signature(open_log_root).parameters.items()
+            if parameter.default is not inspect.Parameter.empty}
+
+
+def _recovery_call(record):
+    """A ready-to-run ``open_log_root`` that brings the dead session back.
+
+    Only the arguments that differ from the defaults, plus the path and the
+    session id: a fifteen-argument call is not one a client will read. An
+    argument the breadcrumb had to cut short is left out and named, since a
+    truncated folder_names would rename twenty log folders of five thousand.
+    """
+    open_args = record.get("open_args")
+    if not open_args:
+        return None
+    defaults = _open_log_root_defaults()
+    truncated = set(record.get("truncated_args") or ())
+    keys = [key for key, value in open_args.items()
+            if key not in truncated
+            and (key in ("path", "session_id") or key not in defaults
+                 or ((value or defaults[key]) and value != defaults[key]))]
+    call = crash.render_call("open_log_root", open_args, keys)
+    if truncated:
+        call += f" (then re-apply {', '.join(sorted(truncated))}, too long to record here)"
+    return call
+
+
+def _report_crashes(recorder, result):
+    """Put any unreported crash in front of the model, once, on the next result.
+
+    Notes rather than an error, because there is nothing to attach an error to:
+    the call that died was never answered and its connection is gone. This is
+    the first moment the server can say anything at all, whichever tool it
+    happens to be answering.
+    """
+    records = recorder.take_pending()
+    if not records:
+        return
+    result["notes"] = (crash.crash_notes(records, _recovery_call)
+                       + list(result.get("notes") or []))
+    result["server_crash"] = [crash.summarize(record) for record in records[-3:]]
 
 
 def _write(session, df, analysis, level, **name_parts):
@@ -75,10 +241,169 @@ def _write(session, df, analysis, level, **name_parts):
 # --------------------------------------------------------------------------- #
 
 @tool
+def peek_log_root(
+    path: str,
+    filename_pattern: str = "*.log",
+    probe_files: int = 5,
+    sample_lines: int = 5,
+    max_children: int = 50,
+    max_file_names: int = 20,
+) -> dict:
+    """Look at a directory without loading it. Call this before open_log_root.
+
+    Reports how many log folders and files are there, how big they are, what
+    they are called, what format they look like, and what a few of the actual
+    log lines say -- by stat'ing the files and reading a few hundred lines,
+    never by parsing them. open_log_root reads everything and can take minutes;
+    this takes under a second and tells you whether it is worth it.
+
+    `file_names` groups the files by name with the digits collapsed, e.g.
+    978 files named `container_#_#_#_#.log`. One shape means one kind of file,
+    and open_log_root's default format sampling can speak for all of them;
+    several shapes mean the log root may hold several formats, so check what
+    `probed` says about each and consider max_detect_files=0 or a pinned
+    format.
+
+    Point it at a directory holding several datasets and it lists each of them,
+    so you can see what is available before choosing one. Point it at a single
+    log file and it says so: one file is one log folder, and every analysis here
+    compares log folders against each other, so a single file has to be cut into
+    slices first with split_log_file.
+
+    Read `notes` in the result -- it says what is wrong or what to do next.
+
+    Args:
+        path: A directory, or a single log file.
+        filename_pattern: Glob deciding which files count. The same pattern you
+            would pass to open_log_root, so a peek reporting zero files is
+            telling you that open_log_root would find none either.
+        probe_files: How many files to detect the format of and sample lines
+            from. The largest file of each distinct file-name shape is taken
+            first, so two kinds of file get one probe each.
+        sample_lines: Raw log lines returned per probed file.
+        max_children: Subdirectories listed.
+        max_file_names: File-name shapes listed in `file_names`.
+    """
+    return log_root.peek_log_root(
+        path,
+        filename_pattern=filename_pattern,
+        probe_files=probe_files,
+        sample_lines=sample_lines,
+        max_children=max_children,
+        max_file_names=max_file_names,
+    )
+
+
+def _split_out_dir(path, n_slices, by):
+    """Where a split goes when the caller does not say.
+
+    Keyed on the source file's fingerprint and the split parameters, so asking
+    for the same split twice reuses the slices instead of rewriting them -- the
+    same bargain SessionStore's parquet cache makes, and worth more here, since
+    the slices are a second copy of the log on disk.
+    """
+    stat = os.stat(path)
+    payload = "|".join([
+        os.path.abspath(path), str(stat.st_size), f"{stat.st_mtime:.0f}", str(n_slices), by,
+    ])
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return STORE.cache_dir / "splits" / f"{stem}-{digest}"
+
+
+@tool
+def split_log_file(
+    path: str,
+    n_slices: int = 10,
+    by: str = "lines",
+    out_dir: Optional[str] = None,
+    stem: Optional[str] = None,
+    refresh: bool = False,
+) -> dict:
+    """Cut one big log file into slices, so it can be analysed as a log root.
+
+    Every analysis here compares log folders against each other, so a single log
+    file -- one long stream of lines -- has nothing to compare and cannot be
+    analysed as it stands. Cutting it into slices gives it something: the slices
+    become log folders, and asking which slice looks unlike the others is asking
+    whether the log changed part way through.
+
+    The slices are written side by side as `<name>_slice_000.log`,
+    `<name>_slice_001.log`, ... in one directory, which is itself a log root --
+    pass that directory to open_log_root next. Nothing is read into memory, so
+    the file can be far larger than RAM.
+
+    Splitting the same file the same way twice reuses the slices already on
+    disk rather than writing them again.
+
+    Because each slice is one file in its own log folder, the folder-level
+    tools are the ones to use on a split file: distance_folder_content,
+    anomaly_folder_content and plot_folder_content. The file-level and
+    line-level tools (distance_file_content, anomaly_file_content,
+    distance_line_content, anomaly_line_content) match files by name across log
+    folders, and no two slices share a file name, so they find nothing here.
+
+    Args:
+        path: The log file to cut. A .gz is decompressed on the way in.
+        n_slices: How many slices. More slices means finer resolution on where
+            the log changed, and less text in each one to judge it by.
+        by: "lines" gives every slice the same number of log lines, which is
+            what makes slices comparable; "bytes" gives them the same size on
+            disk in a single pass, which is faster but leaves the line counts
+            uneven wherever line lengths vary.
+        out_dir: Where to write the slices. Defaults to a directory beside the
+            session cache, named after the file and the split.
+        stem: Name the slices after this instead of the file's own name.
+        refresh: Split again even if these slices already exist.
+    """
+    source = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isfile(source):
+        raise FileNotFoundError(
+            f"Not a file: {source}. split_log_file cuts up one log file; a directory of logs is "
+            f"already a log root, so pass it to open_log_root instead."
+        )
+    chosen = Path(os.path.expanduser(out_dir)) if out_dir else _split_out_dir(
+        source, n_slices, by
+    )
+    # The manifest is written beside the slices so a reused split reports the
+    # same thing a fresh one does, line counts included, without reading them
+    # back. It also makes a half-written split visible: slices with no manifest
+    # are not treated as a usable result.
+    record = chosen / "split_manifest.json"
+    reused = record.is_file() and not refresh
+    if reused:
+        manifest = json.loads(record.read_text())
+        # The stored one is how long the original split took; this call did
+        # not split anything, and @tool fills in what it actually cost.
+        manifest.pop("elapsed_seconds", None)
+    else:
+        # Clearing the directory first is only safe when we picked it: it is
+        # ours, keyed on this exact split. A caller-supplied out_dir that
+        # already holds something raises instead, unless refresh says otherwise.
+        manifest = split.split_log_file(
+            source, str(chosen), n_slices=n_slices, by=by, stem=stem,
+            overwrite=out_dir is None or refresh,
+        )
+        record.write_text(json.dumps(manifest, indent=2))
+    manifest["reused_existing_slices"] = reused
+    manifest["notes"] = [
+        f"These slices are a log root. Open it with "
+        f"open_log_root(path={str(chosen)!r}) to analyse them.",
+        "Each slice is one file in its own log folder, so the log folders are named after the "
+        "files, extension included (e.g. 'BGL_slice_000.log'). set_folder_names can rename them.",
+        "Compare the slices with distance_folder_content, anomaly_folder_content or "
+        "plot_folder_content. The file-level and line-level tools match files by name across log "
+        "folders, and no two slices share a name, so those come back empty.",
+    ]
+    return manifest
+
+
+@tool
 def open_log_root(
     path: str,
     filename_pattern: str = "*.log",
     format: str = "auto",
+    max_detect_files: int = DEFAULT_MAX_DETECT_FILES,
     mask: bool = True,
     mask_pattern: str = "myllari_extended",
     parsers: Optional[Sequence[str]] = None,
@@ -93,30 +418,46 @@ def open_log_root(
 ) -> dict:
     """Load a log root -- a directory of log folders -- into a session.
 
-    Each immediate subdirectory of `path` is one **log folder**: any set of logs
-    that belong together, be it a test run, a day, or a release. Files are
-    matched by name across log folders. Do this once, then run as many analyses
-    against the returned `session_id` -- nothing is re-read or re-parsed.
+    A **log folder** is any set of logs that belong together, be it a test run,
+    a day, or a release -- it's the unit that gets compared against the rest.
+    If `path` has subdirectories, each one is a log folder, and can hold
+    several files (e.g. one folder per test run). If a file sits directly in
+    `path` instead, with no subdirectory, that single file is its own log
+    folder (e.g. one file per block id, compared file-to-file). A log root can
+    have both kinds at once. Files are matched by name across log folders. Do
+    this once, then run as many analyses against the returned `session_id` --
+    nothing is re-read or re-parsed.
 
     Args:
-        path: The log root directory. Its subdirectories are the log folders.
+        path: The log root directory. Its subdirectories are log files or log folders.
         filename_pattern: Glob applied inside each log folder.
-        format: Which loader reads the files. "auto" (the default) samples each
-            file and picks one, and the returned `detected_formats` says what it
-            chose -- check it, because a wrong guess is only visible there. Pin
-            one instead by naming a family: "raw" (any text, one event per line),
-            "json", "syslog", "logfmt", "access_log", "delimited". Add a shipped
-            spec after a slash for a known layout: "json/nginx_json",
-            "delimited/zeek", "access_log/combined", "syslog/rfc5424". Names are
-            exactly what `detected_formats` reports, so a detected format can be
-            handed straight back to pin it for every file.
+        format: How to read the files. The default, "auto", looks at each file
+            and guesses its format. Check the result's `detected_formats`
+            field to see what it guessed, since that's the only place a wrong
+            guess shows up. To skip guessing, name a format instead: "raw" (plain text,
+            one line per log entry), "json", "syslog", "logfmt", "access_log",
+            "delimited". For a more exact match, add a known layout after a
+            slash, e.g. "json/nginx_json", "delimited/zeek",
+            "access_log/combined", "syslog/rfc5424". These are the same names
+            `detected_formats` reports, so you can take a guess it made and
+            feed it back in to force every file to use it.
+        max_detect_files: With format="auto", how many files to look at before
+            reading the rest the same way. Detection costs a read per file, so
+            a log root of thousands of files -- one per block, one per slice --
+            would spend minutes on it; the files probed are spread over the
+            distinct file-name shapes, since files of different formats are
+            nearly always named differently. peek_log_root's `file_names` says
+            how many shapes there are. Pass 0 to detect every file, which is
+            worth it when one odd file among thousands would have to be read
+            differently. Ignored unless format="auto".
         mask: Replace volatile tokens (ids, IPs, timestamps, hex) with
-            placeholders. Almost always wanted, and required for any parser.
-        mask_pattern: One of "myllari_extended", "myllari", "drain_loglead",
-            "drain_orig".
-        parsers: Template parsers to run up front, e.g. ["tip"] or ["drain"].
-            Optional -- analyses parse on demand -- but doing it here means the
-            result lands in the cache.
+            placeholders. Almost always wanted.
+        mask_pattern: One of the built-ins -- "myllari_extended", "myllari",
+            "drain_loglead", "drain_orig" -- or the name of a pattern
+            registered earlier with register_mask_pattern, to use your own
+            regexes instead of or on top of a built-in one. See
+            list_mask_patterns for what is available.
+        parsers: Template log parsers to run up front, e.g. tipiing ["tip"] or ["drain"].
         file_name_normalizer: "none", or "strip_folder_id" when file names embed
             the folder id (Hadoop container logs do). Without it, file-level and
             line-level analyses find no files in common between log folders.
@@ -125,22 +466,23 @@ def open_log_root(
         table_format: "csv" (tab-separated, drops list columns) or "xlsx".
         session_id: Choose your own handle instead of a generated one.
         refresh: Ignore any cached parquet and re-read from disk.
-        folder_names: {folder name: meaningful name}, e.g.
+        folder_names: Pass new folder names as dict. Often log folders names are ids
+            dates which hard for humans to track. This allows renaming them so 
+            they make sense: {folder name: meaningful name}, e.g.
             {"application_1445062781478_0012": "PageRank_MachineDown"} or
-            {"logs_2024_11_04": "FailingRunThu"}. Log folders are named after their
-            directory, which is often an opaque id, and that name labels every
-            plot and result table. Where the meaningful names come from is up to
+            {"logs_2024_11_04": "FailingRunThursday"} Where the meaningful names come from is up to
             you -- a ground-truth label file shipped with the dataset, a
             deployment log, or your own knowledge of what each one was. Can also
             be applied later with set_folder_names.
         keep_original_folder_name: append the folder name to the name you gave, so
             log folders stay traceable and multi-part names line up with
-            group_by_indices. Pass False to use the given name verbatim.
+            group_by_indices. Pass False to use the given name.
     """
     session, info = STORE.open(
         path=path,
         filename_pattern=filename_pattern,
         format=format,
+        max_detect_files=max_detect_files,
         mask=mask,
         mask_pattern=mask_pattern,
         parsers=parsers or (),
@@ -159,11 +501,25 @@ def open_log_root(
     summary["folders"] = folders[:50]
 
     notes = []
+    # Before anything about this open: what this log root did to a previous
+    # process. It outlives the restart that found it, so a client meeting this
+    # log root for the first time is warned too.
+    history = crash_log().history(str(session.root))
+    if history:
+        summary["previous_crashes"] = [crash.summarize(record) for record in history[-3:]]
+        notes.append(crash.history_note(history))
     if len(folders) > 50:
         notes.append(f"{len(folders)} log folders total; first 50 listed. "
                      "Use describe_log_root for the rest.")
     # "text/<format>" is timestamped text and a good outcome; a bare "text" is the fallback that
     # matched nothing, which is the one case worth naming a format by hand for.
+    probed = info.get("probed_files")
+    n_read = sum(summary.get("detected_formats", {}).values())
+    if probed is not None and probed < n_read:
+        notes.append(f"The format was detected from {probed} of the {n_read} files and applied to "
+                     f"all of them -- they agreed, but files that were not probed could still "
+                     f"differ. Re-open with max_detect_files=0 to detect every file, or with "
+                     f"format= to pin one.")
     unmatched = summary.get("detected_formats", {}).get("text", 0)
     if unmatched:
         notes.append(f"{unmatched} file(s) matched no known format and were read as plain text, "
@@ -173,6 +529,106 @@ def open_log_root(
                      f"characters.")
     if notes:
         summary["notes"] = notes
+    return summary
+
+
+@tool
+def register_mask_pattern(
+    name: str,
+    patterns: Sequence[dict],
+    base: Optional[str] = None,
+    description: Optional[str] = None,
+    overwrite: bool = False,
+) -> dict:
+    """Define a named, reusable mask pattern for use as open_log_root's mask_pattern.
+
+    Once registered, use `name` anywhere `mask_pattern` is accepted --
+    including in a later open_log_root call for a log root you have not
+    opened yet.
+
+    Args:
+        name: How this pattern is referenced later. Letters, digits, "_" and
+            "-" only; cannot reuse a built-in name (myllari_extended,
+            myllari, drain_loglead, drain_orig).
+        patterns: `[{"replacement": "${start}<APP_ID>${end}", "regex": "..."}, ...]`,
+            applied in this order. Wrap the part that must survive in named
+            groups `start`/`end` the way the built-ins do (see
+            list_mask_patterns for examples) so text next to the match is not
+            eaten by it.
+        base: An existing pattern name (built-in or already-registered) whose
+            patterns run first; `patterns` is appended after it. Leave unset
+            to define `name` from scratch, with no built-in patterns applied.
+        description: Free text noting what this pattern is for, returned by
+            list_mask_patterns.
+        overwrite: Replace an existing registration with this name. Without
+            it, registering an existing name is an error -- open_log_root
+            sessions already opened with the old version keep it (they cache
+            what they resolved at open time); only a later open_log_root call
+            picks up the change.
+    """
+    record = STORE.mask_registry.register(
+        name, patterns, base=base, description=description, overwrite=overwrite
+    )
+    record["notes"] = [
+        f"{len(record['patterns'])} pattern(s) resolved for {name!r}. "
+        f"Pass mask_pattern={name!r} to open_log_root to use it."
+    ]
+    return record
+
+
+@tool
+def list_mask_patterns() -> dict:
+    """List built-in and registered mask patterns, with what each one matches."""
+    builtins = {
+        pattern_name: [{"replacement": r, "regex": p} for r, p in pattern]
+        for pattern_name, pattern in masking.PATTERNS.items()
+    }
+    return {
+        "builtin": builtins,
+        "custom": STORE.mask_registry.list_records(),
+    }
+
+
+@tool
+def remask_log_root(session_id: str, mask_pattern: str) -> dict:
+    """Apply a different mask to an already-open log root, keeping the session_id.
+
+    Drops the columns derived from the old masked text -- parsed event ids,
+    words, trigrams -- and discards stashed results. A pattern this log root
+    already has a cached copy of is restored with the columns that copy held;
+    any other pattern is computed fresh.
+
+    Args:
+        session_id: Handle from open_log_root.
+        mask_pattern: A built-in name ("myllari_extended", "myllari",
+            "drain_loglead", "drain_orig") or one registered with
+            register_mask_pattern. A session opened with mask=False can be
+            given a mask this way.
+    """
+    session, info = STORE.remask(session_id, mask_pattern)
+    summary = session.summary()
+    summary.update(info)
+
+    notes = [f"Masked with {mask_pattern!r}. Analyses using mask=True now see the new text."]
+    if info["restored_from_cache"]:
+        notes.append(
+            "This mask had been used on this log root before, so everything computed under it "
+            "came back with it: the parsed event ids, words and trigrams it already had are "
+            "ready to use, and need no recomputing."
+        )
+    if info["dropped_columns"]:
+        notes.append(
+            f"Dropped {len(info['dropped_columns'])} column(s) derived from the old "
+            f"masking: {', '.join(info['dropped_columns'])}. They are recomputed on "
+            f"demand by the next analysis that needs them."
+        )
+    if info["discarded_results"]:
+        notes.append(
+            f"Discarded {len(info['discarded_results'])} stashed result(s) computed under "
+            f"the old mask ({', '.join(info['discarded_results'])}). Re-run the analyses "
+            f"whose answers you still need."
+        )
+    summary["notes"] = notes
     return summary
 
 
@@ -193,24 +649,30 @@ def describe_log_root(session_id: str, include_files: bool = False) -> dict:
     """
     session = STORE.get(session_id)
     aggs = [pl.col("file_name").n_unique().alias("n_files"), pl.len().alias("n_lines")]
+    columns = ["folder", "file_name"]
     if "folder_original" in session.df.columns:
         # Show what each log folder is called on disk, so a new name can still be
         # traced back to its folder.
         aggs.append(pl.col("folder_original").first().alias("folder_original"))
-    per_folder = session.df.group_by("folder").agg(aggs).sort("folder")
+        columns.append("folder_original")
+    
+    per_folder = session.df.select(columns).group_by("folder").agg(aggs).sort("folder")
     out = session.summary()
     out["folders_detail"] = per_folder.to_dicts()
 
     if include_files:
         per_file = (
-            session.df.group_by("file_name")
+            session.df.select("file_name", "folder").group_by("file_name")
             .agg([pl.col("folder").n_unique().alias("n_folders"), pl.len().alias("n_lines")])
             .sort("n_folders", descending=True)
         )
         out["files_detail"] = per_file.to_dicts()
         out["notes"] = [
-            "Files present in many log folders are the comparable ones; a file in "
-            "only one cannot be compared at L3/L4."
+            "Files present in many log folders are the comparable ones; a file "
+            "present in only one has nothing to compare against in "
+            "distance_file_content, anomaly_file_content, distance_line_content, "
+            "or anomaly_line_content, which all pair a file with its namesake in "
+            "another log folder."
         ]
     return out
 
@@ -277,21 +739,45 @@ def read_log_lines(
     offset: int = 0,
     limit: int = 100,
     masked: bool = False,
+    new_tokens_vs: Optional[FolderSelector] = None,
+    only_new: bool = False,
+    match_file_name: bool = False,
 ) -> dict:
     """Read actual log lines. Use this to see the evidence behind a score.
+
+    With new_tokens_vs, each line also lists its new tokens: words that occur
+    in none of those comparison log folders. only_new then returns just the
+    lines that have one, so the read shows what is new in this file.
 
     Args:
         session_id: Handle from open_log_root.
         folder: Log folder name.
         file_name: File name, relative to its log folder.
-        offset: First line to return, 0-based.
+        offset: First line to return, 0-based. With only_new, counted among the
+            lines that have new tokens.
         limit: How many lines (capped at 500).
         masked: Return the masked text instead of the raw message.
+        new_tokens_vs: Comparison log folders -- "ALL", a list, an int N, or
+            "Prefix*". Point it at known-good folders when you have them: a word
+            that also occurs in a comparison folder is not new. Words come from
+            the masked text when the session is masked.
+        only_new: Return only lines with at least one new token. Needs new_tokens_vs.
+        match_file_name: Compare against the same-named file in the comparison
+            folders only, rather than all their files.
     """
     session = STORE.get(session_id)
     column = "e_message_normalized" if masked else "m_message"
     if column not in session.df.columns:
         raise ValueError(f"Column {column!r} is not available in this session.")
+    if only_new and new_tokens_vs is None:
+        raise ValueError(
+            "only_new needs new_tokens_vs: the log folders whose words do not count as new."
+        )
+
+    field = None
+    if new_tokens_vs is not None:
+        _, field = session.ensure_content(session.masked, "Words")
+        session.flush()
 
     selected = session.df.filter(
         (pl.col("folder") == folder) & (pl.col("file_name") == file_name)
@@ -303,16 +789,41 @@ def read_log_lines(
         )
 
     limit = max(1, min(int(limit), 500))
-    window = selected.slice(offset, limit).select(["line_number", column])
-    return {
+    result = {
         "session_id": session_id,
         "folder": folder,
         "file_name": file_name,
         "total_lines": selected.height,
         "offset": offset,
-        "returned": window.height,
-        "lines": window.to_dicts(),
     }
+    if field is None:
+        window = selected.slice(offset, limit).select(["line_number", column])
+    else:
+        _, comparison = log_root.prepare_folders(session.df, folder, new_tokens_vs)
+        vocab = vocabulary.baseline_vocabulary(
+            session.df, comparison, field, match_file_name, session.cached_vocabulary
+        )
+        if match_file_name and vocab.filter(pl.col("file_name") == file_name).height == 0:
+            raise ValueError(
+                f"No comparison log folder has a file named {file_name!r}. Leave "
+                "match_file_name unset to compare against all their files."
+            )
+        annotated = vocabulary.annotate(selected, vocab, field)
+        has_new = annotated.filter(pl.col("new_tokens").list.len() > 0)
+        window = ((has_new if only_new else annotated)
+                  .slice(offset, limit).select(["line_number", column, "new_tokens"]))
+        result.update({
+            "n_comparison_folders": len(comparison),
+            "lines_with_new_tokens": has_new.height,
+            "baseline_vocabulary_size": vocab.height,
+        })
+        if only_new and offset + window.height < has_new.height:
+            result["notes"] = [
+                f"Showing {window.height} of {has_new.height} lines with new tokens. "
+                "Raise offset for the next page."
+            ]
+    result.update({"returned": window.height, "lines": window.to_dicts()})
+    return result
 
 
 @tool
@@ -358,7 +869,8 @@ def search_log_lines(
         matches = df.filter(pl.col("m_message").str.contains(pattern, literal=True))
 
     per_folder = (
-        matches.group_by("folder").agg(pl.len().alias("matches")).sort("matches", descending=True)
+        matches.select("folder").group_by("folder").agg(pl.len().alias("matches"))
+        .sort("matches", descending=True)
     )
     limit = max(1, min(int(limit), 200))
     sample = matches.select(["folder", "file_name", "m_message"]).head(limit)
@@ -374,9 +886,264 @@ def search_log_lines(
     }
 
 
+@tool
+def new_tokens(
+    session_id: str,
+    target_folder: str,
+    comparison_folders: FolderSelector = "ALL",
+    target_files: FileSelector = "ALL",
+    match_file_name: bool = False,
+    mask: bool = True,
+    content_format: str = "Words",
+    max_rows: int = 25,
+) -> dict:
+    """List the tokens a log folder has that the comparison folders never have.
+
+    One row per new token: how often it occurs, on how many lines and files,
+    and the first line it is on. No model is trained -- the baseline is every
+    token of the comparison folders -- so this is fast even on large log roots,
+    and a repeat call reuses the baseline.
+
+    A new token is either something that went differently -- an error message,
+    an event the others never logged -- or an id, path or number the mask
+    missed. The second kind turns up in every log folder; register_mask_pattern
+    and remask_log_root remove it.
+
+    Args:
+        session_id: Handle from open_log_root.
+        target_folder: Exact log folder name.
+        comparison_folders: The baseline -- "ALL", a list, an int N, or
+            "Prefix*". Point it at known-good folders when you have them: a
+            failure that also happens in a comparison folder puts its words in
+            the baseline, and they are no longer new.
+        target_files: "ALL", a list, an int N, or a "name*" wildcard.
+        match_file_name: Judge each file against the same-named file in the
+            comparison folders only. Files no comparison folder has are skipped.
+        mask: Take tokens from the masked text.
+        content_format: "Words", "3grams", or "Parse-<Algorithm>". With a parser
+            each line is one token, its event type, so the rows are new message
+            types.
+        max_rows: Rows returned inline.
+    """
+    vocabulary.check_content_format(content_format)
+    session = STORE.get(session_id)
+    _, field = session.ensure_content(mask, content_format)
+    session.flush()
+    table, info = vocabulary.new_token_table(
+        session.df, target_folder, comparison_folders, target_files, field,
+        match_file_name, session.cached_vocabulary,
+    )
+    level = 3 if match_file_name else 2
+    artifact = _write(session, table, "new", level, target_folder=target_folder,
+                      comparison_folder="Many", mask=mask, content_format=content_format)
+
+    n_comparison = len(info["comparison_folders"])
+    notes = [
+        f"A token is new when none of the {n_comparison} comparison log folders has it, so "
+        "a failure that also occurs in a comparison folder is not new. Point "
+        "comparison_folders at known-good log folders when you have them.",
+        "Tokens that are ids, paths or numbers are gaps in the mask rather than findings: "
+        "register_mask_pattern (base= the current pattern), then remask_log_root.",
+        f'See them in context with read_log_lines(session_id="{session_id}", '
+        f'folder="{target_folder}", file_name=<file_name>, '
+        f"new_tokens_vs={json.dumps(comparison_folders)}, only_new=True"
+        + (", match_file_name=True)." if match_file_name else ")."),
+    ]
+    if table.height == 0:
+        notes.insert(0, "Nothing new: every token of the target also occurs in the "
+                        "comparison log folders.")
+    if info["skipped_files"]:
+        notes.append(f"{len(info['skipped_files'])} target file(s) skipped: no comparison "
+                     "log folder has a file of that name.")
+    return formatting.result(
+        session, "new_tokens", level,
+        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+         "target_files": target_files, "match_file_name": match_file_name, "mask": mask,
+         "content_format": content_format},
+        table, artifact, max_rows, sort_by=["count"], notes=notes,
+        extra={
+            "n_comparison_folders": n_comparison,
+            "n_target_files": len(info["target_files"]),
+            "skipped_files": info["skipped_files"][:20],
+            "n_lines": info["n_lines"],
+            "lines_with_new_tokens": info["lines_with_new_tokens"],
+            "new_token_occurrences": info["new_token_occurrences"],
+            "baseline_vocabulary_size": info["baseline_vocabulary_size"],
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Result tables
+# --------------------------------------------------------------------------- #
+
+#: What ``where`` clauses may say. Structured triples rather than an expression
+#: string, because the clause arrives from a model and nothing here evaluates
+#: what it is handed -- the same reason masking patterns resolve by name only.
+#: Each lambda takes a Polars column expression ``col`` and a literal ``value``,
+#: and returns a boolean Polars expression. ``_where_expr`` below builds ``col``
+#: as ``pl.col(column)`` and passes the result to ``DataFrame.filter()``.
+_QUERY_OPS = {
+    "==": lambda col, value: col == value,
+    "!=": lambda col, value: col != value,
+    "<": lambda col, value: col < value,
+    "<=": lambda col, value: col <= value,
+    ">": lambda col, value: col > value,
+    ">=": lambda col, value: col >= value,
+    "in": lambda col, value: col.is_in(list(value)),
+    "not_in": lambda col, value: ~col.is_in(list(value)),
+    "contains": lambda col, value: col.cast(pl.Utf8).str.contains(str(value), literal=True),
+    "is_null": lambda col, value: col.is_null(),
+    "not_null": lambda col, value: col.is_not_null(),
+}
+
+
+def _where_expr(df, clause):
+    """Turn one ``[column, op, value]`` triple into a Polars predicate."""
+    if not isinstance(clause, (list, tuple)) or len(clause) != 3:
+        raise ValueError(
+            f"Each where clause is [column, operator, value]; got {clause!r}."
+        )
+    column, op, value = clause
+    if column not in df.columns:
+        raise ValueError(
+            f"No column {column!r} in this result. Columns: {', '.join(df.columns)}."
+        )
+    if op not in _QUERY_OPS:
+        raise ValueError(
+            f"Unknown operator {op!r}. Use one of: {', '.join(_QUERY_OPS)}."
+        )
+    return _QUERY_OPS[op](pl.col(column), value)
+
+
+@tool
+def query_result(
+    session_id: str,
+    result_id: str,
+    where: Optional[Sequence[Sequence]] = None,
+    sort_by: Optional[str] = None,
+    descending: bool = True,
+    max_rows: int = 25,
+    offset: int = 0,
+) -> dict:
+    """Filter the full table an earlier analysis produced.
+
+    Every analysis returns `result_id`; the table
+    itself stays in the session. Using `result_id` ask for
+    the rows that answer your question instead of scrolling. 
+
+    Examples:
+        query_result(s, rid, where=[["lines", "<", 5]])
+            log folders with fewer than 5 lines.
+        query_result(s, rid, where=[["folder", "contains", "PageRank"]])
+            one family of log folders, whatever their score.
+        query_result(s, rid, where=[["rank_sum", ">", 12]], sort_by="rank_sum")
+            every row with rank_sum over 12, sorted highest first.
+
+    Args:
+        session_id: Handle from open_log_root.
+        result_id: From the result of any analysis tool, e.g. "anomaly_folder_content-1a2b3c4d".
+            Results live in the server process only, and only the most recent
+            few per session; re-run the analysis if the id has aged out.
+        where: Clauses as [column, operator, value], combined with AND.
+            Operators: ==, !=, <, <=, >, >=, in, not_in, contains (plain
+            substring, no regex), is_null, not_null. The value for `in` /
+            `not_in` is a list; for is_null / not_null it is ignored but the
+            three-part shape stays, e.g. ["duration", "is_null", null].
+        sort_by: Column to order by. Defaults to the order the analysis left,
+            which for a ranking is already the meaningful one.
+        descending: Sort direction.
+        max_rows: Rows returned inline.
+        offset: Skip this many matching rows first, to page through them.
+    """
+    session = STORE.get(session_id)
+    analysis, df = session.get_result(result_id)
+
+    matched = df
+    for clause in where or []:
+        matched = matched.filter(_where_expr(df, clause))
+    if sort_by:
+        if sort_by not in matched.columns:
+            raise ValueError(
+                f"No column {sort_by!r} in this result. Columns: {', '.join(df.columns)}."
+            )
+        matched = matched.sort(sort_by, descending=descending, nulls_last=True)
+
+    offset = max(0, int(offset))
+    page = matched.slice(offset, max(0, int(max_rows)))
+    records = formatting.rows_to_records(page, page.height)
+
+    notes = []
+    if matched.height == 0:
+        notes.append(
+            "Nothing matched. 'summary' below is the whole table, so you can pick a "
+            "threshold that does."
+        )
+    elif offset + len(records) < matched.height:
+        notes.append(
+            f"Rows {offset + 1}-{offset + len(records)} of {matched.height} matching "
+            f"({df.height} in the table). Raise offset for the next page."
+        )
+    return {
+        "session_id": session_id,
+        "analysis": "query_result",
+        "source_analysis": analysis,
+        "result_id": result_id,
+        "n_rows_total": df.height,
+        "n_rows_matched": matched.height,
+        "offset": offset,
+        "sorted_by": sort_by,
+        "columns": df.columns,
+        "rows": records,
+        "truncated": offset + len(records) < matched.height,
+        "summary": formatting.numeric_summary(matched if matched.height else df),
+        "notes": notes,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Distance
 # --------------------------------------------------------------------------- #
+
+_DISTANCE_NOTE = (
+    "All four measures are distances (larger = more different). rank_sum combines "
+    "them scale-free; prefer it over zscore_sum."
+)
+
+_DISTANCE_SUBSET_NOTE = (
+    "Only {count} of the 4 measures ran ({names}), so rank_sum here combines {count} "
+    "of them instead of 4 and is a weaker, differently-scaled ranking -- not "
+    "comparable with a 4-measure rank_sum. Re-run with measures unset to add "
+    "{missing} unless you have a specific reason to isolate one."
+)
+
+#: One measure makes rank_sum a relabelling of that measure, not a combination.
+_DISTANCE_SINGLE_MEASURE_NOTE = (
+    "With one measure, rank_sum is simply that measure's rank, so it carries none "
+    "of the cross-measure agreement it is there to provide."
+)
+
+
+def _distance_notes(measures, *extra):
+    """Standing distance guidance, plus a warning if the caller narrowed ``measures``.
+
+    Mirrors ``_anomaly_notes``: a model narrowing ``measures`` to save time is
+    exactly what rank_sum exists to guard against, so the result says so rather
+    than leaving it to a docstring the model saw once.
+    """
+    notes = [_DISTANCE_NOTE]
+    used = distance.DEFAULT_MEASURES if measures is None else list(measures)
+    missing = [name for name in distance.DEFAULT_MEASURES if name not in used]
+    if missing:
+        notes.append(_DISTANCE_SUBSET_NOTE.format(
+            count=len(used), names=", ".join(used) or "none",
+            missing=", ".join(missing),
+        ))
+        if len(used) == 1:
+            notes.append(_DISTANCE_SINGLE_MEASURE_NOTE)
+    notes.extend(extra)
+    return notes
+
 
 @tool
 def distance_folder_filename(
@@ -385,17 +1152,19 @@ def distance_folder_filename(
     comparison_folders: FolderSelector = "ALL",
     max_rows: int = 25,
 ) -> dict:
-    """L1: compare log folders by which file names they contain. Never opens a file.
+    """Compare log folders by which file names they contain. Never opens a file.
 
-    The cheapest signal available, and often enough on its own -- a log folder that
-    crashed early is missing files, one that retried has extra ones.
+    The cheapest signal available. A log folder that
+    crashed early might be missing files, one that retried might have extra ones.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
         comparison_folders: "ALL", a list of names, an int N for the first N,
             or a "Prefix*" wildcard. The target is always excluded.
-        max_rows: Rows returned inline.
+        max_rows: Rows returned inline, largest distance (least similar) first.
+            For the closest matches instead, call query_result on the returned
+            result_id with sort_by="jaccard distance", descending=False.
     """
     session = STORE.get(session_id)
     results = distance.distance_folder_filename(session.df, target_folder, comparison_folders)
@@ -416,10 +1185,23 @@ def distance_folder_content(
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
+    measures: Optional[Sequence[str]] = None,
     max_rows: int = 25,
 ) -> dict:
-    """L2: compare log folders by their whole log text, with four distance measures.
+    """Compare log folders by their log text content, with four distance measures.
 
+    The four measures are cosine, jaccard, compression, and containment
+    distance (larger = more different); rank_sum/zscore_sum in the result
+    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
+    comparison per measure, so cost increase with comparison_folders. 
+    Consider select only one when measuring distance between many logs. 
+    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
+    built), while compression (a bz2 pass over the full text)
+    gets expensive as the log folders grow large. Containment: unlike the other 
+    three it is not 
+    symmetric -- it scores how much of one side's text is contained in the
+    other's, so target-vs-comparison and comparison-vs-target can differ
+    sharply (e.g. 0 one way, 0.7 the other).
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
@@ -428,12 +1210,21 @@ def distance_folder_content(
         content_format: "Words", "3grams", "Sklearn" (raw text), or
             "Parse-<Algorithm>" such as "Parse-Tip" or "Parse-Drain".
         vectorizer: "Count" or "Tfidf".
-        max_rows: Rows returned inline.
+        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
+            "containment"] then run and rank_sum combines them, which is what
+            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
+            it only to answer a question about one measure -- e.g. isolating
+            "compression" (a bz2 pass over the full text) from the other three
+            (matrix ops on the already-built vectors).
+        max_rows: Rows returned inline, largest distance (least similar) first.
+            For the closest matches instead, call query_result on the returned
+            result_id with sort_by="rank_sum", descending=False.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_folder_content(
-        session.df, target_folder, comparison_folders, mask, content_format, vectorizer
+        session.df, target_folder, comparison_folders, mask, content_format, vectorizer,
+        measures,
     )
     session.flush()
     artifact = _write(
@@ -443,10 +1234,9 @@ def distance_folder_content(
     return formatting.result(
         session, "distance_folder_content", 2,
         {"target_folder": target_folder, "comparison_folders": comparison_folders, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer},
+         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
         results, artifact, max_rows, sort_by=["rank_sum", "cosine"],
-        notes=["All four measures are distances (larger = more different). "
-               "rank_sum combines them scale-free; prefer it over zscore_sum."],
+        notes=_distance_notes(measures),
     )
 
 
@@ -459,12 +1249,25 @@ def distance_file_content(
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
+    measures: Optional[Sequence[str]] = None,
     max_rows: int = 25,
 ) -> dict:
-    """L3: compare each file against the same-named file in other log folders.
+    """Compare each file against the same-named file in other log folders.
 
     Only files present in both log folders can be compared -- use
     `describe_log_root(include_files=True)` to see which those are.
+    The four measures are cosine, jaccard, compression, and containment
+    distance (larger = more different); rank_sum/zscore_sum in the result
+    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
+    comparison per measure, so cost increase with comparison_folders. 
+    Consider select only one when measuring distance between many logs. 
+    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
+    built), while compression (a bz2 pass over the full text)
+    gets expensive as the log folders grow large. Containment: unlike the other 
+    three it is not 
+    symmetric -- it scores how much of one side's text is contained in the
+    other's, so target-vs-comparison and comparison-vs-target can differ
+    sharply (e.g. 0 one way, 0.7 the other).
 
     Args:
         session_id: Handle from open_log_root.
@@ -474,13 +1277,19 @@ def distance_file_content(
         mask: Compare masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
-        max_rows: Rows returned inline.
+        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
+            "containment"] then run and rank_sum combines them, which is what
+            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
+            it only to answer a question about one measure.
+        max_rows: Rows returned inline, largest distance (least similar) first.
+            For the closest matches instead, call query_result on the returned
+            result_id with sort_by="zscore_sum", descending=False.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_file_content(
         session.df, target_folder, comparison_folders, target_files, mask,
-        content_format, vectorizer,
+        content_format, vectorizer, measures,
     )
     session.flush()
     artifact = _write(
@@ -491,8 +1300,9 @@ def distance_file_content(
         session, "distance_file_content", 3,
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
          "target_files": target_files, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer},
+         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
         results, artifact, max_rows, sort_by=["zscore_sum", "cosine"],
+        notes=_distance_notes(measures),
     )
 
 
@@ -505,7 +1315,12 @@ def distance_line_content(
     mask: bool = True,
     max_changed_lines: int = 40,
 ) -> dict:
-    """L4: line-by-line diff of a file between the target log folder and others.
+    """Line-by-line diff of a file between the target log folder and others.
+
+    Unlike the other distance_* tools, this does not vectorize and score --
+    it runs a text diff, which only reads well between two specific log
+    folders. Use it once the other measures have narrowed things down to a
+    small comparison set, not as a first pass over many log folders.
 
     Returns change counts per comparison plus a sample of the differing lines;
     the complete diff for each pair is written to disk.
@@ -557,15 +1372,9 @@ def distance_line_content(
 # --------------------------------------------------------------------------- #
 
 _ANOMALY_NOTE = (
-    "Rank by rank_sum, not by any single detector. Each detector is on its own scale "
-    "(a cluster distance, a shifted decision function, two raw counts), and any one of "
-    "them can be badly distorted, so one high detector score is weak evidence on its own. "
-    "rank_sum is the sum of the per-detector ranks: with all four detectors it starts at "
-    "4 -- the row ranked least anomalous by every detector -- and higher is more anomalous. "
-    "Prefer it to zscore_sum, which a single distorted detector can dominate. rank_sum "
-    "orders rows within this result only: its size grows with the number of rows, so do "
-    "not compare one across calls or read it as an absolute score. "
-    "There are no labels here, so these are suspicion rankings, not verdicts."
+    "Rank by rank_sum of 4 detectors. Single detector, each is on its own scale and "
+    "is weak evidence alone. rank_sum beats zscore_sum, which one "
+    "distorted detector can dominate. No labels here, so this is suspicion, not a verdict."
 )
 
 _SUBSET_NOTE = (
@@ -614,7 +1423,8 @@ def anomaly_folder_filename(
     detector_params: Optional[dict] = None,
     max_rows: int = 25,
 ) -> dict:
-    """L1: score whole log folders, by their set of file names.
+    """Train anomaly detection model on log file names.
+    Score whole log folders, by their set of file names.
 
     Args:
         session_id: Handle from open_log_root.
@@ -657,16 +1467,14 @@ def anomaly_folder_content(
     detector_params: Optional[dict] = None,
     max_rows: int = 25,
 ) -> dict:
-    """L2: score whole log folders, by their log text.
-
-    The usual starting point of an investigation: score every log folder against the
-    others, then drill into the top of the ranking.
+    """Train anomaly detection models on comparison_folders' log text, then
+    score whole log folders by their log text.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
-        comparison_folders: The baseline. Point this at known-good folders when you
-            have them, e.g. "PageRank_Normal*".
+        comparison_folders: The training baseline. Point this at known-good folders
+            when you have them".
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
             when it combines all of them. Narrowing this weakens the ranking.
         mask: Use masked text. Requires a session opened with mask=True.
@@ -710,14 +1518,22 @@ def anomaly_file_content(
     detector_params: Optional[dict] = None,
     max_rows: int = 25,
 ) -> dict:
-    """L3: score each file of the target log folder against the same file elsewhere.
+    """Train anomaly detection models on comparison_folders' log text, per file,
+    then score each file of the target log folder against the same file elsewhere.
 
     Narrows a suspicious log folder down to the file worth reading.
+
+    Files are matched by name across log folders: the baseline for security.log
+    is the other log folders' security.log, one document each. A target file
+    that no comparison log folder has is skipped, so this level needs log
+    folders that share file names -- if each log folder holds one uniquely-named
+    file, use anomaly_folder_content instead.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
-        comparison_folders: The baseline.
+        comparison_folders: The training baseline. Point this at known-good folders
+            when you have them".
         target_files: "ALL", a list, an int N, or a "name*" wildcard.
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
             when it combines all of them. Narrowing this weakens the ranking.
@@ -763,7 +1579,8 @@ def anomaly_line_content(
     max_rows: int = 20,
     sort_by: str = "rank_sum",
 ) -> dict:
-    """L4: score every line of a target file, and return the worst with their text.
+    """Train anomaly detection models on comparison_folders' log text, per line,
+    then score every line of a target file, returning the worst with their text.
 
     The end of the drill-down. Each returned row is a real log line with its
     score, so you can read what actually made the log folder look wrong. Writes an
@@ -772,7 +1589,7 @@ def anomaly_line_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
-        comparison_folders: The baseline.
+        comparison_folders: The training baseline.
         target_files: Which files to score. Narrow this -- one plot and one
             table are produced per file.
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
@@ -818,14 +1635,30 @@ def anomaly_line_content(
             visualize.plot_line_scores(scored, title), str(session.output_dir), stem
         )
         ranked, sorted_by = formatting.sort_for_preview(scored, [sort_by, "rank_sum"])
+        top_lines = formatting.rows_to_records(ranked, max_rows)
+        # This tool builds its own per-file entries rather than going through
+        # formatting.result, so it stashes its own tables -- one per file, which
+        # is why Session bounds how many results it keeps.
+        result_id = session.stash_result("anomaly_line_content", scored)
+        entry_notes = []
+        if scored.height > len(top_lines):
+            entry_notes.append(
+                f"Showing {len(top_lines)} of {scored.height} scored lines, sorted by "
+                f"{sorted_by} descending."
+            )
+            entry_notes.append(
+                formatting.query_hint(session_id, result_id, scored, sorted_by)
+            )
         files.append({
             "target_folder": folder_name,
             "file_name": file_name,
             "n_lines": scored.height,
             "sorted_by": sorted_by,
-            "top_lines": formatting.rows_to_records(ranked, max_rows),
+            "result_id": result_id,
+            "top_lines": top_lines,
             "artifact": artifact,
             "plot": plot,
+            "notes": entry_notes,
         })
 
     return {
@@ -850,9 +1683,34 @@ def anomaly_line_content(
 # Visualize
 # --------------------------------------------------------------------------- #
 
-def _plot_result(session, analysis, level, params, points, figures, max_rows):
+#: The two axes every plot tool shares, and so what its `summary` describes --
+#: these are what the picture shows, and a plot result sends no points.
+PLOT_AXES = ("unique_terms", "lines")
+
+
+def _target_point(points, folder):
+    """The target log folder's own row, with its percentile on each axis.
+
+    The target is the point the plot draws as a cross, so it is the one row a
+    caller always wants -- and the percentiles are what make it readable.
+    """
+    if not folder or "folder" not in points.columns:
+        return None
+    row = points.filter(pl.col("folder") == folder)
+    if row.height == 0:  # target filtered out, e.g. it lacks this file
+        return None
+    record = formatting.rows_to_records(row, 1)[0]
+    for axis in PLOT_AXES:
+        if axis in points.columns:
+            record[f"{axis}_pct"] = formatting.percentile_of(points, axis, row[axis][0])
+    return record
+
+
+def _plot_result(session, analysis, level, params, points, figures):
     artifacts = {}
     for suffix, fig in figures.items():
+        if fig is None:  # not requested via `plots`
+            continue
         stem = export.build_file_name(
             analysis=f"{analysis}_{suffix}", level=level,
             target_folder=params.get("target_folder", ""), comparison_folder="Many",
@@ -862,14 +1720,63 @@ def _plot_result(session, analysis, level, params, points, figures, max_rows):
             file=params.get("file", ""),
         )
         artifacts[suffix] = export.write_figure(fig, str(session.output_dir), stem)
-    return formatting.result(
-        session, analysis, level, params, points, artifacts.get("umap"), max_rows,
-        sort_by=["unique_terms"],
-        extra={"plots": artifacts},
-        notes=["umap_x/umap_y place each log folder in 2D: outliers sit away from the "
-               "cluster. unique_terms vs lines is the simpler, directly "
-               "interpretable view."],
+    # The numbers are the result for a caller that cannot see the HTML, so the
+    # note says what they mean rather than pointing at the picture.
+    unit = "file names" if level == 1 else "terms"
+    notes = [f"One point per log folder. unique_terms is how many distinct {unit} it "
+             "uses (the x axis), lines is its line count (the y axis, log scale). "
+             "A log folder far from the others on either is worth a look."]
+    # A log root of one-file log folders makes the file-name plot degenerate: every
+    # point shares an x, and a caller reading only the numbers sees a range of
+    # zero width with nothing to say it was never going to differ. The
+    # docstring says this too, but only this fires when it is actually happening.
+    if level == 1 and points.height > 1 and points["unique_terms"].n_unique() == 1:
+        count = points["unique_terms"][0]
+        notes.append(
+            f"CAUTION: every log folder here contains the same number of files ({count}), "
+            "so the x axis is a single value and separates nothing. This plot needs log "
+            "folders holding several files each. Use plot_folder_content, which reads the "
+            "log text, or anomaly_folder_content for a ranking."
+        )
+    if "umap_x" in points.columns:
+        notes.append("umap_x/umap_y place the same log folders in 2D: outliers sit away "
+                     "from the cluster. The axes have no units -- only relative "
+                     "positions mean anything.")
+    else:
+        notes.append('No UMAP was run, so there are no umap_x/umap_y columns. Pass '
+                     'plots=["umap", "scatter"] if the positions above leave the answer '
+                     'unclear; it sees which terms differ, not just how many, and costs '
+                     'tens of seconds on a few thousand log folders.')
+
+    # A plot result carries no rows, unlike every other tool here, because a
+    # scatter has no top N: both ends of both axes matter, and so does the
+    # target, which on a large log root is nowhere near the top of either (on
+    # 5,000 HDFS log folders it ranks ~4,000th by unique_terms). Any first-N of
+    # the points would be one arbitrary corner of the picture, so the shape of
+    # it is described instead and the points themselves are a query away.
+    result_id = session.stash_result(analysis, points)
+    notes.append(
+        "The points are not listed here -- 'summary' is the range of each axis and "
+        "'target' is where the target log folder falls in it. Pick a threshold from "
+        f'those and query_result(session_id="{session.session_id}", '
+        f'result_id="{result_id}", where=[["lines", "<", <value>]]) returns exactly the '
+        "log folders you mean."
     )
+    payload = {
+        "session_id": session.session_id,
+        "analysis": analysis,
+        "level": level,
+        "params": params,
+        "n_rows": points.height,
+        "result_id": result_id,
+        "summary": formatting.numeric_summary(points, PLOT_AXES),
+        "plots": artifacts,
+        "notes": notes,
+    }
+    target_point = _target_point(points, params.get("target_folder"))
+    if target_point is not None:
+        payload["target"] = target_point
+    return payload
 
 
 @tool
@@ -879,12 +1786,36 @@ def plot_folder_filename(
     comparison_folders: FolderSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     random_seed: Optional[int] = 42,
-    max_rows: int = 60,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
 ) -> dict:
-    """L1: plot every log folder as one point, by its file names.
+    """Scatter plot of every log folder, with an optional UMAP embedding. Scatter axes:
+    X AXIS: distinct file names the log folder contains.
+    Y AXIS: total log lines it contains, on a log scale.
 
-    Writes two interactive HTML plots and returns the coordinates, so the
-    positions are readable without opening them.
+    X and Y are the "unique_terms" and "lines" columns of the points,
+    respectively, so you can read the plot without opening the HTML: "summary"
+    gives each axis's range, "target" says where the target log folder sits,
+    and query_result fetches any points you then want to see -- "every log
+    folder under 5 lines", say. ("unique_terms" is the generic column name;
+    here the terms are file names.)
+
+    This plot is only useful when a log folder holds several files that recur
+    by name across folders -- one file per container, service, task, or node.
+    If every log folder holds one file, the X axis is the same for all of
+    them and separates nothing; use plot_folder_content instead.
+
+    Screening signals, not proof, since neither axis looks at file contents:
+      - Fewer files can mean a component never started or died early; more
+        can mean retries, since a restarted attempt writes under a new name.
+      - Line count is roughly how much work happened: far fewer can mean an
+        early crash/timeout/kill, far more can mean looping, retrying, or
+        verbose stack traces.
+    So a log folder with entirely ordinary counts can still hold one fatal
+    line.
+
+    UMAP cost: ~41s on 5,000 log folders vs under a second for the default --
+    it stays off by default; ask for it only when the scatter leaves the
+    answer unclear.
 
     Args:
         session_id: Handle from open_log_root.
@@ -893,21 +1824,31 @@ def plot_folder_filename(
         group_by_indices: Underscore-separated parts of the folder name to colour
             by, e.g. [0, 1] colours "PageRank_DiskFull_application_1" by
             "PageRank_DiskFull".
-        random_seed: Makes UMAP reproducible. Pass null for a fresh layout;
-            re-running with different layouts is a good stability check.
-        max_rows: Log folders returned inline.
+        random_seed: Makes the UMAP layout reproducible. Pass null for a fresh
+            one; re-running with different layouts is a good stability check.
+            Ignored unless you asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry.
+            "scatter" (the default): the file-names-against-lines scatter
+                described above. Cheap at any size.
+            "umap": a different plot of the same log folders, based on which
+                distinct file names each shares with the others, not just how
+                many. Axes are "umap_x"/"umap_y" with no units -- only relative
+                distance means anything, and outliers sit away from the cluster.
+            Pass ["umap", "scatter"] for both; they share one vectorization, so
+            both together cost no more than "umap" alone.
     """
     session = STORE.get(session_id)
-    points, fig_umap, fig_simple, session.df = visualize.plot_folder(
+    points, fig_umap, fig_scatter, session.df = visualize.plot_folder(
         session.df, target_folder, comparison_folders, file=True, random_seed=random_seed,
-        group_by_indices=group_by_indices, mask=False,
+        group_by_indices=group_by_indices, mask=False, plots=plots,
     )
     session.flush()
     return _plot_result(
         session, "plot_folder_filename", 1,
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
-         "group_by_indices": group_by_indices, "random_seed": random_seed},
-        points, {"umap": fig_umap, "simple": fig_simple}, max_rows,
+         "group_by_indices": group_by_indices, "random_seed": random_seed,
+         "plots": list(plots)},
+        points, {"umap": fig_umap, "scatter": fig_scatter},
     )
 
 
@@ -921,9 +1862,36 @@ def plot_folder_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
-    max_rows: int = 60,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
 ) -> dict:
-    """L2: plot every log folder as one point, by its log text.
+    """Scatter plot of every log folder, with an optional UMAP embedding. Scatter axes:
+    X AXIS: how many distinct terms the log folder's log text uses. A "term" is
+        whatever `content_format` says -- a word by default, otherwise a
+        3-gram or a parsed event template.
+    Y AXIS: how many log lines it contains in total, on a log scale.
+
+    X and Y are the "unique_terms" and "lines" columns of the points,
+    respectively, so you can read the plot without opening the HTML: the
+    result gives the range of each axis ("summary") and where the target log
+    folder sits in it ("target"), and query_result returns any points you
+    then want to see.
+
+    Unlike plot_folder_filename this works whatever the folders hold, including
+    one file each, because it reads the log text rather than the file layout.
+
+    Screening signals, not proof, since neither axis looks at what the text says:
+      - Distinct terms is vocabulary variety: more can mean it reached code
+        paths the others didn't (error branches, stack traces); fewer means
+        it never got far enough to say much.
+      - Line count is roughly how much work happened: far fewer can mean an
+        early crash/timeout/kill, far more can mean looping, retrying, or
+        verbose stack traces.
+    So a log folder can use exactly the usual number of words -- one of them
+    just "OutOfMemoryError" -- and still look ordinary here.
+
+    UMAP cost: ~41s on 5,000 log folders vs under a second for the default --
+    it stays off by default; ask for it only when the scatter leaves the
+    answer unclear.
 
     Args:
         session_id: Handle from open_log_root.
@@ -932,16 +1900,26 @@ def plot_folder_content(
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            Decides what counts as a term on the x axis.
         vectorizer: "Count" or "Tfidf".
-        random_seed: Makes UMAP reproducible.
-        max_rows: Log folders returned inline.
+        random_seed: Makes the UMAP layout reproducible; ignored unless you
+            asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry.
+            "scatter" (the default): the terms-against-lines scatter described
+                above. Cheap at any size.
+            "umap": a different plot of the same log folders, based on which
+                distinct terms each shares with the others, not just how many.
+                Axes are "umap_x"/"umap_y" with no units -- only relative
+                distance means anything, and outliers sit away from the cluster.
+            Pass ["umap", "scatter"] for both; they share one vectorization, so
+            both together cost no more than "umap" alone.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
-    points, fig_umap, fig_simple, session.df = visualize.plot_folder(
+    points, fig_umap, fig_scatter, session.df = visualize.plot_folder(
         session.df, target_folder, comparison_folders, file=False, random_seed=random_seed,
         group_by_indices=group_by_indices, mask=mask, content_format=content_format,
-        vectorizer=vectorizer,
+        vectorizer=vectorizer, plots=plots,
     )
     session.flush()
     return _plot_result(
@@ -949,8 +1927,8 @@ def plot_folder_content(
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
          "group_by_indices": group_by_indices, "mask": mask,
          "content_format": content_format, "vectorizer": vectorizer,
-         "random_seed": random_seed},
-        points, {"umap": fig_umap, "simple": fig_simple}, max_rows,
+         "random_seed": random_seed, "plots": list(plots)},
+        points, {"umap": fig_umap, "scatter": fig_scatter},
     )
 
 
@@ -965,38 +1943,69 @@ def plot_file_content(
     content_format: str = "Words",
     vectorizer: str = "Count",
     random_seed: Optional[int] = 42,
-    max_rows: int = 60,
+    plots: PlotSelector = visualize.DEFAULT_PLOTS,
 ) -> dict:
-    """L3: for each target file, plot each log folder's copy of it as one point.
+    """Scatter plot of one named file across log folders, each copy of it as one point.
+
+    One plot per file you ask for. Within a plot, one point per log folder that
+    has a file of that name:
+
+    X AXIS: how many distinct terms that log folder's copy of the file uses. A
+        "term" is whatever `content_format` says -- a word by default.
+    Y AXIS: how many lines that copy has, on a log scale.
+
+    X and Y are the "unique_terms" and "lines" columns of the points,
+    respectively. Each file's entry carries the range of each axis
+    ("summary"), where the target log folder sits in it ("target"), and a
+    "result_id" -- query_result returns that file's points, one row per log
+    folder holding a file of that name.
+
+    This is the drill-down from the whole-folder plots: which log folder's
+    copy of *this* file is the odd one out. A file only one log folder has is
+    skipped -- there is nothing to compare it against.
+
+    UMAP is slow, and one UMAP layout runs per file named in target_files --
+    so cost increases the more files you ask for. Narrow target_files before adding "umap".
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
         comparison_folders: Log folders to include.
-        target_files: Which files to plot -- two plots are produced per file.
+        target_files: Which files to plot. "ALL", a list, an int N, or a
+            wildcard, resolved against the files the target log folder has.
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            Decides what counts as a term on the x axis.
         vectorizer: "Count" or "Tfidf".
-        random_seed: Makes UMAP reproducible.
-        max_rows: Log folders returned inline per file.
+        random_seed: Makes the UMAP layout reproducible; ignored unless you
+            asked for "umap".
+        plots: Which plots to build. One HTML file is written per entry, per file.
+            "scatter" (the default): the terms-against-lines scatter described
+                above. Cheap, linear in the files named.
+            "umap": a different plot of the same points, based on which
+                distinct terms each shares with the others. Axes are
+                "umap_x"/"umap_y" with no units -- only relative distance
+                means anything.
+            Pass ["umap", "scatter"] for both; per file they share one
+            vectorization, so both cost no more than "umap" alone.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     per_file, session.df = visualize.plot_file_content(
         session.df, target_folder, comparison_folders, target_files, random_seed,
-        group_by_indices, mask, content_format, vectorizer,
+        group_by_indices, mask, content_format, vectorizer, plots,
     )
     session.flush()
 
     files = []
-    for file_name, points, fig_umap, fig_simple in per_file:
+    for file_name, points, fig_umap, fig_scatter in per_file:
         params = {"target_folder": target_folder, "mask": mask,
                   "content_format": content_format, "vectorizer": vectorizer,
                   "file": file_name}
         entry = _plot_result(
             session, "plot_file_content", 3, params,
-            points, {"umap": fig_umap, "simple": fig_simple}, max_rows,
+            points, {"umap": fig_umap, "scatter": fig_scatter},
         )
         entry["file_name"] = file_name
         files.append(entry)
@@ -1007,7 +2016,8 @@ def plot_file_content(
         "level": 3,
         "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
                    "target_files": target_files, "mask": mask,
-                   "content_format": content_format, "vectorizer": vectorizer},
+                   "content_format": content_format, "vectorizer": vectorizer,
+                   "plots": list(plots)},
         "n_files": len(files),
         "files": files,
     }
@@ -1016,7 +2026,7 @@ def plot_file_content(
 # --------------------------------------------------------------------------- #
 # Reading LogDelta's YAML config format
 # --------------------------------------------------------------------------- #
-
+# TODO this LogDelta thing might not be needed here or at all. Delete?
 #: LogDelta's step keys. These are a published *file format*, not an import --
 #: nothing here depends on LogDelta -- so they keep its "run" vocabulary
 #: verbatim. Only the values move with our renames.
@@ -1040,6 +2050,16 @@ _STEP_TOOLS = {
 _STEP_ARGS = {
     "target_run": "target_folder",
     "comparison_runs": "comparison_folders",
+}
+
+#: What a LogDelta step means but does not say. Its plot steps always draw both
+#: the UMAP and the scatter view, and a config has no key to ask for either, so
+#: reproducing one means requesting both here -- our own default is the cheap
+#: half. Overridden by anything the config does state.
+_STEP_DEFAULTS = {
+    "plot_run_file": {"plots": visualize.PLOTS},
+    "plot_run_content": {"plots": visualize.PLOTS},
+    "plot_file_content": {"plots": visualize.PLOTS},
 }
 
 # LogDelta names preprocessing steps after its own functions; map to ours.
@@ -1122,6 +2142,7 @@ def run_config(config_path: str, session_id: Optional[str] = None,
         for item in items or []:
             renamed = {_STEP_ARGS.get(k, k): v for k, v in item.items()}
             kwargs = {k: v for k, v in renamed.items() if k in tool.__annotations__}
+            kwargs = {**_STEP_DEFAULTS.get(step_name, {}), **kwargs}
             try:
                 tool(session_id=sid, **kwargs)
                 executed.append({"step": step_name, "params": kwargs})
@@ -1164,6 +2185,13 @@ def main():
 
     global STORE
     STORE = SessionStore(cache_dir=args.cache_dir, output_root=args.output_dir)
+
+    # Anything left in flight belongs to a process that is gone. Say so here for
+    # whoever reads the server log; the client is told on its first tool result.
+    for record in crash_log().sweep():
+        print(f"[loglead-mcp] the previous process died during {record.get('tool')} "
+              f"(started {record.get('started_at')}); reporting it on the first result.",
+              file=sys.stderr)
 
     kwargs = {} if args.transport == "stdio" else {"host": args.host, "port": args.port}
     mcp.run(transport=args.transport, **kwargs)

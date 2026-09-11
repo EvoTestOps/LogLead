@@ -5,11 +5,14 @@ Ported verbatim from LogDelta's ``logdelta/regex_masking.py``.
 Each pattern is a list of ``(replacement, regex)`` tuples. ``normalize()`` applies
 every pair twice by default so that adjacent tokens both get masked.
 
-Only patterns registered in :data:`PATTERNS` should ever be handed to
-``normalize()`` from untrusted input: ``EventLogEnhancer.normalize`` builds a
-Python expression from the supplied list and ``eval()``s it
-(``loglead/enhancers/eventlog.py``), so an arbitrary caller-supplied list is an
-arbitrary-code-execution vector. Use :func:`get_pattern`.
+These are the built-in patterns; resolve them by name via :func:`get_pattern`
+rather than reaching into :data:`PATTERNS` directly, so a typo'd or unknown
+name fails with a clear error instead of a ``KeyError``. A caller that wants a
+pattern beyond this fixed set -- their own, or one of these with additions --
+registers it under its own name via
+:class:`loglead.mcp.mask_registry.MaskPatternRegistry`, whose ``resolve()``
+checks this module first and only then its own registered patterns, so a
+custom name can never shadow a built-in one.
 """
 
 myllari = [

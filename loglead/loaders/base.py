@@ -119,7 +119,8 @@ class BaseLoader:
             else:
                 self.df_seq = df_seq_temp
             # Update df to include only the rows that have seq_id values present in the filtered df_seq
-            self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"]))
+            # .implode(): polars 1.x deprecated passing a bare Series to is_in.
+            self.df = self.df.filter(pl.col("seq_id").is_in(self.df_seq["seq_id"].implode()))
 
             # self.df_seq = self.df_seq.sample(fraction=frac)
             # Update df to include only the rows that have seq_id values present in the filtered df_sequences

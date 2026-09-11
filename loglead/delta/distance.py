@@ -1,16 +1,24 @@
 """Pairwise distance between log folders, files, and lines.
 
-Four levels, mirroring LogDelta's config step names:
+Four functions, mirroring LogDelta's config step names:
 
-* **L1** ``distance_folder_filename`` -- log folder vs log folder over *file
+* ``distance_folder_filename`` -- log folder vs log folder over *file
   names* only. Never opens a file.
-* **L2** ``distance_folder_content``  -- log folder vs log folder over log *text*.
-* **L3** ``distance_file_content``    -- file vs same-named file, across log folders.
-* **L4** ``distance_line_content``    -- line-by-line diff of one file across log
+* ``distance_folder_content``  -- log folder vs log folder over log *text*.
+* ``distance_file_content``    -- file vs same-named file, across log folders.
+* ``distance_line_content``    -- line-by-line diff of one file across log
   folders.
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
+
+``distance_folder_content``/``distance_file_content`` compute all four content
+measures (cosine, jaccard, compression, containment) per comparison by default;
+``measures`` narrows that to a subset, run in isolation -- e.g. to isolate the
+cost of ``compression`` (a bz2 pass over the full text, the expensive one) from
+``cosine``/``jaccard``/``containment`` (matrix ops on the vectors already built
+for the comparison). Narrowing weakens ``rank_sum``/``zscore_sum`` the same way
+narrowing ``detectors`` does for the anomaly tools.
 """
 
 import polars as pl
@@ -18,9 +26,23 @@ import polars as pl
 from .. import LogDistance
 from . import log_root, scoring
 
+#: distance measure name -> ``LogDistance`` method name.
+DISTANCE_MEASURES = {"cosine": "cosine", "jaccard": "jaccard",
+                     "compression": "compression", "containment": "containment"}
+
+DEFAULT_MEASURES = list(DISTANCE_MEASURES)
+
+
+def _resolve_measures(measures):
+    measures = DEFAULT_MEASURES if measures is None else list(measures)
+    unknown = [m for m in measures if m not in DISTANCE_MEASURES]
+    if unknown:
+        raise ValueError(f"Unknown measures {unknown}. Valid options: {DEFAULT_MEASURES}")
+    return measures
+
 
 def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
-    """L1: compare log folders by which file names they contain.
+    """Compare log folders by which file names they contain.
 
     :returns: one row per comparison log folder with set overlaps, ``jaccard distance``
         and ``overlap distance``.
@@ -34,9 +56,12 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
         other_series = other_files.get_column("file_name")
         target_series = target_files.get_column("file_name")
 
-        only_in_target = target_files.filter(~pl.col("file_name").is_in(other_series)).height
-        only_in_comparison = other_files.filter(~pl.col("file_name").is_in(target_series)).height
-        intersection = target_files.filter(pl.col("file_name").is_in(other_series)).height
+        # .implode() because polars 1.x deprecated passing a bare Series here:
+        # a same-dtype collection is ambiguous between "is in this set" and an
+        # element-wise comparison, and imploding says which one is meant.
+        only_in_target = target_files.filter(~pl.col("file_name").is_in(other_series.implode())).height
+        only_in_comparison = other_files.filter(~pl.col("file_name").is_in(target_series.implode())).height
+        intersection = target_files.filter(pl.col("file_name").is_in(other_series.implode())).height
         union = pl.concat([target_files, other_files]).unique().height
 
         smaller = min(target_files.height, other_files.height)
@@ -58,14 +83,19 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
 
 def distance_folder_content(
     df, target_folder, comparison_folders="ALL", mask=True,
-    content_format="Words", vectorizer="Count",
+    content_format="Words", vectorizer="Count", measures=None,
 ):
-    """L2: compare log folders by their whole log text.
+    """Compare log folders by their whole log text.
 
-    :returns: ``(results_df, df)`` -- one row per comparison log folder with all four
-        distances plus ``zscore_sum``/``rank_sum``, and the (possibly enhanced)
-        input frame so the caller can retain any newly computed column.
+    :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
+        computes all four; a measure left out is skipped entirely, not just
+        hidden -- narrowing this is how one measure's own cost is isolated.
+    :returns: ``(results_df, df)`` -- one row per comparison log folder with the
+        requested distances plus ``zscore_sum``/``rank_sum`` over just those, and
+        the (possibly enhanced) input frame so the caller can retain any newly
+        computed column.
     """
+    measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
     target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
@@ -74,16 +104,15 @@ def distance_folder_content(
     for other_folder in comparison_folder_names:
         other_df = df.filter(pl.col("folder") == other_folder)
         distance = LogDistance(target_df, other_df, vectorizer=vectorizer_class, field=field)
-        results.append({
+        row = {
             "target_folder": target_folder,
             "comparison_folder": other_folder,
             "target_lines": distance.size1,
             "comparison_lines": distance.size2,
-            "cosine": distance.cosine(),
-            "jaccard": distance.jaccard(),
-            "compression": distance.compression(),
-            "containment": distance.containment(),
-        })
+        }
+        for name in measures:
+            row[name] = getattr(distance, DISTANCE_MEASURES[name])()
+        results.append(row)
 
     results = scoring.add_combined_scores(results, scoring.DISTANCE_COLUMNS)
     return pl.DataFrame(results), df
@@ -91,15 +120,21 @@ def distance_folder_content(
 
 def distance_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
-    content_format="Words", vectorizer="Count",
+    content_format="Words", vectorizer="Count", measures=None,
 ):
-    """L3: compare each file against the same-named file in other log folders.
+    """Compare each file against the same-named file in other log folders.
 
     Only files present in *both* log folders are compared. If ``target_files`` is
     given, the comparison is further restricted to that set.
 
-    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder).
+    :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
+        computes all four; a measure left out is skipped entirely, not just
+        hidden -- narrowing this is how one measure's own cost is isolated.
+    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder),
+        with the requested distances plus ``zscore_sum``/``rank_sum`` over
+        just those.
     """
+    measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
     target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
@@ -108,40 +143,43 @@ def distance_file_content(
     if target_files != "ALL":
         wanted = set(log_root.prepare_files(target_df, target_files))
 
-    results = []
-    for other_folder in comparison_folder_names:
-        other_df = df.filter(pl.col("folder") == other_folder)
-        other_names = other_df.get_column("file_name").unique()
-        matching = (
-            target_df.select("file_name")
-            .unique()
-            .filter(pl.col("file_name").is_in(other_names))
-            .get_column("file_name")
-            .to_list()
-        )
-        if wanted is not None:
-            matching = [name for name in matching if name in wanted]
-        if not matching:
-            continue
+    target_names = set(target_df.get_column("file_name").unique().to_list())
+    if wanted is not None:
+        target_names &= wanted
 
-        for file_name in sorted(matching):
-            target_file_df = target_df.filter(pl.col("file_name") == file_name)
-            other_file_df = other_df.filter(pl.col("file_name") == file_name)
+    pairs, target_files_df = {}, {}
+    if target_names:
+        wanted_names = list(target_names)
+        pairs = (df.filter(pl.col("folder").is_in(comparison_folder_names)
+                           & pl.col("file_name").is_in(wanted_names))
+                 .partition_by(["folder", "file_name"], as_dict=True))
+        target_files_df = {key[0]: part for key, part in
+                           target_df.filter(pl.col("file_name").is_in(wanted_names))
+                           .partition_by("file_name", as_dict=True).items()}
+    names_per_folder = {}
+    for folder_name, file_name in pairs:
+        names_per_folder.setdefault(folder_name, []).append(file_name)
+
+    results = []
+    # Comparison-folder order, then file name sorted within it -- the order the
+    # per-folder loop produced, so the table reads the same as before.
+    for other_folder in comparison_folder_names:
+        for file_name in sorted(names_per_folder.get(other_folder, ())):
             # LogDelta dropped `vectorizer` here, silently always using Count.
             distance = LogDistance(
-                target_file_df, other_file_df, vectorizer=vectorizer_class, field=field
+                target_files_df[file_name], pairs[(other_folder, file_name)],
+                vectorizer=vectorizer_class, field=field
             )
-            results.append({
+            row = {
                 "file_name": file_name,
                 "target_folder": target_folder,
                 "comparison_folder": other_folder,
                 "target_lines": distance.size1,
                 "comparison_lines": distance.size2,
-                "cosine": distance.cosine(),
-                "jaccard": distance.jaccard(),
-                "compression": distance.compression(),
-                "containment": distance.containment(),
-            })
+            }
+            for name in measures:
+                row[name] = getattr(distance, DISTANCE_MEASURES[name])()
+            results.append(row)
 
     # LogDelta recomputed this inside the comparison loop, over a growing list.
     results = scoring.add_combined_scores(results, scoring.DISTANCE_COLUMNS)
@@ -151,7 +189,7 @@ def distance_file_content(
 def distance_line_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
 ):
-    """L4: line-by-line diff of a file between the target log folder and others.
+    """Line-by-line diff of a file between the target log folder and others.
 
     :returns: a list of ``(file_name, comparison_folder, diff_df)``. Each
         ``diff_df`` has ``line_number``, ``difference`` (``' '`` unchanged,

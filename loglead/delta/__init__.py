@@ -22,13 +22,16 @@ or name a family to pin one (see :func:`log_root.available_formats`).
 Three question types across four granularities:
 
 =================  ===========================  =============================  ==========================
-Level              Distance (pair)              Anomaly (one vs many)          Visualize (set)
+Granularity        Distance (pair)              Anomaly (one vs many)          Visualize (set)
 =================  ===========================  =============================  ==========================
-L1 folder / files  ``distance_folder_filename`` ``anomaly_folder(file=True)``  ``plot_folder(file=True)``
-L2 folder / text   ``distance_folder_content``  ``anomaly_folder()``           ``plot_folder()``
-L3 file            ``distance_file_content``    ``anomaly_file_content``       ``plot_file_content``
-L4 line            ``distance_line_content``    ``anomaly_line_content``       --
+folder / files     ``distance_folder_filename`` ``anomaly_folder(file=True)``  ``plot_folder(file=True)``
+folder / text      ``distance_folder_content``  ``anomaly_folder()``           ``plot_folder()``
+file               ``distance_file_content``    ``anomaly_file_content``       ``plot_file_content``
+line               ``distance_line_content``    ``anomaly_line_content``       --
 =================  ===========================  =============================  ==========================
+
+:mod:`vocabulary` answers a fourth question at folder or file granularity:
+which tokens a target has that its comparison folders never had.
 
 Unlike the LogDelta originals, these functions hold no module-level state,
 never change the process working directory, and never write files -- they
@@ -47,22 +50,57 @@ Typical use::
 Keeping the returned ``df`` is what lets a long-lived session avoid re-parsing.
 """
 
-from . import anomaly, distance, export, log_root, masking, scoring, visualize
-from .anomaly import (
-    anomaly_file_content,
-    anomaly_line_content,
-    anomaly_folder,
-    run_anomaly_detection,
-)
-from .log_root import (available_formats, prepare_content, prepare_files, prepare_folders,
-                       read_folders, read_log_root, resolve_format)
-from .distance import (
-    distance_file_content,
-    distance_line_content,
-    distance_folder_content,
-    distance_folder_filename,
-)
-from .visualize import plot_file_content, plot_folder
+import importlib
+
+#: Public name -> the submodule that defines it, resolved on first use
+#: (:pep:`562`) rather than at import. Importing every submodule eagerly meant
+#: ``from loglead.delta import log_root`` pulled sklearn (via ``anomaly`` and
+#: ``distance``) and plotly (via ``visualize``) whatever the caller was about to
+#: do -- ~190MB before :func:`peek_log_root`, whose whole point is being cheap,
+#: had stat'ed a single file. The submodules are named here as strings so that
+#: only the one actually reached is imported; see ``_LAZY_MODULES``.
+_LAZY_MODULES = ("anomaly", "distance", "export", "log_root", "masking", "scoring",
+                 "split", "visualize", "vocabulary")
+
+_LAZY_NAMES = {
+    "anomaly_file_content": "anomaly",
+    "anomaly_line_content": "anomaly",
+    "anomaly_folder": "anomaly",
+    "run_anomaly_detection": "anomaly",
+    "available_formats": "log_root",
+    "peek_log_root": "log_root",
+    "prepare_content": "log_root",
+    "prepare_files": "log_root",
+    "prepare_folders": "log_root",
+    "read_folders": "log_root",
+    "read_log_root": "log_root",
+    "resolve_format": "log_root",
+    "split_log_file": "split",
+    "distance_file_content": "distance",
+    "distance_line_content": "distance",
+    "distance_folder_content": "distance",
+    "distance_folder_filename": "distance",
+    "DEFAULT_PLOTS": "visualize",
+    "PLOTS": "visualize",
+    "plot_file_content": "visualize",
+    "plot_folder": "visualize",
+    "new_token_table": "vocabulary",
+}
+
+
+def __getattr__(name):
+    if name in _LAZY_MODULES:
+        value = importlib.import_module(f".{name}", __name__)
+    elif name in _LAZY_NAMES:
+        value = getattr(importlib.import_module(f".{_LAZY_NAMES[name]}", __name__), name)
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value  # imported once; every later access is a plain lookup
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_MODULES) | set(_LAZY_NAMES))
 
 __all__ = [
     "anomaly",
@@ -71,9 +109,13 @@ __all__ = [
     "export",
     "masking",
     "scoring",
+    "split",
     "visualize",
+    "vocabulary",
     "read_log_root",
     "read_folders",
+    "peek_log_root",
+    "split_log_file",
     "available_formats",
     "resolve_format",
     "prepare_folders",
@@ -89,4 +131,7 @@ __all__ = [
     "run_anomaly_detection",
     "plot_folder",
     "plot_file_content",
+    "PLOTS",
+    "DEFAULT_PLOTS",
+    "new_token_table",
 ]

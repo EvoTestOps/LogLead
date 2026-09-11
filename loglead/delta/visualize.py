@@ -4,10 +4,11 @@ Two views are produced per call:
 
 * **UMAP** -- each log folder's document-term vector reduced to 2D. Answers "which
   log folder sits apart from the cluster?".
-* **Simple** -- unique terms (or file count at L1) against line count, log-y.
-  Cruder but directly interpretable, and often enough on its own: LogDelta's
-  own walkthrough separated normal from anomalous Hadoop log folders at ~86% accuracy
-  with a single threshold on this plot.
+* **Scatter** -- unique terms (or file count, when describing folders by file
+  name) against line count, log-y. Cruder but directly interpretable, and
+  often enough on its own: LogDelta's own walkthrough separated normal from
+  anomalous Hadoop log folders at ~86% accuracy with a single threshold on
+  this plot.
 
 Unlike LogDelta these functions also return the underlying coordinates as a
 DataFrame, so a caller that cannot look at the picture can still reason about
@@ -17,7 +18,6 @@ the positions.
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
-import umap
 
 from . import log_root, scoring
 
@@ -66,6 +66,41 @@ MARKER_OUTLINE = {"width": 1, "color": "rgba(128, 128, 128, 0.8)"}
 # averages stay apart for a reader who cannot tell its colour from another's.
 MOVING_AVERAGE_PREFIX = "moving_avg_"
 MOVING_AVERAGE_DASHES = ["solid", "dash", "dot", "longdash", "dashdot"]
+
+#: The two figures :func:`plot_folder` and :func:`plot_file_content` can produce,
+#: selectable rather than welded together because their costs are nothing alike.
+#: On 5,000 HDFS log folders the UMAP layout is ~41s against ~0.7s for the whole
+#: rest of the call, and the "scatter" figure does not use its output -- unique
+#: terms comes off the sparse document-term matrix and lines is a Polars
+#: ``group_by``. So a caller who wants only the directly interpretable view
+#: should not have to pay for the other one.
+PLOTS = ("umap", "scatter")
+
+#: What you get without asking. The cheap one, because the alternative is a
+#: default that costs ~40s and can only be avoided by reading a parameter's
+#: documentation -- and because "unique terms against lines" is interpretable
+#: from the numbers alone, while UMAP coordinates mean nothing without the
+#: picture. Ask for ``PLOTS`` when you want the embedding too.
+DEFAULT_PLOTS = ("scatter",)
+
+
+def _validate_plots(plots):
+    """Normalize the ``plots`` selector to a tuple in :data:`PLOTS` order.
+
+    An allowlist rather than a free-form list, for the same reason
+    :func:`masking.get_pattern` is one: the value frequently arrives from a
+    language model driving the MCP server, and a silently ignored typo would
+    look like a plot that failed to appear.
+    """
+    if isinstance(plots, str):
+        plots = [plots]
+    requested = list(plots or [])
+    unknown = [name for name in requested if name not in PLOTS]
+    if unknown:
+        raise ValueError(f"Unknown plot(s) {unknown}. Valid options: {list(PLOTS)}")
+    if not requested:
+        raise ValueError(f"At least one plot must be requested. Valid options: {list(PLOTS)}")
+    return tuple(name for name in PLOTS if name in requested)
 
 
 def _group_marker(index, size=8, symbol_index=None):
@@ -116,10 +151,12 @@ def _aggregate_folder_documents(df, field, content_format, grouped):
     return folder_groups, documents
 
 
-def _dtm_and_umap(documents, content_format, vectorizer_type, random_seed=None):
-    """Vectorize documents and reduce to 2D.
+def _document_term_matrix(documents, content_format, vectorizer_type):
+    """Vectorize documents into a sparse document-term matrix.
 
-    :returns: ``(embeddings_2d, unique_terms_per_document)``.
+    Kept apart from :func:`_umap_2d` because both figures need this and only
+    one of them needs the layout: ``(dtm > 0).sum(axis=1)`` is the "unique
+    terms" axis and costs nothing.
     """
     # Pre-tokenized input (word/trigram/template-id lists) must bypass
     # sklearn's own tokenizer; raw text ("Sklearn") must not.
@@ -130,27 +167,45 @@ def _dtm_and_umap(documents, content_format, vectorizer_type, random_seed=None):
               "token_pattern": None, "lowercase": False}
     )
     vect = log_root.create_vectorizer(vectorizer_type)(**params)
-    dtm = vect.fit_transform(documents)
+    return vect.fit_transform(documents)
+
+
+def _umap_2d(dtm, random_seed=None):
+    """Reduce a document-term matrix to 2D. The expensive half of a plot call.
+
+    Densified on the way in deliberately: UMAP accepts the sparse matrix, but
+    takes its sparse nearest-neighbour path for it and is slower there (34s
+    against 13s on 5,000 HDFS log folders).
+
+    ``umap`` is imported *here* rather than at module level. It costs ~380MB and
+    ~7s of numba/llvmlite at import time, the default plot asks for no layout at
+    all, and every other entry point -- ``peek_log_root`` above all, whose whole
+    point is being cheap -- paid all of it merely by importing this package.
+    """
+    import umap
 
     reducer = umap.UMAP(random_state=random_seed) if isinstance(random_seed, int) else umap.UMAP()
-    embeddings_2d = reducer.fit_transform(dtm.toarray())
-    unique_terms = (dtm > 0).sum(axis=1)
-    return embeddings_2d, unique_terms
+    return reducer.fit_transform(dtm.toarray())
 
 
 def _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, grouped):
+    """One row per log folder.
+
+    ``embeddings_2d`` is ``None`` when no UMAP was asked for, and then the
+    coordinate columns are *absent* rather than null: a null coordinate reads as
+    a layout that failed, a missing column as one that was never run.
+    """
     folders = folder_groups["folder"].to_list()
     groups = (
         folder_groups.get_column("group").to_list() if grouped else ["all"] * len(folders)
     )
-    return pl.DataFrame({
-        "folder": folders,
-        "group": groups,
-        "umap_x": np.asarray(embeddings_2d)[:, 0],
-        "umap_y": np.asarray(embeddings_2d)[:, 1],
-        "unique_terms": np.asarray(unique_terms).ravel(),
-        "lines": np.asarray(line_counts).ravel(),
-    })
+    columns = {"folder": folders, "group": groups}
+    if embeddings_2d is not None:
+        columns["umap_x"] = np.asarray(embeddings_2d)[:, 0]
+        columns["umap_y"] = np.asarray(embeddings_2d)[:, 1]
+    columns["unique_terms"] = np.asarray(unique_terms).ravel()
+    columns["lines"] = np.asarray(line_counts).ravel()
+    return pl.DataFrame(columns)
 
 
 def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertemplate):
@@ -200,67 +255,82 @@ def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertempl
         add(f"target: {target_folder}", marker, target_rows, 1.0)
 
 
-def _figures(points, target_folder, file, title_subject):
-    """Build the UMAP and the simple scatter from the points frame."""
+def _figures(points, target_folder, file, title_subject, plots):
+    """Build the requested figures from the points frame.
+
+    :returns: ``(fig_umap, fig_scatter)``, either of which is ``None`` when
+        ``plots`` did not ask for it.
+    """
     title = f"{title_subject}<br>Target log folder (cross):<br>{target_folder}"
     # The trace name carries the group, so hover spells the log folder out
     # rather than showing a bare column name.
     legend_note = "<extra>%{fullData.name}</extra>"
 
-    fig_umap = go.Figure()
-    _add_group_traces(
-        fig_umap, points, target_folder,
-        points["umap_x"].to_list(), points["umap_y"].to_list(),
-        hovertemplate="Log folder: %{text}" + legend_note,
-    )
-    fig_umap.update_layout(
-        title=title, xaxis_title="UMAP1", yaxis_title="UMAP2", legend_title_text="Group",
-    )
+    fig_umap = None
+    if "umap" in plots:
+        fig_umap = go.Figure()
+        _add_group_traces(
+            fig_umap, points, target_folder,
+            points["umap_x"].to_list(), points["umap_y"].to_list(),
+            hovertemplate="Log folder: %{text}" + legend_note,
+        )
+        fig_umap.update_layout(
+            title=title, xaxis_title="UMAP1", yaxis_title="UMAP2", legend_title_text="Group",
+        )
 
-    x_title = "Files" if file is True else "Unique terms"
-    x_values = np.asarray(points["unique_terms"].to_list(), dtype=float)
-    y_values = np.asarray(points["lines"].to_list(), dtype=float)
+    fig_scatter = None
+    if "scatter" in plots:
+        x_title = "Files" if file is True else "Unique terms"
+        x_values = np.asarray(points["unique_terms"].to_list(), dtype=float)
+        y_values = np.asarray(points["lines"].to_list(), dtype=float)
 
-    # Log folders frequently share an exact line/term count, so identical points would
-    # hide each other. Jitter proportionally, on the log scale for the log axis.
-    jitter = 0.0033
-    x_range = x_values.max() - x_values.min() if len(x_values) else 0.0
-    x_jittered = x_values + np.random.normal(0, jitter * x_range, size=x_values.shape)
-    log_y = np.log10(y_values + 1e-10)
-    log_range = log_y.max() - log_y.min() if len(log_y) else 0.0
-    y_jittered = 10 ** (log_y + np.random.normal(0, jitter * log_range, size=log_y.shape))
+        # Log folders frequently share an exact line/term count, so identical points would
+        # hide each other. Jitter proportionally, on the log scale for the log axis.
+        jitter = 0.0033
+        x_range = x_values.max() - x_values.min() if len(x_values) else 0.0
+        x_jittered = x_values + np.random.normal(0, jitter * x_range, size=x_values.shape)
+        log_y = np.log10(y_values + 1e-10)
+        log_range = log_y.max() - log_y.min() if len(log_y) else 0.0
+        y_jittered = 10 ** (log_y + np.random.normal(0, jitter * log_range, size=log_y.shape))
 
-    fig_simple = go.Figure()
-    _add_group_traces(
-        fig_simple, points, target_folder, x_jittered.tolist(), y_jittered.tolist(),
-        hovertemplate=(
-            "Log folder: %{text}<br>" + x_title + ": %{x:,.0f}<br>Lines: %{y:,.0f}"
-            + legend_note
-        ),
-    )
-    fig_simple.update_layout(
-        title=title, xaxis_title=x_title, yaxis_title="Lines", yaxis_type="log",
-        legend_title_text="Group",
-    )
-    return fig_umap, fig_simple
+        fig_scatter = go.Figure()
+        _add_group_traces(
+            fig_scatter, points, target_folder, x_jittered.tolist(), y_jittered.tolist(),
+            hovertemplate=(
+                "Log folder: %{text}<br>" + x_title + ": %{x:,.0f}<br>Lines: %{y:,.0f}"
+                + legend_note
+            ),
+        )
+        fig_scatter.update_layout(
+            title=title, xaxis_title=x_title, yaxis_title="Lines", yaxis_type="log",
+            legend_title_text="Group",
+        )
+    return fig_umap, fig_scatter
 
 
 def plot_folder(
     df, target_folder, comparison_folders="ALL", file=True, random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
+    plots=DEFAULT_PLOTS,
 ):
-    """L1/L2: plot every log folder as one point.
+    """Plot every log folder as one point.
 
-    :param file: ``True`` describes a log folder by its file names (L1, forces
-        ``content_format="File"``), ``False`` by its log text (L2).
+    :param file: ``True`` describes a log folder by its file names (forces
+        ``content_format="File"``), ``False`` by its log text.
     :param group_by_indices: underscore-separated parts of the folder name to
         colour by, e.g. ``[0, 1]``.
     :param random_seed: int makes UMAP reproducible. LogDelta accepted this
         parameter but discarded it here, so its folder-level plots moved
         between log folders.
-    :returns: ``(points_df, fig_umap, fig_simple, df)``. ``points_df`` has one
-        row per log folder: ``folder, group, umap_x, umap_y, unique_terms, lines``.
+    :param plots: which of :data:`PLOTS` to build. Defaults to
+        :data:`DEFAULT_PLOTS`, the "scatter" plot alone; add ``"umap"`` for
+        the embedding, which is essentially the whole cost of the call.
+    :returns: ``(points_df, fig_umap, fig_scatter, df)``, with a figure that was
+        not asked for as ``None``. ``points_df`` has one row per log folder:
+        ``folder, group, unique_terms, lines``, plus ``umap_x, umap_y`` when the
+        UMAP was built.
     """
+    plots = _validate_plots(plots)
     if file:
         content_format = "File"
     grouped = bool(group_by_indices)
@@ -272,11 +342,11 @@ def plot_folder(
     included, field = log_root.prepare_content(included, mask, content_format)
 
     folder_groups, documents = _aggregate_folder_documents(included, field, content_format, grouped)
-    embeddings_2d, unique_terms = _dtm_and_umap(
-        documents, content_format, vectorizer, random_seed
-    )
+    dtm = _document_term_matrix(documents, content_format, vectorizer)
+    unique_terms = (dtm > 0).sum(axis=1)
+    embeddings_2d = _umap_2d(dtm, random_seed) if "umap" in plots else None
     line_counts = (
-        included.group_by("folder").agg(pl.len().alias("lines")).sort("folder")
+        included.select("folder").group_by("folder").agg(pl.len().alias("lines")).sort("folder")
         .get_column("lines").to_numpy()
     )
 
@@ -285,19 +355,25 @@ def plot_folder(
         "File Name Comparison Between Log Folders" if file
         else "Log Text Comparison Between Log Folders"
     )
-    fig_umap, fig_simple = _figures(points, target_folder, file, subject)
-    return points, fig_umap, fig_simple, df
+    fig_umap, fig_scatter = _figures(points, target_folder, file, subject, plots)
+    return points, fig_umap, fig_scatter, df
 
 
 def plot_file_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
+    plots=DEFAULT_PLOTS,
 ):
-    """L3: for each target file, plot each log folder's copy of that file as one point.
+    """For each target file, plot each log folder's copy of that file as one point.
 
+    :param plots: which of :data:`PLOTS` to build, defaulting to
+        :data:`DEFAULT_PLOTS`. One UMAP layout is run per file here, so adding
+        ``"umap"`` costs more the more files you asked for.
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
-        ``(file_name, points_df, fig_umap, fig_simple)``.
+        ``(file_name, points_df, fig_umap, fig_scatter)``, with a figure that was
+        not asked for as ``None``.
     """
+    plots = _validate_plots(plots)
     grouped = bool(group_by_indices)
     if grouped:
         df = log_root.group_folders_by_indices(df, group_by_indices)
@@ -316,25 +392,26 @@ def plot_file_content(
         folder_groups, documents = _aggregate_folder_documents(
             file_df, field, content_format, grouped
         )
-        embeddings_2d, unique_terms = _dtm_and_umap(
-            documents, content_format, vectorizer, random_seed
-        )
+        dtm = _document_term_matrix(documents, content_format, vectorizer)
+        unique_terms = (dtm > 0).sum(axis=1)
+        embeddings_2d = _umap_2d(dtm, random_seed) if "umap" in plots else None
         line_counts = (
-            file_df.group_by("folder").agg(pl.len().alias("lines")).sort("folder")
-            .get_column("lines").to_numpy()
+            file_df.select("folder").group_by("folder").agg(pl.len().alias("lines"))
+            .sort("folder").get_column("lines").to_numpy()
         )
         points = _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, grouped)
-        fig_umap, fig_simple = _figures(
+        fig_umap, fig_scatter = _figures(
             points, target_folder, file_name,
             f"Textual Content Comparison Between Files: {file_name}",
+            plots,
         )
-        per_file.append((file_name, points, fig_umap, fig_simple))
+        per_file.append((file_name, points, fig_umap, fig_scatter))
 
     return per_file, df
 
 
 def plot_line_scores(df, title, display_mode="markers"):
-    """Chronological plot of L4 per-line anomaly scores.
+    """Chronological plot of anomaly_line_content's per-line anomaly scores.
 
     Each detector's raw score and its two moving averages are min-max
     normalized *as a family* so they share one 0-1 axis; across families the
@@ -343,6 +420,9 @@ def plot_line_scores(df, title, display_mode="markers"):
     One detector family is one colour, so its raw score and its averages read as
     belonging together. Within a family the raw score is a scatter -- every point
     there is a log line someone may want to hover -- and the averages are lines.
+    Hover follows from that: the scatters show the log line, the averages show
+    line number and score, which keeps the message text out of eight of the
+    twelve traces.
 
     :param display_mode: how the *raw* per-line scores are drawn (``"markers"``,
         ``"lines"``, ``"lines+markers"``). The moving averages ignore it and are
@@ -353,8 +433,13 @@ def plot_line_scores(df, title, display_mode="markers"):
         for prefix in ("kmeans", "IF", "RM", "OOVD")
     }
     line_numbers = df["line_number"].to_list()
-    messages = df["m_message"].to_list()
-    hover_text = [f"Log: {msg[:100]}<br>{msg[100:205]}" for msg in messages]
+    hover_text = df.select(
+        pl.format(
+            "Log: {}<br>{}",
+            pl.col("m_message").str.slice(0, 100),
+            pl.col("m_message").str.slice(100, 105),
+        )
+    ).to_series().to_list()
 
     normalized = df
     for columns in measure_groups.values():
@@ -379,8 +464,6 @@ def plot_line_scores(df, title, display_mode="markers"):
                 x=line_numbers,
                 y=normalized[col].to_list(),
                 name=col,
-                text=hover_text,
-                hoverinfo="text",
                 connectgaps=False,
                 # Draw order puts every line over every scatter; legendrank keeps
                 # the legend grouped by detector family regardless.
@@ -396,6 +479,12 @@ def plot_line_scores(df, title, display_mode="markers"):
                 marker["line"] = {"width": 0}
                 scatters.append(go.Scatter(
                     mode=display_mode, marker=marker, line=dict(color=color),
+                    # The log line itself is what a raw score is worth hovering,
+                    # so only these four traces carry it. Plotly serializes each
+                    # trace's `text` separately, so putting it on the averages
+                    # too tripled the message text in the file for no gain: a
+                    # 20,000-line file was 70 MB of HTML, against 30 MB now.
+                    text=hover_text, hoverinfo="text",
                     # Subordinate to the trend lines drawn over it.
                     opacity=0.55, **shared,
                 ))
@@ -403,6 +492,11 @@ def plot_line_scores(df, title, display_mode="markers"):
                 rank = windows.index(window)
                 lines.append(go.Scatter(
                     mode="lines",
+                    # A point on a rolling mean is not a log line, so its hover
+                    # answers where and how much instead -- built by plotly from
+                    # the trace name and the coordinates, carrying no per-line
+                    # array of its own.
+                    hoverinfo="x+y+name",
                     line=dict(
                         color=color,
                         dash=MOVING_AVERAGE_DASHES[rank % len(MOVING_AVERAGE_DASHES)],

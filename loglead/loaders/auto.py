@@ -29,7 +29,8 @@ from .raw import RawLoader
 from .supercomputers import ThuSpiLibLoader
 from .syslog import SyslogLoader, _RFC3164, _RFC5424
 
-__all__ = ['AutoLoader', 'Detection', 'detect_format']
+__all__ = ['AutoLoader', 'Detection', 'detect_format', 'DEFAULT_MAX_DETECT_FILES',
+           'name_shape', 'sample_paths']
 
 """
 AutoLoader Class
@@ -71,6 +72,16 @@ the exception. When every file agrees the whole tree is handed to one loader, wh
 parallel multi-file read the loaders already do; only a genuinely mixed tree pays for one loader
 per file.
 
+**A sample of the files is probed, not all of them.** Detection costs a read per file - about 20ms,
+which is nothing on a folder of ten logs and two minutes on a directory of five thousand, and a log
+root split one file per unit is routinely far larger than that. So at most max_detect_files of them
+are probed, chosen to cover as many distinct *file-name shapes* as possible (digits collapsed, so
+'container_1445062781478_0011_01_000001.log' and its 977 siblings are one shape), and if they all
+reach the same answer that answer is applied to the rest. A sample that disagrees with itself is a
+mixed tree, which needs a decision per file anyway, so the remaining files are probed then - the
+sample is only ever a shortcut past the unanimous case. Pass max_detect_files=0 to probe every
+file, which is what to do when one odd file among thousands would change how the tree is read.
+
 - filename (str): file, or directory to walk when filename_pattern is given. A directory with no
   filename_pattern is only looked at as a dataset (stage 1).
 - filename_pattern (str, optional): glob applied within each subdirectory, as in RawLoader.
@@ -80,6 +91,8 @@ per file.
   to 0.5, as in AccessLogLoader and SyslogLoader. Below it for every candidate, the file is loaded
   as plain text and said so.
 - sample_lines (int): how many lines to look at per file. Defaults to 1000, as in SyslogLoader.
+- max_detect_files (int): how many files to probe before extrapolating from them, default 50. 0
+  means every file. See the sampling paragraph above; detections() marks which files were probed.
 - system (str, optional): 'TrainTicket' or 'WebShop', needed only when the Nezha dataset is
   detected - nothing on disk says which of the two a Nezha directory holds.
 - dataset_probe (bool): whether to do the stage 1 check, default True. On, AutoLoader first asks
@@ -105,6 +118,13 @@ not recognized at all: nothing in it says what its columns are.
 # How many lines of a file are looked at to decide its format. SyslogLoader's number, for the same
 # reason: enough to be representative, small enough that it is one head() read.
 _SAMPLE_LINES = 1000
+
+# How many files of a tree are probed before the answer is extrapolated to the rest. Detection is a
+# read per file, ~20ms, so probing all of them is 20s on Hadoop's 978 files and 127s on 5,000 HDFS
+# blocks - and a log root holding one file per unit is routinely larger than either. 50 keeps that
+# near a second while still covering the distinct file-name shapes, which is where a second format
+# hides: files that differ in format usually differ in name too.
+DEFAULT_MAX_DETECT_FILES = 50
 
 # A sample taken only from the top of a file can misrepresent it - one of the logfmt test files
 # changes shape after its first ~1500 lines - so a chunk from the middle is read too. It costs a
@@ -191,6 +211,58 @@ class Detection:
 
 
 # Sampling ------------------------------------------------------------------------------------
+
+def name_shape(path):
+    """A file name with its digits collapsed, so files that are the same thing group together.
+
+    'container_1445062781478_0011_01_000001.log' and 'blk_-1032615911332852110.log' become
+    'container_#_#_#_#.log' and 'blk_-#.log'. A file written by a different producer almost always
+    has a differently *shaped* name, so this is what a sample has to spread across: probing 50
+    container logs of one shape says nothing about the one 'stderr.json' beside them.
+    """
+    return re.sub(r"\d+", "#", os.path.basename(path))
+
+
+def sample_paths(paths, budget):
+    """At most ``budget`` of ``paths``, covering as many file-name shapes as possible.
+
+    Every shape gets one file before any shape gets two, largest shape group first, and within a
+    group the picks are spread evenly through it rather than taken from the front - the front of a
+    sorted path list is one directory, and a format that changed part way through a log root would
+    sit entirely outside it. ``budget`` of 0 (or more paths than there are) means all of them.
+    """
+    paths = list(paths)
+    if budget <= 0 or len(paths) <= budget:
+        return paths
+
+    groups = {}
+    for path in paths:
+        groups.setdefault(name_shape(path), []).append(path)
+    ordered = sorted(groups.values(), key=len, reverse=True)
+
+    # Round-robin the budget over the groups, so a shape held by one file is probed as surely as
+    # the shape held by nine hundred.
+    quota = [0] * len(ordered)
+    remaining = budget
+    while remaining:
+        progressed = False
+        for index, members in enumerate(ordered):
+            if quota[index] >= len(members):
+                continue
+            quota[index] += 1
+            remaining -= 1
+            progressed = True
+            if not remaining:
+                break
+        if not progressed:  # every group exhausted before the budget was
+            break
+
+    picked = []
+    for members, take in zip(ordered, quota):
+        step = len(members)
+        picked += [members[point * step // take] for point in range(take)]
+    return sorted(picked)
+
 
 def _scan_lines(path):
     """Read a file as whole lines.
@@ -646,7 +718,7 @@ def detect_format(path, min_match_rate=0.5, sample_lines=_SAMPLE_LINES):
 class AutoLoader(BaseLoader):
     def __init__(self, filename, filename_pattern=None, min_file_size=0,
                  strip_full_data_path=None, min_match_rate=0.5, sample_lines=_SAMPLE_LINES,
-                 system=None, dataset_probe=True):
+                 system=None, dataset_probe=True, max_detect_files=DEFAULT_MAX_DETECT_FILES):
         self.filename_pattern = filename_pattern
         self.min_file_size = min_file_size
         self.strip_full_data_prefix = strip_full_data_path
@@ -654,8 +726,12 @@ class AutoLoader(BaseLoader):
         self.sample_lines = sample_lines
         self.system = system
         self.dataset_probe = dataset_probe
+        self.max_detect_files = max(int(max_detect_files or 0), 0)
         # What was chosen for each path, for detections() and for the error messages.
         self._detections = {}
+        # Which of those paths were probed rather than told what the sample decided. A subset of
+        # _detections' keys, and equal to them whenever max_detect_files did not bite.
+        self._probed = set()
         # A RawLoader fallback has no clock, and that is a legitimate outcome rather than a defect,
         # so only the message is required. Set per instance, as JsonLoader does.
         self._mandatory_columns = ["m_message"]
@@ -667,12 +743,17 @@ class AutoLoader(BaseLoader):
         dataset = detect_dataset(self.filename, self.system) if self.dataset_probe else None
         if dataset is not None:
             self._detections = {self.filename: dataset}
+            self._probed = {self.filename}
             self._load_dataset(dataset)
             return
 
         paths = self._collect_paths()
-        for path in paths:
-            self._detections[path] = detect_format(path, self.min_match_rate, self.sample_lines)
+        sample = sample_paths(paths, self.max_detect_files)
+        self._detect(sample)
+        if not self._extrapolate(sample, paths):
+            # The sample disagreed with itself, or the format it agreed on is read one file at a
+            # time: either way every file needs a detection of its own.
+            self._detect(paths)
         self._report()
 
         detections = [self._detections[path] for path in paths]
@@ -682,6 +763,33 @@ class AutoLoader(BaseLoader):
         else:
             self._load_per_file(paths)
         self._normalize_timestamp()
+
+    def _detect(self, paths):
+        """Probe every one of ``paths`` not already decided."""
+        for path in paths:
+            if path not in self._probed:
+                self._detections[path] = detect_format(path, self.min_match_rate,
+                                                       self.sample_lines)
+                self._probed.add(path)
+
+    def _extrapolate(self, sample, paths):
+        """Give every unprobed path the sample's answer, if the sample earned the right.
+
+        Only a unanimous sample does, and only for a loader that can be handed the whole tree:
+        a per-file loader is built once per path from that path's own detection, and HDFSLoader's
+        detection carries the labels file found beside *that* file. Returns whether it happened.
+        """
+        if len(sample) == len(paths):
+            return True  # nothing was left out, so there is nothing to extrapolate to
+        detections = [self._detections[path] for path in sample]
+        first = detections[0]
+        if len({d.key() for d in detections}) > 1:
+            return False
+        if not issubclass(first.loader, _TREE_CAPABLE):
+            return False
+        for path in paths:
+            self._detections.setdefault(path, first)
+        return True
 
     def _normalize_timestamp(self):
         """Force m_timestamp to naive microseconds, whatever the chosen loader produced.
@@ -800,21 +908,39 @@ class AutoLoader(BaseLoader):
             counts[detection.format] = counts.get(detection.format, 0) + 1
         listed = ", ".join(f"{name} ({n})" for name, n in
                            sorted(counts.items(), key=lambda item: -item[1]))
+        total = len(self._detections)
+        if len(self._probed) < total:
+            shapes = len({name_shape(path) for path in self._probed})
+            print(f"AutoLoader: probed {len(self._probed)} of {total} file(s), covering {shapes} "
+                  f"file-name shape(s), and they all say {listed} - reading every file that way. "
+                  f"Pass max_detect_files=0 to detect each file instead.")
+            return
         print(f"AutoLoader: detected {len(counts)} format(s) across "
-              f"{len(self._detections)} file(s): {listed}.")
+              f"{total} file(s): {listed}.")
 
     def detections(self):
-        """What was chosen for each file, and how strong the evidence was."""
+        """How each file was read, and how strong the evidence was.
+
+        One row per file, but the evidence columns are only filled for the files that were
+        actually probed: 'probed' is False where max_detect_files stopped short and the format
+        came from the sample instead, and a rate reported for a file nobody looked at would be
+        evidence invented after the fact.
+        """
         rows = [{"path": path, "loader": d.loader.__name__, "format": d.format,
-                 "rate": d.rate, "sampled_lines": d.lines,
-                 "replacement_chars": d.replacement_chars, "note": d.note}
+                 "probed": path in self._probed,
+                 "rate": d.rate if path in self._probed else None,
+                 "sampled_lines": d.lines if path in self._probed else 0,
+                 "replacement_chars": d.replacement_chars if path in self._probed else 0,
+                 "note": d.note if path in self._probed else "not probed; format taken from the "
+                                                             "sampled files"}
                 for path, d in self._detections.items()]
         # The schema is given rather than inferred: 'note' is null for most files, and on a tree of
         # more than infer_schema_length of them Polars decides the column is Null and then refuses
         # the first real note it meets.
         return pl.DataFrame(rows, schema={
-            "path": pl.String, "loader": pl.String, "format": pl.String, "rate": pl.Float64,
-            "sampled_lines": pl.Int64, "replacement_chars": pl.Int64, "note": pl.String})
+            "path": pl.String, "loader": pl.String, "format": pl.String, "probed": pl.Boolean,
+            "rate": pl.Float64, "sampled_lines": pl.Int64, "replacement_chars": pl.Int64,
+            "note": pl.String})
 
     def preprocess(self):
         # Every child ran its own preprocess() as it was loaded; there is nothing format-specific
