@@ -29,9 +29,10 @@ from pathlib import Path
 
 import polars as pl
 
-from ..delta import export, log_root, masking
+from ..delta import export, log_root
 from ..enhancers import EventLogEnhancer
 from ..loaders import DEFAULT_MAX_DETECT_FILES
+from .mask_registry import MaskPatternRegistry
 
 #: Columns present straight from the loader, before any enhancement. Which
 #: columns a session *requires* is :data:`log_root.REQUIRED_COLUMNS`, checked at
@@ -282,6 +283,7 @@ class SessionStore:
         self.output_root = (
             Path(output_root) if output_root else self.cache_dir / "output"
         )
+        self.mask_registry = MaskPatternRegistry(self.cache_dir / "mask_patterns")
         self._sessions = {}
 
     # -- cache keying ------------------------------------------------------ #
@@ -292,7 +294,21 @@ class SessionStore:
     # fewer rows than the cached copy of it does.
     _PREPROCESSING_VERSION = "2"
 
-    def _cache_key(self, root, filename_pattern, mask_pattern, file_name_normalizer,
+    def _resolve_mask(self, mask_pattern):
+        """A mask name's patterns, plus the signature identifying them in a cache key.
+
+        The signature carries the resolved content and not just the name,
+        because a registered pattern's content can change under a name that
+        does not. See :class:`MaskPatternRegistry`.
+
+        :returns: ``(patterns, signature)``, both ``None`` when there is no mask.
+        """
+        if not mask_pattern:
+            return None, None
+        resolved = self.mask_registry.resolve(mask_pattern)
+        return resolved, f"{mask_pattern}:{json.dumps(resolved)}"
+
+    def _cache_key(self, root, filename_pattern, mask_signature, file_name_normalizer,
                    min_file_size, folder_names=None, keep_original_folder_name=True,
                    format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
         n_files, total_bytes, max_mtime = log_root.count_log_root_files(
@@ -314,10 +330,13 @@ class SessionStore:
         # max_detect_files is in the key for the same reason at one remove: it
         # decides how many files "auto" looked at, and a log root where the
         # sample missed a second format is read differently at 0 than at 50.
+        # mask_signature carries the *resolved* pattern content, not just its
+        # name, since a custom name's patterns can be redefined (register
+        # overwrite=True) between two opens that both say mask_pattern="foo".
         # sort_keys because dict order is insertion order, and two equal
         # mappings must hash the same.
         payload = "|".join([
-            str(root), filename_pattern, mask_pattern or "", file_name_normalizer,
+            str(root), filename_pattern, mask_signature or "", file_name_normalizer,
             str(min_file_size), str(n_files), str(total_bytes), f"{max_mtime:.0f}",
             json.dumps(folder_names or {}, sort_keys=True), str(keep_original_folder_name),
             format, str(max_detect_files), self._PREPROCESSING_VERSION,
@@ -336,8 +355,11 @@ class SessionStore:
 
         :param mask: run :meth:`EventLogEnhancer.normalize` at open time.
             Required by every ``mask=True`` analysis and by all pre-parsing.
-        :param mask_pattern: name from :data:`loglead.delta.masking.PATTERNS`.
-            Never a raw regex list -- ``normalize()`` ``eval()``s what it is given.
+        :param mask_pattern: a built-in name from
+            :data:`loglead.delta.masking.PATTERNS`, or a name registered via
+            :attr:`mask_registry`. Never a raw regex list -- resolve it through
+            :attr:`mask_registry` (which falls back to
+            :func:`masking.get_pattern`), not by constructing one inline.
         :param parsers: algorithms to pre-parse, e.g. ``["tip"]``. Parsing at
             open time is optional; analyses parse on demand either way.
         :param table_format: ``"csv"`` or ``"xlsx"`` for result tables.
@@ -365,8 +387,7 @@ class SessionStore:
         session_id = session_id or f"{root.name}-{uuid.uuid4().hex[:8]}"
 
         effective_mask_pattern = mask_pattern if mask else None
-        if mask:
-            masking.get_pattern(mask_pattern)  # validate before doing any work
+        resolved_mask, mask_signature = self._resolve_mask(effective_mask_pattern)
         if file_name_normalizer not in log_root.FILE_NAME_NORMALIZERS:
             raise ValueError(
                 f"Unknown file_name_normalizer {file_name_normalizer!r}. "
@@ -379,7 +400,7 @@ class SessionStore:
 
         max_detect_files = max(int(max_detect_files or 0), 0)
         digest, n_files = self._cache_key(
-            root, filename_pattern, effective_mask_pattern, file_name_normalizer,
+            root, filename_pattern, mask_signature, file_name_normalizer,
             min_file_size, folder_names, keep_original_folder_name, format, max_detect_files,
         )
         cache_path = self.cache_dir / f"{root.name}-{digest}.parquet"
@@ -397,9 +418,7 @@ class SessionStore:
             df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format,
                                                    max_detect_files)
             if mask:
-                df = EventLogEnhancer(df).normalize(
-                    regexs=masking.get_pattern(mask_pattern)
-                )
+                df = EventLogEnhancer(df).normalize(regexs=resolved_mask)
             df = log_root.normalize_file_names(df, file_name_normalizer)
             # Strictly after file-name normalization: strip_folder_id derives the
             # id to strip from the raw directory name, so renaming first would leave
@@ -442,6 +461,77 @@ class SessionStore:
             "elapsed_seconds": round(time.time() - started, 2),
         }
 
+    def remask(self, session_id, mask_pattern):
+        """Replace an open session's masking with a different pattern.
+
+        Columns derived from the old masked text -- parser event ids, words,
+        trigrams -- are dropped; those derived from the raw ``m_message``
+        survive. Stashed results are discarded. When this masking already has
+        a cached parquet, that frame is adopted whole, with whatever columns it
+        held; otherwise the masked column is recomputed over the current frame.
+        The cache path is repointed either way.
+
+        Stats the log root to compute the cache key, so it must still exist.
+
+        :param mask_pattern: a built-in or registered pattern name. A session
+            opened with ``mask=False`` can be given a mask this way.
+        :returns: ``(session, info)`` naming what was dropped, discarded, or
+            restored from cache.
+        """
+        session = self.get(session_id)
+        resolved, mask_signature = self._resolve_mask(mask_pattern)  # validate first
+
+        previous_cache_path = session.cache_path
+        cache_path = None
+        if previous_cache_path is not None:
+            digest, _ = self._cache_key(
+                session.root, session.filename_pattern, mask_signature,
+                session.file_name_normalizer, session.min_file_size, session.folder_names,
+                session.keep_original_folder_name, session.format, session.max_detect_files,
+            )
+            cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
+
+        dropped = []
+        restored = cache_path is not None and cache_path.exists()
+        if restored:
+            session.df = pl.read_parquet(cache_path)
+            sidecar = cache_path.with_suffix(".json")
+            session.content_source = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+        else:
+            # Which derived columns came from the masked text, via the same
+            # bookkeeping ensure_content keeps. A column whose source was never
+            # recorded is treated as masked-derived: dropping one that was not
+            # only costs a recompute, while keeping one that was is a wrong answer.
+            formats = ["Words", "3grams"] + [f"Parse-{parser}" for parser in session.parsers]
+            for content_format in formats:
+                target = log_root.content_column(True, content_format)
+                if session.content_source.get(target) == "m_message":
+                    continue
+                dropped.extend(column for column in log_root.derived_columns(content_format)
+                               if column in session.df.columns)
+                session.content_source.pop(target, None)
+            df = session.df.drop(dropped) if dropped else session.df
+            session.df = EventLogEnhancer(df).normalize(regexs=resolved)
+
+        session.masked = True
+        session.mask_pattern = mask_pattern
+        if cache_path is not None:
+            session.cache_path = cache_path
+
+        discarded = list(session.results)
+        session.results.clear()
+
+        # A restored frame already matches its parquet; flushing it would only
+        # rewrite the file it was just read from.
+        session._dirty = not restored
+        session.flush()
+        return session, {
+            "dropped_columns": dropped,
+            "discarded_results": discarded,
+            "restored_from_cache": restored,
+            "previous_cache_path": str(previous_cache_path) if previous_cache_path else None,
+        }
+
     def set_folder_names(self, session_id, folder_names, keep_original=True):
         """Rename an open session's log folders in place, without re-reading.
 
@@ -458,8 +548,9 @@ class SessionStore:
         # The names are part of the cache key, so a new mapping belongs in a
         # different parquet. Repoint before flushing or the old one is clobbered.
         if session.cache_path is not None:
+            _, mask_signature = self._resolve_mask(session.mask_pattern)
             digest, _ = self._cache_key(
-                session.root, session.filename_pattern, session.mask_pattern,
+                session.root, session.filename_pattern, mask_signature,
                 session.file_name_normalizer, session.min_file_size, folder_names,
                 keep_original, session.format, session.max_detect_files,
             )

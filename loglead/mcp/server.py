@@ -45,7 +45,7 @@ try:  # MCP SDK 2.x
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
 
-from ..delta import anomaly, distance, export, log_root, scoring, split, visualize
+from ..delta import anomaly, distance, export, log_root, masking, scoring, split, visualize
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import crash, formatting
 from .session import SessionStore
@@ -447,8 +447,11 @@ def open_log_root(
             differently. Ignored unless format="auto".
         mask: Replace volatile tokens (ids, IPs, timestamps, hex) with
             placeholders. Almost always wanted.
-        mask_pattern: One of "myllari_extended", "myllari", "drain_loglead",
-            "drain_orig".
+        mask_pattern: One of the built-ins -- "myllari_extended", "myllari",
+            "drain_loglead", "drain_orig" -- or the name of a pattern
+            registered earlier with register_mask_pattern, to use your own
+            regexes instead of or on top of a built-in one. See
+            list_mask_patterns for what is available.
         parsers: Template log parsers to run up front, e.g. tipiing ["tip"] or ["drain"].
         file_name_normalizer: "none", or "strip_folder_id" when file names embed
             the folder id (Hadoop container logs do). Without it, file-level and
@@ -521,6 +524,106 @@ def open_log_root(
                      f"characters.")
     if notes:
         summary["notes"] = notes
+    return summary
+
+
+@tool
+def register_mask_pattern(
+    name: str,
+    patterns: Sequence[dict],
+    base: Optional[str] = None,
+    description: Optional[str] = None,
+    overwrite: bool = False,
+) -> dict:
+    """Define a named, reusable mask pattern for use as open_log_root's mask_pattern.
+
+    Once registered, use `name` anywhere `mask_pattern` is accepted --
+    including in a later open_log_root call for a log root you have not
+    opened yet.
+
+    Args:
+        name: How this pattern is referenced later. Letters, digits, "_" and
+            "-" only; cannot reuse a built-in name (myllari_extended,
+            myllari, drain_loglead, drain_orig).
+        patterns: `[{"replacement": "${start}<APP_ID>${end}", "regex": "..."}, ...]`,
+            applied in this order. Wrap the part that must survive in named
+            groups `start`/`end` the way the built-ins do (see
+            list_mask_patterns for examples) so text next to the match is not
+            eaten by it.
+        base: An existing pattern name (built-in or already-registered) whose
+            patterns run first; `patterns` is appended after it. Leave unset
+            to define `name` from scratch, with no built-in patterns applied.
+        description: Free text noting what this pattern is for, returned by
+            list_mask_patterns.
+        overwrite: Replace an existing registration with this name. Without
+            it, registering an existing name is an error -- open_log_root
+            sessions already opened with the old version keep it (they cache
+            what they resolved at open time); only a later open_log_root call
+            picks up the change.
+    """
+    record = STORE.mask_registry.register(
+        name, patterns, base=base, description=description, overwrite=overwrite
+    )
+    record["notes"] = [
+        f"{len(record['patterns'])} pattern(s) resolved for {name!r}. "
+        f"Pass mask_pattern={name!r} to open_log_root to use it."
+    ]
+    return record
+
+
+@tool
+def list_mask_patterns() -> dict:
+    """List built-in and registered mask patterns, with what each one matches."""
+    builtins = {
+        pattern_name: [{"replacement": r, "regex": p} for r, p in pattern]
+        for pattern_name, pattern in masking.PATTERNS.items()
+    }
+    return {
+        "builtin": builtins,
+        "custom": STORE.mask_registry.list_records(),
+    }
+
+
+@tool
+def remask_log_root(session_id: str, mask_pattern: str) -> dict:
+    """Apply a different mask to an already-open log root, keeping the session_id.
+
+    Drops the columns derived from the old masked text -- parsed event ids,
+    words, trigrams -- and discards stashed results. A pattern this log root
+    already has a cached copy of is restored with the columns that copy held;
+    any other pattern is computed fresh.
+
+    Args:
+        session_id: Handle from open_log_root.
+        mask_pattern: A built-in name ("myllari_extended", "myllari",
+            "drain_loglead", "drain_orig") or one registered with
+            register_mask_pattern. A session opened with mask=False can be
+            given a mask this way.
+    """
+    session, info = STORE.remask(session_id, mask_pattern)
+    summary = session.summary()
+    summary.update(info)
+
+    notes = [f"Masked with {mask_pattern!r}. Analyses using mask=True now see the new text."]
+    if info["restored_from_cache"]:
+        notes.append(
+            "This mask had been used on this log root before, so everything computed under it "
+            "came back with it: the parsed event ids, words and trigrams it already had are "
+            "ready to use, and need no recomputing."
+        )
+    if info["dropped_columns"]:
+        notes.append(
+            f"Dropped {len(info['dropped_columns'])} column(s) derived from the old "
+            f"masking: {', '.join(info['dropped_columns'])}. They are recomputed on "
+            f"demand by the next analysis that needs them."
+        )
+    if info["discarded_results"]:
+        notes.append(
+            f"Discarded {len(info['discarded_results'])} stashed result(s) computed under "
+            f"the old mask ({', '.join(info['discarded_results'])}). Re-run the analyses "
+            f"whose answers you still need."
+        )
+    summary["notes"] = notes
     return summary
 
 

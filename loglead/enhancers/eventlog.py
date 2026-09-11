@@ -437,15 +437,12 @@ class EventLogEnhancer:
         return self.df
 
     def normalize(self, regexs=masking_patterns_drain, to_lower=False, twice=True):
-
-        # base_code = 'self.df = self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
-        base_code = 'self.df.with_columns(e_message_normalized = pl.col("m_message").str.split("\\n").list.first()'
+        expr = pl.col("m_message").str.split("\n").list.first()
 
         if to_lower:
-            base_code += '.str.to_lowercase()'
+            expr = expr.str.to_lowercase()
 
-        # Generate the replace_all chain
-        # TODO We need to duplicate everything otherwise we get only every other replacement in 
+        # We need to duplicate every replacement otherwise we get only every other replacement in
         #"Folder_0012_2323_2324" -> After first replacement we get Folder Folder_<NUM>_2323_<NUM>
         #After second replacement we get  Folder_<NUM>_<NUM>_<NUM>. This is ugly but due to Crate limitations
         # https://docs.rs/regex/latest/regex/
@@ -455,16 +452,12 @@ class EventLogEnhancer:
         # After 2nd BLOCK* NameSystem.allocateBlock: /user/root/rand/_temporary/_task_<NUM>_<NUM>_m_<NUM>_<NUM>/part-<NUM>. blk_<SEQ>'
         #Longer explanation Overlapping Matches: The regex crate does not find overlapping matches by default. If your text has numbers that are immediately adjacent to each other with only a non-alphanumeric separator (which is consumed by the start or end group), the regex engine won't match the second number because the separator is already consumed by the first match.
         for key, pattern in regexs:
-            replace_code = f'.str.replace_all(r"{pattern}", "{key}")'
-            base_code += replace_code
+            expr = expr.str.replace_all(pattern, key)
             if twice:
-                base_code += replace_code
+                expr = expr.str.replace_all(pattern, key)
 
-        base_code += ')'
-        self.df = eval(base_code)
+        self.df = self.df.with_columns(e_message_normalized=expr)
         return self.df
-        # print (base_code)
-        # return base_code
 
     def item_cumsum2(self, column="e_message_normalized", chronological_order=1, ano_only=True, unique_only=True, out_column=None):
         if out_column is None:
