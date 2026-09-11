@@ -404,6 +404,8 @@ GRID_ROWS = (
     ("aux", "set_folder_names"),
     ("aux", "read_log_lines"),
     ("aux", "search_log_lines"),
+    ("aux", "read_log_lines (new tokens)"),
+    ("aux", "new_tokens"),
     ("aux", "query_result"),
     ("aux", "split_log_file"),
     ("aux", "close_log_root"),
@@ -622,6 +624,14 @@ def grid_cells(ctx):
         return call(lambda: server.query_result(
             sid, rid, where=[["lines", ">", 0]], sort_by="lines"))
 
+    def fresh_vocabulary(fn):
+        # The cold call has to build the baseline vocabulary, so drop any an
+        # earlier cell left in the session; the warm repeats then reuse it.
+        def run():
+            ctx.session.vocabularies.clear()
+            return call(fn)
+        return run
+
     cells = [
         ("aux", "open_log_root", ctx.measured_open),
         ("aux", "list_log_roots", lambda: call(lambda: server.list_log_roots())),
@@ -630,6 +640,11 @@ def grid_cells(ctx):
          lambda: call(lambda: server.read_log_lines(sid, target, file_name, limit=100))),
         ("aux", "search_log_lines",
          lambda: call(lambda: server.search_log_lines(sid, r"[Ee]rror"))),
+        ("aux", "read_log_lines (new tokens)",
+         fresh_vocabulary(lambda: server.read_log_lines(
+             sid, target, file_name, limit=100, new_tokens_vs="ALL"))),
+        ("aux", "new_tokens",
+         fresh_vocabulary(lambda: server.new_tokens(sid, target))),
 
         ("distance", "distance_folder_filename",
          lambda: call(lambda: server.distance_folder_filename(sid, target))),

@@ -45,7 +45,8 @@ try:  # MCP SDK 2.x
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
 
-from ..delta import anomaly, distance, export, log_root, masking, scoring, split, visualize
+from ..delta import (anomaly, distance, export, log_root, masking, scoring, split, visualize,
+                     vocabulary)
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import crash, formatting
 from .session import SessionStore
@@ -72,8 +73,12 @@ tried resort functions read_log_lines or search_log_lines to look at the specifi
 lines that the narrowing surfaced. Jumping straight to 
 search_log_lines or read_log_lines on a whole log root is starting from a guess 
 about what might be wrong; the distance/anomaly/plot tools exist precisely so 
-you don't have to guess. Prefer statistics ML stuff and treat search/read as the 
+you don't have to guess. Prefer statistics ML stuff and treat search/read as the
 last step that inspects a result, not the first step that produces one.
+
+new_tokens is a statistics step too: it lists the words a log folder has that the
+comparison folders never have, and read_log_lines(new_tokens_vs=..., only_new=True)
+shows the lines they are on.
 
 COST. These tools span milliseconds to hours. Every result reports its own
 elapsed_seconds: make one narrow call.""")
@@ -734,21 +739,45 @@ def read_log_lines(
     offset: int = 0,
     limit: int = 100,
     masked: bool = False,
+    new_tokens_vs: Optional[FolderSelector] = None,
+    only_new: bool = False,
+    match_file_name: bool = False,
 ) -> dict:
     """Read actual log lines. Use this to see the evidence behind a score.
+
+    With new_tokens_vs, each line also lists its new tokens: words that occur
+    in none of those comparison log folders. only_new then returns just the
+    lines that have one, so the read shows what is new in this file.
 
     Args:
         session_id: Handle from open_log_root.
         folder: Log folder name.
         file_name: File name, relative to its log folder.
-        offset: First line to return, 0-based.
+        offset: First line to return, 0-based. With only_new, counted among the
+            lines that have new tokens.
         limit: How many lines (capped at 500).
         masked: Return the masked text instead of the raw message.
+        new_tokens_vs: Comparison log folders -- "ALL", a list, an int N, or
+            "Prefix*". Point it at known-good folders when you have them: a word
+            that also occurs in a comparison folder is not new. Words come from
+            the masked text when the session is masked.
+        only_new: Return only lines with at least one new token. Needs new_tokens_vs.
+        match_file_name: Compare against the same-named file in the comparison
+            folders only, rather than all their files.
     """
     session = STORE.get(session_id)
     column = "e_message_normalized" if masked else "m_message"
     if column not in session.df.columns:
         raise ValueError(f"Column {column!r} is not available in this session.")
+    if only_new and new_tokens_vs is None:
+        raise ValueError(
+            "only_new needs new_tokens_vs: the log folders whose words do not count as new."
+        )
+
+    field = None
+    if new_tokens_vs is not None:
+        _, field = session.ensure_content(session.masked, "Words")
+        session.flush()
 
     selected = session.df.filter(
         (pl.col("folder") == folder) & (pl.col("file_name") == file_name)
@@ -760,16 +789,41 @@ def read_log_lines(
         )
 
     limit = max(1, min(int(limit), 500))
-    window = selected.slice(offset, limit).select(["line_number", column])
-    return {
+    result = {
         "session_id": session_id,
         "folder": folder,
         "file_name": file_name,
         "total_lines": selected.height,
         "offset": offset,
-        "returned": window.height,
-        "lines": window.to_dicts(),
     }
+    if field is None:
+        window = selected.slice(offset, limit).select(["line_number", column])
+    else:
+        _, comparison = log_root.prepare_folders(session.df, folder, new_tokens_vs)
+        vocab = vocabulary.baseline_vocabulary(
+            session.df, comparison, field, match_file_name, session.cached_vocabulary
+        )
+        if match_file_name and vocab.filter(pl.col("file_name") == file_name).height == 0:
+            raise ValueError(
+                f"No comparison log folder has a file named {file_name!r}. Leave "
+                "match_file_name unset to compare against all their files."
+            )
+        annotated = vocabulary.annotate(selected, vocab, field)
+        has_new = annotated.filter(pl.col("new_tokens").list.len() > 0)
+        window = ((has_new if only_new else annotated)
+                  .slice(offset, limit).select(["line_number", column, "new_tokens"]))
+        result.update({
+            "n_comparison_folders": len(comparison),
+            "lines_with_new_tokens": has_new.height,
+            "baseline_vocabulary_size": vocab.height,
+        })
+        if only_new and offset + window.height < has_new.height:
+            result["notes"] = [
+                f"Showing {window.height} of {has_new.height} lines with new tokens. "
+                "Raise offset for the next page."
+            ]
+    result.update({"returned": window.height, "lines": window.to_dicts()})
+    return result
 
 
 @tool
@@ -830,6 +884,93 @@ def search_log_lines(
         "sample": sample.to_dicts(),
         "truncated": matches.height > sample.height,
     }
+
+
+@tool
+def new_tokens(
+    session_id: str,
+    target_folder: str,
+    comparison_folders: FolderSelector = "ALL",
+    target_files: FileSelector = "ALL",
+    match_file_name: bool = False,
+    mask: bool = True,
+    content_format: str = "Words",
+    max_rows: int = 25,
+) -> dict:
+    """List the tokens a log folder has that the comparison folders never have.
+
+    One row per new token: how often it occurs, on how many lines and files,
+    and the first line it is on. No model is trained -- the baseline is every
+    token of the comparison folders -- so this is fast even on large log roots,
+    and a repeat call reuses the baseline.
+
+    A new token is either something that went differently -- an error message,
+    an event the others never logged -- or an id, path or number the mask
+    missed. The second kind turns up in every log folder; register_mask_pattern
+    and remask_log_root remove it.
+
+    Args:
+        session_id: Handle from open_log_root.
+        target_folder: Exact log folder name.
+        comparison_folders: The baseline -- "ALL", a list, an int N, or
+            "Prefix*". Point it at known-good folders when you have them: a
+            failure that also happens in a comparison folder puts its words in
+            the baseline, and they are no longer new.
+        target_files: "ALL", a list, an int N, or a "name*" wildcard.
+        match_file_name: Judge each file against the same-named file in the
+            comparison folders only. Files no comparison folder has are skipped.
+        mask: Take tokens from the masked text.
+        content_format: "Words", "3grams", or "Parse-<Algorithm>". With a parser
+            each line is one token, its event type, so the rows are new message
+            types.
+        max_rows: Rows returned inline.
+    """
+    vocabulary.check_content_format(content_format)
+    session = STORE.get(session_id)
+    _, field = session.ensure_content(mask, content_format)
+    session.flush()
+    table, info = vocabulary.new_token_table(
+        session.df, target_folder, comparison_folders, target_files, field,
+        match_file_name, session.cached_vocabulary,
+    )
+    level = 3 if match_file_name else 2
+    artifact = _write(session, table, "new", level, target_folder=target_folder,
+                      comparison_folder="Many", mask=mask, content_format=content_format)
+
+    n_comparison = len(info["comparison_folders"])
+    notes = [
+        f"A token is new when none of the {n_comparison} comparison log folders has it, so "
+        "a failure that also occurs in a comparison folder is not new. Point "
+        "comparison_folders at known-good log folders when you have them.",
+        "Tokens that are ids, paths or numbers are gaps in the mask rather than findings: "
+        "register_mask_pattern (base= the current pattern), then remask_log_root.",
+        f'See them in context with read_log_lines(session_id="{session_id}", '
+        f'folder="{target_folder}", file_name=<file_name>, '
+        f"new_tokens_vs={json.dumps(comparison_folders)}, only_new=True"
+        + (", match_file_name=True)." if match_file_name else ")."),
+    ]
+    if table.height == 0:
+        notes.insert(0, "Nothing new: every token of the target also occurs in the "
+                        "comparison log folders.")
+    if info["skipped_files"]:
+        notes.append(f"{len(info['skipped_files'])} target file(s) skipped: no comparison "
+                     "log folder has a file of that name.")
+    return formatting.result(
+        session, "new_tokens", level,
+        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+         "target_files": target_files, "match_file_name": match_file_name, "mask": mask,
+         "content_format": content_format},
+        table, artifact, max_rows, sort_by=["count"], notes=notes,
+        extra={
+            "n_comparison_folders": n_comparison,
+            "n_target_files": len(info["target_files"]),
+            "skipped_files": info["skipped_files"][:20],
+            "n_lines": info["n_lines"],
+            "lines_with_new_tokens": info["lines_with_new_tokens"],
+            "new_token_occurrences": info["new_token_occurrences"],
+            "baseline_vocabulary_size": info["baseline_vocabulary_size"],
+        },
+    )
 
 
 # --------------------------------------------------------------------------- #

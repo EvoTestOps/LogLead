@@ -30,6 +30,9 @@ file               ``distance_file_content``    ``anomaly_file_content``       `
 line               ``distance_line_content``    ``anomaly_line_content``       --
 =================  ===========================  =============================  ==========================
 
+:mod:`vocabulary` answers a fourth question at folder or file granularity:
+which tokens a target has that its comparison folders never had.
+
 Unlike the LogDelta originals, these functions hold no module-level state,
 never change the process working directory, and never write files -- they
 return Polars DataFrames (and plotly figures). Use :mod:`loglead.delta.export`
@@ -57,7 +60,7 @@ import importlib
 #: had stat'ed a single file. The submodules are named here as strings so that
 #: only the one actually reached is imported; see ``_LAZY_MODULES``.
 _LAZY_MODULES = ("anomaly", "distance", "export", "log_root", "masking", "scoring",
-                 "split", "visualize")
+                 "split", "visualize", "vocabulary")
 
 _LAZY_NAMES = {
     "anomaly_file_content": "anomaly",
@@ -81,6 +84,7 @@ _LAZY_NAMES = {
     "PLOTS": "visualize",
     "plot_file_content": "visualize",
     "plot_folder": "visualize",
+    "new_token_table": "vocabulary",
 }
 
 
@@ -107,6 +111,7 @@ __all__ = [
     "scoring",
     "split",
     "visualize",
+    "vocabulary",
     "read_log_root",
     "read_folders",
     "peek_log_root",
@@ -128,4 +133,5 @@ __all__ = [
     "plot_file_content",
     "PLOTS",
     "DEFAULT_PLOTS",
+    "new_token_table",
 ]

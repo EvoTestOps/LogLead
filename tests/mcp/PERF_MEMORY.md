@@ -65,6 +65,12 @@ the cell directory to re-measure the grid from scratch.
 | search_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
 | search_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
 | search_log_lines | bgl_split_10 | 1.16 | 1.62 | 5.08 | 9.78 |
+| read_log_lines (new tokens) | hadoop_renamed | 0.418 | 0.471 | 0.892 | 0.976 |
+| read_log_lines (new tokens) | hdfs_balanced_5k | 0.388 | 0.421 | 0.682 | 0.959 |
+| read_log_lines (new tokens) | bgl_split_10 | 0.488 | 0.669 | 1.79 | 4.80 |
+| new_tokens | hadoop_renamed | 0.421 | 0.480 | 0.901 | 0.999 |
+| new_tokens | hdfs_balanced_5k | 0.391 | 0.426 | 0.686 | 0.963 |
+| new_tokens | bgl_split_10 | 0.503 | 0.681 | 1.88 | 4.92 |
 | query_result | hadoop_renamed | 0.597 | 0.883 | 1.33 | 2.44 |
 | query_result | hdfs_balanced_5k | 0.749 | 0.801 | 1.14 | 1.49 |
 | query_result | bgl_split_10 | 1.42 | 1.96 | 5.93 | 12.30 |
@@ -159,6 +165,12 @@ the cell directory to re-measure the grid from scratch.
 | search_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
 | search_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
 | search_log_lines | bgl_split_10 | 1.16 | 1.63 | 5.08 | 9.79 |
+| read_log_lines (new tokens) | hadoop_renamed | 0.418 | 0.471 | 0.892 | 0.976 |
+| read_log_lines (new tokens) | hdfs_balanced_5k | 0.388 | 0.422 | 0.683 | 0.960 |
+| read_log_lines (new tokens) | bgl_split_10 | 0.492 | 0.673 | 1.84 | 4.88 |
+| new_tokens | hadoop_renamed | 0.421 | 0.481 | 0.901 | 1.00 |
+| new_tokens | hdfs_balanced_5k | 0.391 | 0.426 | 0.686 | 0.963 |
+| new_tokens | bgl_split_10 | 0.504 | 0.682 | 1.89 | 4.93 |
 | query_result | hadoop_renamed | 0.597 | 0.883 | 1.33 | 2.44 |
 | query_result | hdfs_balanced_5k | 0.749 | 0.801 | 1.14 | 1.49 |
 | query_result | bgl_split_10 | 1.42 | 1.96 | 5.93 | 12.30 |

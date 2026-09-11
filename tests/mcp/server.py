@@ -63,7 +63,7 @@ import numpy  # noqa: E402
 import polars as pl  # noqa: E402
 import make_test_data  # noqa: E402  (sits next to this file)
 from loglead import loaders  # noqa: E402
-from loglead.delta import log_root, split, visualize  # noqa: E402
+from loglead.delta import log_root, split, visualize, vocabulary  # noqa: E402
 
 try:  # the MCP server is an optional extra, and its absence is not a test failure
     from loglead.mcp import server  # noqa: E402
@@ -115,6 +115,7 @@ TOOLS = (
     "anomaly_file_content", "anomaly_line_content", "plot_folder_filename",
     "plot_folder_content", "plot_file_content", "run_config",
     "peek_log_root", "split_log_file",
+    "register_mask_pattern", "list_mask_patterns", "remask_log_root", "new_tokens",
 )
 
 
@@ -545,6 +546,127 @@ def stage_hadoop_read(check, session_id, target):
              scoped["folders_with_matches"] <= 1
              and scoped["total_matches"] <= literal["total_matches"])
     return file_name
+
+
+def stage_hadoop_new_tokens(check, session_id, target):
+    """new_tokens and read_log_lines(new_tokens_vs=...): what the target has that the rest lack.
+
+    The baseline is a set of tokens, so every count here is exact -- including
+    against OOVDetector, whose per-line score is the same count. The target is
+    a failure run and the baseline the eight PageRank_Normal runs; against all
+    54 other log folders it has almost nothing new, which would leave the
+    per-line checks comparing zeros.
+    """
+    check.section("4b. new_tokens / read_log_lines(new_tokens_vs)")
+    session = server.STORE.get(session_id)
+    session.vocabularies.clear()
+    normal = "PageRank_Normal*"
+
+    everything = server.new_tokens(session_id, target)
+    check.eq("the default baseline is every other log folder",
+             everything["n_comparison_folders"], HADOOP_FOLDERS - 1)
+    session.vocabularies.clear()
+
+    result = timed("new_tokens (builds the baseline)", server.new_tokens,
+                   session_id, target, comparison_folders=normal)
+    check.eq("a wildcard baseline is the 8 normal runs", result["n_comparison_folders"], 8)
+    check.ok("a smaller baseline leaves more new tokens",
+             result["new_token_occurrences"] >= everything["new_token_occurrences"],
+             f"{result['new_token_occurrences']} vs {everything['new_token_occurrences']}")
+    check.ok("new tokens are found", result["n_rows"] > 0,
+             f"{result['n_rows']} tokens on {result['lines_with_new_tokens']} lines")
+    counts = [row["count"] for row in result["rows"]]
+    check.ok("rows are sorted by count", counts == sorted(counts, reverse=True))
+    table = session.get_result(result["result_id"])[1]
+    check.eq("counts add up to the occurrences",
+             table["count"].sum(), result["new_token_occurrences"])
+    check.ok("a token is never on more lines than it occurs",
+             (table["n_lines"] <= table["count"]).all())
+
+    # Recount from the frame itself, independently of the vocabulary module.
+    def occurrences(frame):
+        return (frame.select(pl.col("e_words").explode().alias("token"))
+                     .join(table.select("token"), on="token", how="semi").height)
+    check.eq("...none of them occurs in any comparison folder",
+             occurrences(session.df.filter(pl.col("folder").str.starts_with("PageRank_Normal"))),
+             0)
+    check.eq("...and each occurs in the target as often as counted",
+             occurrences(session.df.filter(pl.col("folder") == target)),
+             result["new_token_occurrences"])
+    first = result["rows"][0]
+    at = server.read_log_lines(session_id, target, first["file_name"],
+                               offset=first["line_number"], limit=1)
+    check.eq("sample_line is the line read_log_lines has at that line_number",
+             at["lines"][0]["m_message"], first["sample_line"])
+
+    check.eq("the baseline vocabulary is kept in the session", len(session.vocabularies), 1)
+    again = timed("new_tokens (reuses it)", server.new_tokens,
+                  session_id, target, comparison_folders=normal)
+    check.eq("...and a repeat gives the same table", again["n_rows"], result["n_rows"])
+
+    # The per-line checks read the file the most common new token first shows up
+    # in, so there is something on its lines to compare.
+    file_name = first["file_name"]
+    check.info(f"target log folder {target}, file {file_name}")
+    lines = server.read_log_lines(session_id, target, file_name, limit=500, new_tokens_vs=normal)
+    check.ok("read_log_lines marks every line with its new tokens",
+             all("new_tokens" in line for line in lines["lines"]))
+    check.eq("...from the same kept baseline", len(session.vocabularies), 1)
+    only = server.read_log_lines(session_id, target, file_name, limit=500,
+                                 new_tokens_vs=normal, only_new=True)
+    numbers = [line["line_number"] for line in only["lines"]]
+    check.ok("only_new returns only lines with new tokens",
+             only["returned"] > 0 and all(line["new_tokens"] for line in only["lines"]),
+             f"{only['lines_with_new_tokens']} of {only['total_lines']} lines")
+    check.eq("...all of them, up to the limit",
+             only["returned"], min(500, only["lines_with_new_tokens"]))
+    check.ok("...in file order, with their real line numbers", numbers == sorted(set(numbers)))
+    marked = [line["line_number"] for line in lines["lines"] if line["new_tokens"]]
+    check.eq("...the same lines a plain read marks", numbers[:len(marked)], marked)
+
+    narrow = server.read_log_lines(session_id, target, file_name, limit=1,
+                                   new_tokens_vs=normal, match_file_name=True)
+    check.ok("a same-named-file baseline is narrower, so no fewer lines have new tokens",
+             narrow["lines_with_new_tokens"] >= lines["lines_with_new_tokens"],
+             f"{narrow['lines_with_new_tokens']} vs {lines['lines_with_new_tokens']}")
+
+    # anomaly_line_content trains on the same file in the comparison log folders
+    # -- the match_file_name baseline -- and hadoop has no label column, so
+    # OOVDetector's vocabulary is every baseline line.
+    scored = server.anomaly_line_content(session_id, target, comparison_folders=normal,
+                                         target_files=[file_name],
+                                         detectors=["OOVDetector"], max_rows=1)
+    oovd = session.get_result(scored["files"][0]["result_id"])[1]["OOVD_pred_ano_proba"]
+    vocab = vocabulary.baseline_vocabulary(
+        session.df, [name for name in session.folders if name.startswith("PageRank_Normal")],
+        by_file_name=True)
+    file_lines = session.df.filter((pl.col("folder") == target)
+                                   & (pl.col("file_name") == file_name))
+    per_line = vocabulary.annotate(file_lines, vocab)["new_tokens"].list.len().to_list()
+    mismatched = sum(int(score) != count for score, count in zip(oovd.to_list(), per_line))
+    check.ok("per line, the new-token count is OOVDetector's score",
+             len(per_line) == oovd.len() and mismatched == 0 and sum(per_line) > 0,
+             f"{len(per_line)} lines, {sum(per_line)} new tokens, {mismatched} differ")
+
+    if session.parsers:
+        parser = session.parsers[0]
+        events = server.new_tokens(session_id, target, comparison_folders=normal,
+                                   content_format=f"Parse-{parser}")
+        check.ok(f"with Parse-{parser} each token is an event id, one per line",
+                 all(row["count"] == row["n_lines"] for row in events["rows"]),
+                 f"{events['n_rows']} new event types")
+
+    check.raises("only_new needs new_tokens_vs", ValueError,
+                 server.read_log_lines, session_id, target, file_name, only_new=True)
+    check.raises("the target alone is no baseline", ValueError,
+                 server.new_tokens, session_id, target, comparison_folders=[target])
+    check.raises("raw-text content has no tokens", ValueError,
+                 server.new_tokens, session_id, target, content_format="Sklearn")
+
+    session.ensure_content(False, "Words")
+    check.eq("recomputing the words from other text drops the kept baselines",
+             len(session.vocabularies), 0)
+    session.ensure_content(True, "Words")
 
 
 def stage_hadoop_distance(check, session_id, target, file_name):
@@ -1529,6 +1651,21 @@ def stage_bgl(check, datasets_folder, workdir):
     check.eq("rows plus dropped rows account for every line",
              info["n_rows"] + info["dropped_rows"], BGL_LINES)
 
+    # Every slice is one uniquely named file, so the baseline has to be the
+    # other slices' whole content: there is no same-named file to match.
+    target = server.STORE.get(session_id).folders[0]
+    fresh = timed("new_tokens", server.new_tokens, session_id, target)
+    check.eq("the baseline is the other nine slices", fresh["n_comparison_folders"], 9)
+    check.ok("new tokens are found", fresh["n_rows"] > 0,
+             f"{fresh['n_rows']} tokens on {fresh['lines_with_new_tokens']:,} lines")
+    unmatched = server.new_tokens(session_id, target, match_file_name=True)
+    check.ok("with match_file_name a slice has nothing to compare with, and says so",
+             unmatched["n_rows"] == 0 and len(unmatched["skipped_files"]) == 1)
+    only = server.read_log_lines(session_id, target, fresh["rows"][0]["file_name"],
+                                 limit=5, new_tokens_vs="ALL", only_new=True)
+    check.ok("read_log_lines(only_new) finds those lines in the slice",
+             only["returned"] > 0 and all(line["new_tokens"] for line in only["lines"]))
+
     # L2 is the level a split file can be compared at: one file per log folder
     # means L1 has a single-valued axis and L3/L4 share no file names.
     result = timed("anomaly_folder_content", server.anomaly_folder_content,
@@ -1653,6 +1790,7 @@ def run_dataset_stages(check, stages, hadoop, hdfs, workdir):
             target = server.STORE.get(session_id).folders[0]
             file_name = run_stage(check, stage_hadoop_read, check, session_id, target)
             if file_name:
+                run_stage(check, stage_hadoop_new_tokens, check, session_id, target)
                 run_stage(check, stage_hadoop_distance,
                           check, session_id, target, file_name)
                 scored = run_stage(check, stage_hadoop_anomaly,

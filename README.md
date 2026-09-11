@@ -262,7 +262,7 @@ line**. Three question types across four granularities:
 
 Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
 `set_folder_names`, `register_mask_pattern`, `list_mask_patterns`, `remask_log_root`, `read_log_lines`,
-`search_log_lines`, `query_result`, and `run_config` for executing an existing LogDelta YAML.
+`search_log_lines`, `new_tokens`, `query_result`, and `run_config` for executing an existing LogDelta YAML.
 
 A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
@@ -274,6 +274,11 @@ but the table stays in the session, and `query_result` filters it: every log fol
 the ones whose name contains `MachineDown`, everything past a `rank_sum` you choose. Nothing is
 recomputed, and the plot tools lean on it hardest — a scatter has no "top N", so they return the
 range of each axis, where the target sits in it, and let you ask for the points you actually want.
+
+`new_tokens` lists the words a log folder has that its comparison folders never have — an error
+message nobody else logged, or an id the mask missed. No model is trained, so it stays fast on
+millions of lines, and `read_log_lines(new_tokens_vs=..., only_new=True)` shows the lines they are
+on. With `content_format="Parse-<Algorithm>"` the rows are new message types instead of new words.
 
 The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
 defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it

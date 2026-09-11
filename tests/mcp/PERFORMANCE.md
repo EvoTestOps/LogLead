@@ -45,6 +45,12 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | search_log_lines | hadoop_renamed | 0.013 | 0.006 | 0.017 | 0.018 |
 | search_log_lines | hdfs_balanced_5k | 0.006 | 0.007 | 0.011 | 0.015 |
 | search_log_lines | bgl_split_10 | 0.027 | 0.033 | 0.092 | 0.102 |
+| read_log_lines (new tokens) | hadoop_renamed | 0.094 | 0.184 | 0.307 | 0.656 |
+| read_log_lines (new tokens) | hdfs_balanced_5k | 0.048 | 0.054 | 0.136 | 0.231 |
+| read_log_lines (new tokens) | bgl_split_10 | 0.077 | 0.147 | 0.431 | 4.153 |
+| new_tokens | hadoop_renamed | 0.103 | 0.093 | 0.119 | 0.171 |
+| new_tokens | hdfs_balanced_5k | 0.051 | 0.051 | 0.065 | 0.083 |
+| new_tokens | bgl_split_10 | 0.107 | 0.130 | 0.356 | 0.958 |
 | query_result | hadoop_renamed | 0.003 | 0.002 | 0.003 | 0.003 |
 | query_result | hdfs_balanced_5k | 0.002 | 0.003 | 0.008 | 0.005 |
 | query_result | bgl_split_10 | 0.003 | 0.003 | 0.003 | 0.003 |
@@ -139,6 +145,12 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | search_log_lines | hadoop_renamed | 0.011 | 0.007 | 0.015 | 0.019 |
 | search_log_lines | hdfs_balanced_5k | 0.006 | 0.007 | 0.010 | 0.015 |
 | search_log_lines | bgl_split_10 | 0.021 | 0.030 | 0.067 | 0.105 |
+| read_log_lines (new tokens) | hadoop_renamed | 0.040 | 0.036 | 0.038 | 0.041 |
+| read_log_lines (new tokens) | hdfs_balanced_5k | 0.027 | 0.029 | 0.031 | 0.033 |
+| read_log_lines (new tokens) | bgl_split_10 | 0.052 | 0.065 | 0.136 | 0.240 |
+| new_tokens | hadoop_renamed | 0.077 | 0.063 | 0.086 | 0.079 |
+| new_tokens | hdfs_balanced_5k | 0.048 | 0.044 | 0.044 | 0.046 |
+| new_tokens | bgl_split_10 | 0.084 | 0.089 | 0.162 | 0.214 |
 | query_result | hadoop_renamed | 0.003 | 0.003 | 0.003 | 0.003 |
 | query_result | hdfs_balanced_5k | 0.002 | 0.002 | 0.005 | 0.007 |
 | query_result | bgl_split_10 | 0.003 | 0.003 | 0.002 | 0.003 |

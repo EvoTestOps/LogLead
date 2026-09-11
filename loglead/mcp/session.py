@@ -52,6 +52,10 @@ BASE_COLUMNS = ("m_message", "file_name", "orig_file_name", "folder")
 MAX_RESULTS = 50
 MAX_RESULT_ROWS = 1_000_000
 
+#: How many baseline vocabularies a session keeps for new-token lookups -- the
+#: distinct tokens of one set of comparison log folders each. See cached_vocabulary.
+MAX_VOCABULARIES = 8
+
 
 def default_cache_dir():
     """Cache root: ``$LOGLEAD_MCP_CACHE``, else ``$XDG_CACHE_HOME/loglead-mcp``."""
@@ -105,6 +109,10 @@ class Session:
     #: recomputing one takes seconds, and a stale id must fail loudly rather
     #: than resurrect a table from a previous process.
     results: "OrderedDict[str, tuple]" = dataclass_field(default_factory=OrderedDict)
+    #: key -> baseline vocabulary. See cached_vocabulary. In memory only, and
+    #: cleared whenever the text the tokens came from changes.
+    vocabularies: "OrderedDict[tuple, pl.DataFrame]" = dataclass_field(
+        default_factory=OrderedDict)
     _dirty: bool = False
 
     # -- introspection ----------------------------------------------------- #
@@ -223,6 +231,22 @@ class Session:
         self.results.move_to_end(result_id)
         return self.results[result_id]
 
+    def cached_vocabulary(self, key, build):
+        """The baseline vocabulary for ``key``: kept from an earlier call, else ``build()``.
+
+        Keeps the :data:`MAX_VOCABULARIES` most recently used. The signature is
+        the ``get_vocabulary`` hook of :mod:`loglead.delta.vocabulary`.
+        """
+        self.touch()
+        if key in self.vocabularies:
+            self.vocabularies.move_to_end(key)
+            return self.vocabularies[key]
+        vocab = build()
+        self.vocabularies[key] = vocab
+        while len(self.vocabularies) > MAX_VOCABULARIES:
+            self.vocabularies.popitem(last=False)
+        return vocab
+
     def ensure_content(self, mask, content_format):
         """Guarantee the column for ``content_format`` exists, and keep it.
 
@@ -251,6 +275,7 @@ class Session:
         if derived and self.content_source.get(target, field) != field:
             stale = [col for col in derived if col in self.df.columns]
             self.df = self.df.drop(stale)
+            self.vocabularies.clear()
             self._dirty = True
 
         before = set(self.df.columns)
@@ -520,6 +545,7 @@ class SessionStore:
 
         discarded = list(session.results)
         session.results.clear()
+        session.vocabularies.clear()
 
         # A restored frame already matches its parquet; flushing it would only
         # rewrite the file it was just read from.
@@ -557,6 +583,7 @@ class SessionStore:
             session.cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
 
         session.df = df
+        session.vocabularies.clear()  # keyed on folder names
         session.folder_names = folder_names
         session.keep_original_folder_name = keep_original
         session._dirty = True
