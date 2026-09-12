@@ -6,8 +6,8 @@ Four functions, mirroring LogDelta's config step names:
   names* only. Never opens a file.
 * ``distance_folder_content``  -- log folder vs log folder over log *text*.
 * ``distance_file_content``    -- file vs same-named file, across log folders.
-* ``distance_line_content``    -- line-by-line diff of one file across log
-  folders.
+* ``distance_line_content``    -- bucket-histogram comparison of one file's
+  lines against the same file in the comparison log folders.
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
@@ -21,6 +21,7 @@ for the comparison). Narrowing weakens ``rank_sum``/``zscore_sum`` the same way
 narrowing ``detectors`` does for the anomaly tools.
 """
 
+import numpy as np
 import polars as pl
 
 from .. import LogDistance
@@ -186,53 +187,220 @@ def distance_file_content(
     return pl.DataFrame(results), df
 
 
+#: Bucket resolutions to run when the caller names none, coarse first. Both are
+#: near-free, so the pair runs on every call.
+#:
+#: ``Minhash-<tokenizer>`` and ``Parse-<Algorithm>`` are valid resolutions but
+#: are left out of the default: both are a second pass over what the first one
+#: flagged. Measured on 94k BGL lines, ``Minhash-words`` costs about 2x the pair
+#: above and ``Minhash-3gram`` about 10x. ``Parse-Drain`` is slower again, and
+#: its template ids are not stable while ``max_clusters`` eviction is enabled in
+#: ``drain3.ini``.
+DEFAULT_RESOLUTIONS = ("Prefix-3", "Exact")
+
+
+def _resolution_format(resolution):
+    """Resolution name -> ``content_format``. ``Exact`` is the masked line itself."""
+    return "Sklearn" if resolution == "Exact" else resolution
+
+
+def _bucket_label(schema, field):
+    """One string per row to group on: a token list is joined, a scalar cast."""
+    if schema[field] == pl.List(pl.Utf8):
+        return pl.col(field).list.join(" ")
+    return pl.col(field).cast(pl.Utf8, strict=False)
+
+
+def _divergences(bucket_df, target_lines, comparison_lines):
+    """Distribution distances between the target and comparison histograms."""
+    p = bucket_df.get_column("target_n").to_numpy() / target_lines
+    q = bucket_df.get_column("comparison_n").to_numpy() / comparison_lines
+    m = (p + q) / 2
+    # 0 log 0 is 0 here, so each side contributes only over its own support.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        left = np.where(p > 0, p * np.log2(np.divide(p, m, where=m > 0)), 0.0)
+        right = np.where(q > 0, q * np.log2(np.divide(q, m, where=m > 0)), 0.0)
+    only = bucket_df.get_column("target_only").to_numpy()
+    return {
+        "n_buckets": bucket_df.height,
+        "n_target_only": int(only.sum()),
+        "target_only_mass": float(p[only].sum() * 100),
+        "js_divergence": float(0.5 * left.sum() + 0.5 * right.sum()),
+        "total_variation": float(0.5 * np.abs(p - q).sum()),
+        "target_lines": target_lines,
+        "comparison_lines": comparison_lines,
+    }
+
+
+def comparable_files(df, target_folder, comparison_folders="ALL", target_files="ALL"):
+    """File names the target log folder shares with at least one comparison one.
+
+    Files are matched by name across log folders, so a log root whose folders
+    share no file name has nothing to compare and this is empty. Cheap enough
+    to call before deciding whether to build a content representation at all.
+    """
+    target_df, comparison_folder_names = log_root.prepare_folders(
+        df, target_folder, comparison_folders
+    )
+    file_names = log_root.prepare_files(target_df, target_files)
+    shared = set(
+        df.filter(pl.col("folder").is_in(comparison_folder_names))
+        .get_column("file_name").unique().to_list()
+    )
+    return [name for name in file_names if name in shared]
+
+
+def _bucket_histogram(target_df, comparison_df, field, resolution):
+    """One row per bucket, with both sides' share of it."""
+    label = _bucket_label(target_df.schema, field)
+    target = (
+        target_df.select(label.alias("bucket"), "m_message")
+        .group_by("bucket")
+        .agg(pl.len().alias("target_n"),
+             pl.col("m_message").first().alias("representative_line"))
+    )
+    comparison = (
+        comparison_df.select(label.alias("bucket"), "m_message")
+        .group_by("bucket")
+        .agg(pl.len().alias("comparison_n"),
+             pl.col("m_message").first().alias("_comparison_line"))
+    )
+    n_target, n_comparison = target_df.height, comparison_df.height
+
+    buckets = (
+        target.join(comparison, on="bucket", how="full", coalesce=True)
+        .with_columns(pl.col("target_n").fill_null(0),
+                      pl.col("comparison_n").fill_null(0))
+        .with_columns(
+            pl.lit(resolution).alias("resolution"),
+            # A bucket only the comparison side has still needs a readable line.
+            pl.coalesce("representative_line", "_comparison_line")
+              .alias("representative_line"),
+            (pl.col("target_n") / n_target * 100).alias("target_pct"),
+            (pl.col("comparison_n") / n_comparison * 100).alias("comparison_pct"),
+        )
+        .with_columns(
+            (pl.col("target_pct") - pl.col("comparison_pct")).alias("delta_pct"),
+            (pl.col("comparison_n") == 0).alias("target_only"),
+        )
+        .select("resolution", "bucket", "representative_line",
+                "target_n", "target_pct", "comparison_n", "comparison_pct",
+                "delta_pct", "target_only")
+        # Target-only buckets first, then by how much of the target they hold:
+        # the planted-anomaly bucket outranks the singleton noise floor.
+        .sort(["target_only", "target_n", "delta_pct"], descending=[True, True, True])
+    )
+    return buckets, _divergences(buckets, n_target, n_comparison)
+
+
 def distance_line_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
+    resolutions=DEFAULT_RESOLUTIONS,
 ):
-    """Line-by-line diff of a file between the target log folder and others.
+    """Compare a file's distribution of line types against the same file elsewhere.
 
-    :returns: a list of ``(file_name, comparison_folder, diff_df)``. Each
-        ``diff_df`` has ``line_number``, ``difference`` (``' '`` unchanged,
-        ``'-'`` only in target, ``'+'`` only in comparison, ``'?'`` hint) and
-        ``content``.
+    Every line is bucketed by a cheap hash of its content, then the target's
+    bucket histogram is compared with the comparison log folders'. Buckets
+    holding target lines and no comparison lines are point anomalies; buckets
+    present on both sides at very different rates are distribution shifts,
+    which a nearest-neighbour distance could not see at all.
+
+    The comparison log folders are pooled into one baseline, so ``target_only``
+    means "absent from every comparison log folder", not from one of them.
+
+    :param resolutions: bucket granularities, **coarse first**. A coarse
+        resolution such as ``Prefix-3`` absorbs benign variation and so carries a
+        lower false-positive floor, but is blind to anomalies that differ only
+        late in the line; ``Exact`` is never blind but is noisier. Running both
+        is cheap, and the coarsest resolution that flags a bucket is the
+        strength of the evidence. Accepts any ``content_format``, plus
+        ``"Exact"`` for the masked line.
+
+        ``Minhash-<tokenizer>`` buckets by similarity rather than by position,
+        so unlike ``Prefix-3`` it is not blind to a late-line anomaly and unlike
+        ``Exact`` it tolerates masking that missed a parameter. It absorbs
+        probabilistically -- two lines share a bucket with probability
+        ``J ** rows`` -- so a bucket it does not flag is weaker evidence than
+        one a deterministic resolution does not flag. Opt in; see
+        :data:`DEFAULT_RESOLUTIONS` for the cost.
+    :returns: ``(per_file, summary_df, df)``. ``per_file`` is a list of
+        ``(target_folder, file_name, bucket_df)``, one entry per file present in
+        both the target and at least one comparison log folder; ``summary_df``
+        has one row per (file, resolution) with ``target_only_mass``,
+        ``js_divergence`` and ``total_variation``; ``df`` is the (possibly
+        enhanced) input frame, to be kept so a session avoids re-parsing.
     """
-    field = "e_message_normalized" if mask else "m_message"
-    if mask and field not in df.columns:
+    if not mask:
         raise ValueError(
-            "mask=True requires the log root to have been normalized. "
-            "Open the log root with mask=True."
+            "distance_line_content requires mask=True. On raw lines almost every "
+            "line is distinct, so nearly all of them fall into target-only "
+            "buckets and the histogram carries no signal."
+        )
+    resolutions = list(resolutions)
+    if not resolutions:
+        raise ValueError("At least one resolution is required.")
+
+    # Before materializing anything: prepare_content runs over the whole log
+    # root, while the analysis only ever reads files the target shares with a
+    # comparison log folder. On a log root where no name is shared -- ten slices
+    # of one split file, say -- that work would buy an empty result.
+    comparable = comparable_files(df, target_folder, comparison_folders, target_files)
+    if not comparable:
+        return [], pl.DataFrame(), df
+
+    fields = {}
+    for resolution in resolutions:
+        df, field = log_root.prepare_content(df, mask, _resolution_format(resolution))
+        fields[resolution] = field
+
+    # After prepare_content, so these views carry the resolution columns.
+    target_df, comparison_folder_names = log_root.prepare_folders(
+        df, target_folder, comparison_folders
+    )
+    comparison_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
+
+    per_file, summaries = [], []
+    for file_name in comparable:
+        target_lines = target_df.filter(pl.col("file_name") == file_name)
+        comparison_lines = comparison_df.filter(pl.col("file_name") == file_name)
+        # No comparison log folder has a file of this name, so there is nothing
+        # to judge it against -- the same rule distance_file_content applies.
+        if target_lines.height == 0 or comparison_lines.height == 0:
+            continue
+
+        frames = []
+        for resolution in resolutions:
+            buckets, summary = _bucket_histogram(
+                target_lines, comparison_lines, fields[resolution], resolution
+            )
+            frames.append(buckets)
+            summaries.append({
+                "target_folder": target_folder,
+                "file_name": file_name,
+                "resolution": resolution,
+                "comparison_folders": " ".join(comparison_folder_names),
+                **summary,
+            })
+        per_file.append(
+            (target_folder, file_name, pl.concat(frames, how="vertical_relaxed"))
         )
 
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
-    file_names = log_root.prepare_files(target_df, target_files)
-    other_folders_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
-
-    diffs = []
-    for other_folder in comparison_folder_names:
-        other_folder_df = other_folders_df.filter(pl.col("folder") == other_folder)
-        for file_name in file_names:
-            target_file_df = target_df.filter(pl.col("file_name") == file_name)
-            other_file_df = other_folder_df.filter(pl.col("file_name") == file_name)
-            if other_file_df.height == 0:
-                continue
-            distance = LogDistance(target_file_df, other_file_df, field=field)
-            diffs.append((file_name, other_folder, distance.diff_lines()))
-
-    return diffs
+    return per_file, pl.DataFrame(summaries), df
 
 
-def summarize_diff(diff_df):
-    """Counts per ``difference`` marker, for a compact tool result."""
-    counts = (
-        diff_df.group_by("difference")
-        .agg(pl.len().alias("n"))
-        .to_dict(as_series=False)
+def summarize_line_buckets(bucket_df):
+    """Per-resolution counts for one file, for a compact tool result."""
+    return (
+        bucket_df.group_by("resolution", maintain_order=True)
+        .agg(
+            pl.len().alias("buckets"),
+            pl.col("target_only").sum().alias("target_only_buckets"),
+            pl.col("target_n").filter(pl.col("target_only")).sum()
+              .alias("target_only_lines"),
+            pl.col("target_n").sum().alias("target_lines"),
+        )
+        .with_columns(
+            (pl.col("target_only_lines") / pl.col("target_lines") * 100)
+            .alias("target_only_pct")
+        )
     )
-    by_marker = dict(zip(counts["difference"], counts["n"]))
-    return {
-        "unchanged": by_marker.get(" ", 0),
-        "only_in_target": by_marker.get("-", 0),
-        "only_in_comparison": by_marker.get("+", 0),
-        "hints": by_marker.get("?", 0),
-        "total": diff_df.height,
-    }

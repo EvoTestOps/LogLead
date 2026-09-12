@@ -1306,6 +1306,17 @@ def distance_file_content(
     )
 
 
+_LINE_BUCKET_NOTE = (
+    "Each row is a group of look-alike lines, not a line. target_only=true "
+    "means no comparison log folder has any line in that bucket, so those are "
+    "the point anomalies; a large delta_pct on a shared bucket is a frequency "
+    "shift, which a line-by-line comparison cannot see at all. Rank by the "
+    "coarsest resolution that flags a bucket: a coarse resolution absorbs benign "
+    "variation and so has a lower false-positive floor, but is blind to "
+    "anomalies that differ only late in the line."
+)
+
+
 @tool
 def distance_line_content(
     session_id: str,
@@ -1313,58 +1324,84 @@ def distance_line_content(
     comparison_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     mask: bool = True,
-    max_changed_lines: int = 40,
+    resolutions: Optional[Sequence[str]] = None,
+    max_rows: int = 25,
 ) -> dict:
-    """Line-by-line diff of a file between the target log folder and others.
+    """Which kinds of line does this file have that the other do not have?
+    Groups / clusters lines by their content. Allows two use cases
+    1) Comparing target vs comparison on group frequencies which indicate 
+    execution pattern anomalies  2) Finding groups that mainly appear in target 
+    which can indicate point anomalies, but also groups that mainly appear in 
+    comparison which can indicate point anomaly of missing an excution. 
 
-    Unlike the other distance_* tools, this does not vectorize and score --
-    it runs a text diff, which only reads well between two specific log
-    folders. Use it once the other measures have narrowed things down to a
-    small comparison set, not as a first pass over many log folders.
-
-    Returns change counts per comparison plus a sample of the differing lines;
-    the complete diff for each pair is written to disk.
+    Grouping can be done at different resolutions, e.g. prefix token match
+    (fastest), exact masked line (also fast, but needs accurate masking), or
+    minhash over character 3-grams (slowest, but tolerates inaccurate masking).
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
         comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
-            One diff is produced per comparison log folder per file, so narrow this.
+            These are pooled into one baseline, so widening this makes
+            target_only stricter rather than producing more output.
         target_files: "ALL", a list of file names, an int N, or a "name*" wildcard.
-        mask: Diff the masked text, which hides timestamp and id churn.
-        max_changed_lines: Changed lines sampled per pair.
+        mask: Must be true. On raw lines nearly every line is distinct, so
+            almost all of them land in target-only buckets and say nothing.
+        resolutions: Leave unset for ["Prefix-3", "Exact"], coarse first. Both
+            are near-free, so the pair runs on every call. Also accepts:
+            "Prefix-<k>" for any k;
+            "Minhash-3gram" or "Minhash-words" to group  look-alike lines by a
+            minhash signature, which tolerates masking that missed a parameter
+            and, unlike Prefix-<k>, is not blind to a late-line anomaly.
+             "Minhash-words" costs about 2x and "Minhash-3gram" about 10x,
+            so run them as a second pass over what the default flagged. Takes
+            optional "-r<rows>" (more rows, fewer collisions; default 4) and
+            "-s<seed>" (default 0) suffixes, e.g. "Minhash-3gram-r6-s7";
+            "Parse-<Algorithm>" Parse-Drain, Parse-Tip to bucket by mined template.
+        max_rows: Rows returned inline, target-only buckets first and largest
+            first within that.
     """
     session = STORE.get(session_id)
-    diffs = distance.distance_line_content(
-        session.df, target_folder, comparison_folders, target_files, mask
+    resolutions = list(resolutions) if resolutions else list(distance.DEFAULT_RESOLUTIONS)
+    # ensure_content materializes a resolution column over the whole log root,
+    # so check there is something to compare before paying for it -- otherwise a
+    # log root whose folders share no file name pays in full for an empty result.
+    comparable = distance.comparable_files(
+        session.df, target_folder, comparison_folders, target_files
     )
+    # Per resolution, so the session's own staleness guard drops a derived
+    # column that was built from a different source column.
+    for resolution in (resolutions if comparable else []):
+        session.ensure_content(mask, distance._resolution_format(resolution))
 
-    comparisons = []
-    for file_name, other_folder, diff_df in diffs:
+    per_file, summary, session.df = distance.distance_line_content(
+        session.df, target_folder, comparison_folders, target_files, mask, resolutions,
+    )
+    session.flush()
+
+    files, frames = [], []
+    for _, file_name, bucket_df in per_file:
         artifact = _write(
-            session, diff_df, "dis", 4, target_folder=target_folder,
-            comparison_folder=other_folder, mask=mask, file=file_name,
+            session, bucket_df, "dis", 4, target_folder=target_folder,
+            comparison_folder="Many", mask=mask, file=file_name,
         )
-        changed = diff_df.filter(pl.col("difference").is_in(["-", "+"]))
-        comparisons.append({
+        files.append({
             "file_name": file_name,
-            "comparison_folder": other_folder,
-            "summary": distance.summarize_diff(diff_df),
-            "changed_sample": changed.head(max_changed_lines).to_dicts(),
-            "changed_truncated": changed.height > max_changed_lines,
+            "resolutions": distance.summarize_line_buckets(bucket_df).to_dicts(),
             "artifact": artifact,
         })
+        frames.append(bucket_df.with_columns(pl.lit(file_name).alias("file_name")))
 
-    return {
-        "session_id": session_id,
-        "analysis": "distance_line_content",
-        "level": 4,
-        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
-                   "target_files": target_files, "mask": mask},
-        "n_comparisons": len(comparisons),
-        "comparisons": comparisons,
-        "notes": ["'-' is present only in the target log folder, '+' only in the comparison."],
-    }
+    buckets = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
+    return formatting.result(
+        session, "distance_line_content", 4,
+        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+         "target_files": target_files, "mask": mask, "resolutions": resolutions},
+        buckets, None, max_rows, sort_by=["target_only", "target_n"],
+        notes=[_LINE_BUCKET_NOTE],
+        extra={"n_files": len(files), "files": files,
+               "summary": summary.to_dicts() if summary.height else []},
+    )
 
 
 # --------------------------------------------------------------------------- #

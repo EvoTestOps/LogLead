@@ -77,9 +77,9 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | distance_file_content | hadoop_renamed | 0.775 | 1.621 | 8.271 | 16.9 |
 | distance_file_content | hdfs_balanced_5k | 0.019 | 0.025 | 0.021 | 0.023 |
 | distance_file_content | bgl_split_10 | 0.034 | 0.052 | 0.167 | 0.275 |
-| distance_line_content | hadoop_renamed | 1.388 | 0.102 | 0.359 | 1.284 |
-| distance_line_content | hdfs_balanced_5k | 0.724 | 1.588 | 8.571 | 16.2 |
-| distance_line_content | bgl_split_10 | 0.089 | 0.117 | 0.246 | 0.327 |
+| distance_line_content | hadoop_renamed | 0.158 | 0.237 | 0.255 | 0.734 |
+| distance_line_content | hdfs_balanced_5k | 0.038 | 0.050 | 0.076 | 0.102 |
+| distance_line_content | bgl_split_10 | 0.071 | 0.096 | 0.283 | 0.536 |
 
 ## Table A3 -- Anomaly tools
 
@@ -177,9 +177,9 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | distance_file_content | hadoop_renamed | 0.912 | 1.665 | 7.704 | 16.7 |
 | distance_file_content | hdfs_balanced_5k | 0.015 | 0.019 | 0.019 | 0.022 |
 | distance_file_content | bgl_split_10 | 0.032 | 0.050 | 0.162 | 0.273 |
-| distance_line_content | hadoop_renamed | 1.280 | 0.110 | 0.404 | 1.131 |
-| distance_line_content | hdfs_balanced_5k | 0.761 | 1.558 | 8.185 | 16.6 |
-| distance_line_content | bgl_split_10 | 0.108 | 0.140 | 0.250 | 0.378 |
+| distance_line_content | hadoop_renamed | 0.158 | 0.228 | 0.220 | 0.207 |
+| distance_line_content | hdfs_balanced_5k | 0.041 | 0.045 | 0.065 | 0.078 |
+| distance_line_content | bgl_split_10 | 0.074 | 0.104 | 0.269 | 0.499 |
 
 ## Table B3 -- Anomaly tools
 
@@ -220,7 +220,7 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call. `distance_folder_filename` (jaccard/overlap distance over file names only) and `distance_line_content` (a text diff, no measures) are not broken down further -- neither computes multiple vectorized measures in one pass.
+The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call. `distance_folder_filename` (jaccard/overlap distance over file names only) and `distance_line_content` (bucket histograms, which take resolutions rather than measures) are not broken down further -- neither computes multiple vectorized measures in one pass.
 
 # Part C -- cold (first call)
 

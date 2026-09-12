@@ -719,19 +719,53 @@ def stage_hadoop_distance(check, session_id, target, file_name):
 
     l4 = timed("distance_line_content", server.distance_line_content,
                session_id, target, comparison_folders=2, target_files=[file_name],
-               max_changed_lines=3)
-    check.eq("one diff per (file, comparison folder)", l4["n_comparisons"], 2)
-    comparison = l4["comparisons"][0]
-    check.eq("the diff summary adds up",
-             comparison["summary"]["unchanged"] + comparison["summary"]["only_in_target"]
-             + comparison["summary"]["only_in_comparison"] + comparison["summary"]["hints"],
-             comparison["summary"]["total"])
-    check.ok("the changed sample is capped", len(comparison["changed_sample"]) <= 3)
-    check.ok("sampled lines are marked - or +",
-             all(line["difference"] in ("-", "+") for line in comparison["changed_sample"]))
-    check.ok("each diff was written out", os.path.isfile(comparison["artifact"]))
-    check.ok("the note explains the markers",
-             any("only in the target" in note for note in l4["notes"]))
+               max_rows=5)
+    check.eq("one entry for the one target file", l4["n_files"], 1)
+    entry = l4["files"][0]
+    check.eq("both default resolutions ran", len(entry["resolutions"]), 2)
+    check.eq("coarse resolution first",
+             [row["resolution"] for row in entry["resolutions"]], ["Prefix-3", "Exact"])
+    check.ok("a coarse bucket set is smaller than an exact one",
+             entry["resolutions"][0]["buckets"] <= entry["resolutions"][1]["buckets"],
+             f"{entry['resolutions'][0]['buckets']} <= {entry['resolutions'][1]['buckets']}")
+    check.ok("target-only buckets never outnumber all buckets",
+             all(row["target_only_buckets"] <= row["buckets"]
+                 for row in entry["resolutions"]))
+    check.ok("the bucket table was written out", os.path.isfile(entry["artifact"]))
+    check.ok("rows are buckets carrying a readable line",
+             all("representative_line" in row and "target_only" in row
+                 for row in l4["rows"]), str(list(l4["rows"][0])))
+    check.ok("target-only buckets sort first",
+             [row["target_only"] for row in l4["rows"]]
+             == sorted((row["target_only"] for row in l4["rows"]), reverse=True))
+    check.ok("summary carries the distribution distances",
+             all("js_divergence" in row and "target_only_mass" in row
+                 for row in l4["summary"]))
+    check.ok("the note explains what a bucket is",
+             any("look-alike lines" in note for note in l4["notes"]),
+             str(l4["notes"]))
+    check.raises("mask=False is refused", ValueError,
+                 server.distance_line_content, session_id, target,
+                 comparison_folders=2, target_files=[file_name], mask=False)
+
+    l4m = timed("distance_line_content (minhash)", server.distance_line_content,
+                session_id, target, comparison_folders=2, target_files=[file_name],
+                resolutions=["Minhash-3gram-r4", "Exact"], max_rows=5)
+    minhash_entry = l4m["files"][0]
+    check.eq("the opt-in minhash resolution ran",
+             [row["resolution"] for row in minhash_entry["resolutions"]],
+             ["Minhash-3gram-r4", "Exact"])
+    # A signature is a function of the masked line, so identical lines always
+    # collide and minhash can only ever merge buckets Exact kept apart.
+    check.ok("minhash never splits what Exact groups",
+             minhash_entry["resolutions"][0]["buckets"]
+             <= minhash_entry["resolutions"][1]["buckets"],
+             f"{minhash_entry['resolutions'][0]['buckets']} <= "
+             f"{minhash_entry['resolutions'][1]['buckets']}")
+    check.raises("an unknown minhash tokenizer is refused", ValueError,
+                 server.distance_line_content, session_id, target,
+                 comparison_folders=2, target_files=[file_name],
+                 resolutions=["Minhash-bigram"])
     return l2
 
 

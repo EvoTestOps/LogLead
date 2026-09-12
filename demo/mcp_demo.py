@@ -295,13 +295,16 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
                                        target_files=2, content_format="Words")
     show(res, ["file_name", "comparison_folder", "cosine", "zscore_sum"])
 
-    banner("L4 distance_line_content -- the actual diff")
-    res = server.distance_line_content("demo", target, comparison_folders=1,
-                                       target_files=1, max_changed_lines=3)
-    for comp in res["comparisons"]:
-        print(f"   {comp['file_name']} vs {comp['comparison_folder']}: {comp['summary']}")
-        for line in comp["changed_sample"]:
-            print(f"     {line['difference']} {line['content'][:80]}")
+    banner("L4 distance_line_content -- which kinds of line are new here?")
+    res = server.distance_line_content("demo", target, comparison_folders=3,
+                                       target_files=1)
+    for entry in res["files"]:
+        for row in entry["resolutions"]:
+            print(f"   {entry['file_name']} @ {row['resolution']}: "
+                  f"{row['buckets']} buckets, {row['target_only_buckets']} target-only "
+                  f"({row['target_only_pct']:.2f}% of lines)")
+    show(res, ["resolution", "target_pct", "comparison_pct", "target_only",
+               "representative_line"])
 
     # ------------------------------------------------------------- anomaly --
     banner("L1 anomaly_folder_filename -- score log folders by their file sets")

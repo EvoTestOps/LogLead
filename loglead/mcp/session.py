@@ -270,9 +270,14 @@ class Session:
             )
 
         field = "e_message_normalized" if mask else "m_message"
-        target = log_root.content_column(mask, content_format)
         derived = log_root.derived_columns(content_format)
-        if derived and self.content_source.get(target, field) != field:
+        # Every derived column, not just the one the format is named for. A
+        # format can build others as a side effect -- Prefix-<k> also produces
+        # e_words -- and a column whose source was never recorded is
+        # indistinguishable from one built from the current source, so it would
+        # be handed back silently. Checking the whole set is also what makes
+        # recording the whole set below truthful: they are all rebuilt together.
+        if derived and any(self.content_source.get(col, field) != field for col in derived):
             stale = [col for col in derived if col in self.df.columns]
             self.df = self.df.drop(stale)
             self.vocabularies.clear()
@@ -283,8 +288,8 @@ class Session:
         if set(df.columns) != before:
             self.df = df
             self._dirty = True
-        if derived:
-            self.content_source[target] = field
+        for col in derived:
+            self.content_source[col] = field
         return self.df, resolved_field
 
     def flush(self):
@@ -527,14 +532,25 @@ class SessionStore:
             # bookkeeping ensure_content keeps. A column whose source was never
             # recorded is treated as masked-derived: dropping one that was not
             # only costs a recompute, while keeping one that was is a wrong answer.
-            formats = ["Words", "3grams"] + [f"Parse-{parser}" for parser in session.parsers]
+            # Prefix widths and minhash configurations are not tracked in session
+            # state, so they are read back off the columns themselves.
+            widths = sorted({column.rsplit("_", 1)[1] for column in session.df.columns
+                             if column.startswith("e_words_prefix_")})
+            formats = (["Words", "3grams"]
+                       + [f"Prefix-{width}" for width in widths]
+                       + log_root.minhash_formats(session.df.columns)
+                       + [f"Parse-{parser}" for parser in session.parsers])
             for content_format in formats:
                 target = log_root.content_column(True, content_format)
                 if session.content_source.get(target) == "m_message":
                     continue
-                dropped.extend(column for column in log_root.derived_columns(content_format)
-                               if column in session.df.columns)
-                session.content_source.pop(target, None)
+                derived = log_root.derived_columns(content_format)
+                # Formats overlap -- Words and Prefix-<k> share e_words -- and
+                # drop() rejects a repeated name.
+                dropped.extend(column for column in derived
+                               if column in session.df.columns and column not in dropped)
+                for column in derived:
+                    session.content_source.pop(column, None)
             df = session.df.drop(dropped) if dropped else session.df
             session.df = EventLogEnhancer(df).normalize(regexs=resolved)
 

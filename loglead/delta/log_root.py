@@ -35,6 +35,71 @@ CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 #: resolved dynamically against :class:`EventLogEnhancer`.
 _PARSE_PREFIX = "Parse-"
 
+#TODO Lot of stuff about the line comparer in logroot. Clearn up needed
+#: The ``Prefix-<k>`` family: the first k words of a line, as one string. Built
+#: by ``EventLogEnhancer.words(prefixes=[k])`` in the same pass as ``e_words``.
+_PREFIX_PREFIX = "Prefix-"
+
+
+def _prefix_width(content_format):
+    """Parse the ``k`` out of ``Prefix-<k>``."""
+    raw = content_format.split("-", 1)[1]
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(
+            f"Prefix content format needs a positive word count, got {content_format!r}"
+        )
+    return int(raw)
+
+
+#: The ``Minhash-<tokenizer>`` family: one band of minhash values over a line's
+#: tokens, as one string. Built by ``EventLogEnhancer.minhash()``. Accepts
+#: optional ``-r<rows>`` and ``-s<seed>`` suffixes, e.g. ``Minhash-3gram-r6-s7``.
+_MINHASH_PREFIX = "Minhash-"
+
+#: Applied to a bare ``Minhash-<tokenizer>``. Fixed rather than random so a
+#: signature means the same thing across runs and across cached sessions.
+_MINHASH_DEFAULT_ROWS = 4
+_MINHASH_DEFAULT_SEED = 0
+
+
+def _minhash_config(content_format):
+    """Parse ``Minhash-<tokenizer>[-r<rows>][-s<seed>]`` into its three parts."""
+    parts = content_format.split("-")[1:]
+    tokenizer = parts[0].lower() if parts else ""
+    if tokenizer not in EventLogEnhancer.MINHASH_TOKENIZERS:
+        raise ValueError(
+            f"Unknown minhash tokenizer {tokenizer!r} in {content_format!r}. Valid "
+            f"options: {', '.join(sorted(EventLogEnhancer.MINHASH_TOKENIZERS))}."
+        )
+    rows, seed = _MINHASH_DEFAULT_ROWS, _MINHASH_DEFAULT_SEED
+    for part in parts[1:]:
+        key, value = part[:1].lower(), part[1:]
+        if key == "r" and value.isdigit() and int(value) >= 1:
+            rows = int(value)
+        elif key == "s" and value.isdigit():
+            seed = int(value)
+        else:
+            raise ValueError(
+                f"Unrecognized part {part!r} in {content_format!r}. Expected "
+                f"Minhash-<tokenizer>[-r<rows>][-s<seed>], e.g. 'Minhash-3gram-r4-s0'."
+            )
+    return tokenizer, rows, seed
+
+
+def _minhash_column(tokenizer, rows, seed):
+    return f"e_minhash_{tokenizer}_r{rows}_s{seed}"
+
+
+def minhash_formats(columns):
+    """``Minhash-`` format names for every minhash column in ``columns``.
+
+    The row count and seed live only in the column name, so this is how a
+    reopened session recovers which signatures a cached frame is carrying.
+    """
+    return sorted(_MINHASH_PREFIX + "-".join(column.split("_")[2:])
+                  for column in columns if column.startswith("e_minhash_"))
+
+
 #: How a log root may be read, keyed by name. ``"auto"`` detects the format per
 #: file; every other entry pins one format family for the whole log root.
 #:
@@ -927,11 +992,16 @@ def content_column(mask, content_format):
         return "file_name"
     if content_format == "Sklearn":
         return "e_message_normalized" if mask else "m_message"
+    if content_format.startswith(_PREFIX_PREFIX):
+        return f"e_words_prefix_{_prefix_width(content_format)}"
+    if content_format.startswith(_MINHASH_PREFIX):
+        return _minhash_column(*_minhash_config(content_format))
     if content_format.startswith(_PARSE_PREFIX):
         return f"e_event_{content_format.split('-', 1)[1].lower()}_id"
     raise ValueError(
         f"Unrecognized content format: {content_format}. "
-        f"Valid options: {', '.join(CONTENT_FORMATS)}, Parse-<Algorithm>"
+        f"Valid options: {', '.join(CONTENT_FORMATS)}, Prefix-<k>, "
+        f"Minhash-<tokenizer>, Parse-<Algorithm>"
     )
 
 
@@ -947,6 +1017,14 @@ def derived_columns(content_format):
         return ["e_trigrams", "e_trigrams_len"]
     if content_format in ("Sklearn", "File"):
         return []
+    if content_format.startswith(_PREFIX_PREFIX):
+        # words() emits e_words/e_words_len alongside the prefix, in one pass.
+        return [f"e_words_prefix_{_prefix_width(content_format)}", "e_words", "e_words_len"]
+    if content_format.startswith(_MINHASH_PREFIX):
+        # minhash() builds the token column it reads, so that comes too.
+        tokenizer, rows, seed = _minhash_config(content_format)
+        token_column = EventLogEnhancer.MINHASH_TOKENIZERS[tokenizer]
+        return [_minhash_column(tokenizer, rows, seed), token_column, f"{token_column}_len"]
     if content_format.startswith(_PARSE_PREFIX):
         parser = content_format.split("-", 1)[1].lower()
         return [
@@ -985,6 +1063,13 @@ def prepare_content(df, mask, content_format):
         return df, "file_name"
     if content_format == "Sklearn":
         return df, field
+    if content_format.startswith(_PREFIX_PREFIX):
+        width = _prefix_width(content_format)
+        return enhancer.words(field, prefixes=[width]), f"e_words_prefix_{width}"
+    if content_format.startswith(_MINHASH_PREFIX):
+        tokenizer, rows, seed = _minhash_config(content_format)
+        return (enhancer.minhash(field, tokenizer=tokenizer, rows=rows, seed=seed),
+                _minhash_column(tokenizer, rows, seed))
     if content_format.startswith(_PARSE_PREFIX):
         parse_type = content_format.split("-", 1)[1].lower()
         method_name = f"parse_{parse_type}"
@@ -1000,7 +1085,8 @@ def prepare_content(df, mask, content_format):
         return method(field), f"e_event_{parse_type}_id"
     raise ValueError(
         f"Unrecognized content format: {content_format}. "
-        f"Valid options: {', '.join(CONTENT_FORMATS)}, Parse-<Algorithm>"
+        f"Valid options: {', '.join(CONTENT_FORMATS)}, Prefix-<k>, "
+        f"Minhash-<tokenizer>, Parse-<Algorithm>"
     )
 
 
