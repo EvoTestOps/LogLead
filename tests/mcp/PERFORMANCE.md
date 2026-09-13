@@ -77,9 +77,9 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | distance_file_content | hadoop_renamed | 0.775 | 1.621 | 8.271 | 16.9 |
 | distance_file_content | hdfs_balanced_5k | 0.019 | 0.025 | 0.021 | 0.023 |
 | distance_file_content | bgl_split_10 | 0.034 | 0.052 | 0.167 | 0.275 |
-| distance_line_content | hadoop_renamed | 1.388 | 0.102 | 0.359 | 1.284 |
-| distance_line_content | hdfs_balanced_5k | 0.724 | 1.588 | 8.571 | 16.2 |
-| distance_line_content | bgl_split_10 | 0.089 | 0.117 | 0.246 | 0.327 |
+| distance_line_content | hadoop_renamed | 0.101 | 0.121 | 0.194 | 0.367 |
+| distance_line_content | hdfs_balanced_5k | 0.034 | 0.036 | 0.062 | 0.063 |
+| distance_line_content | bgl_split_10 | 0.069 | 0.085 | 0.250 | 0.449 |
 
 ## Table A3 -- Anomaly tools
 
@@ -177,9 +177,9 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | distance_file_content | hadoop_renamed | 0.912 | 1.665 | 7.704 | 16.7 |
 | distance_file_content | hdfs_balanced_5k | 0.015 | 0.019 | 0.019 | 0.022 |
 | distance_file_content | bgl_split_10 | 0.032 | 0.050 | 0.162 | 0.273 |
-| distance_line_content | hadoop_renamed | 1.280 | 0.110 | 0.404 | 1.131 |
-| distance_line_content | hdfs_balanced_5k | 0.761 | 1.558 | 8.185 | 16.6 |
-| distance_line_content | bgl_split_10 | 0.108 | 0.140 | 0.250 | 0.378 |
+| distance_line_content | hadoop_renamed | 0.101 | 0.090 | 0.205 | 0.358 |
+| distance_line_content | hdfs_balanced_5k | 0.037 | 0.042 | 0.063 | 0.069 |
+| distance_line_content | bgl_split_10 | 0.065 | 0.080 | 0.289 | 0.361 |
 
 ## Table B3 -- Anomaly tools
 
@@ -220,7 +220,7 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call. `distance_folder_filename` (jaccard/overlap distance over file names only) and `distance_line_content` (a text diff, no measures) are not broken down further -- neither computes multiple vectorized measures in one pass.
+The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
 
 # Part C -- cold (first call)
 
@@ -305,6 +305,24 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_file_content (containment) | hadoop_renamed | 0.234 | 1.004 | 4.454 | 4.910 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.025 | 0.026 | 0.028 | 0.032 |
 | distance_file_content (containment) | bgl_split_10 | 0.056 | 0.067 | 0.178 | 0.326 |
+| distance_line_content (Exact) | hadoop_renamed | 0.136 | 0.097 | 0.163 | 2.292* |
+| distance_line_content (Exact) | hdfs_balanced_5k | 0.032 | 0.046 | 0.083 | 0.094 |
+| distance_line_content (Exact) | bgl_split_10 | 0.073 | 0.086 | 0.275 | 0.513 |
+| distance_line_content (Prefix) | hadoop_renamed | 0.085 | 0.073 | 0.147 | 0.365 |
+| distance_line_content (Prefix) | hdfs_balanced_5k | 0.036 | 0.037 | 0.053 | 0.065 |
+| distance_line_content (Prefix) | bgl_split_10 | 0.076 | 0.086 | 0.258 | 0.433 |
+| distance_line_content (Minhash) | hadoop_renamed | 0.120 | 0.114 | 0.200 | 1.460 |
+| distance_line_content (Minhash) | hdfs_balanced_5k | 0.034 | 0.035 | 0.058 | 0.062 |
+| distance_line_content (Minhash) | bgl_split_10 | 0.072 | 0.087 | 0.242 | 0.513 |
+
+\* `distance_line_content (Exact)` on `hadoop_renamed` at 100% looks like an outlier (2.292s cold
+vs. 0.380s warm -- see Table D2), but it isn't about `Exact`. `Exact`
+is the first of the three bucket measures run, so its cold call pays the one-time cost of
+materializing the `Words` content column for the whole log root. `Prefix`'s and `Minhash`'s cold
+cells then reuse that cached column, which is why their own cold numbers stay low. The fair
+per-measure comparison is the warm numbers in Table D2, not the cold ones here. Maybe worth eliminating
+this measurement-order artifact later (e.g. by resetting the content cache before each measure's
+cold cell).
 
 # Part D -- warm (repeated call)
 
@@ -389,3 +407,12 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_file_content (containment) | hadoop_renamed | 0.219 | 0.745 | 3.306 | 4.669 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.026 | 0.025 | 0.027 | 0.028 |
 | distance_file_content (containment) | bgl_split_10 | 0.057 | 0.062 | 0.200 | 0.329 |
+| distance_line_content (Exact) | hadoop_renamed | 0.078 | 0.077 | 0.195 | 0.380 |
+| distance_line_content (Exact) | hdfs_balanced_5k | 0.034 | 0.040 | 0.063 | 0.068 |
+| distance_line_content (Exact) | bgl_split_10 | 0.070 | 0.089 | 0.253 | 0.443 |
+| distance_line_content (Prefix) | hadoop_renamed | 0.084 | 0.090 | 0.125 | 0.313 |
+| distance_line_content (Prefix) | hdfs_balanced_5k | 0.034 | 0.037 | 0.062 | 0.062 |
+| distance_line_content (Prefix) | bgl_split_10 | 0.072 | 0.083 | 0.221 | 0.477 |
+| distance_line_content (Minhash) | hadoop_renamed | 0.115 | 0.118 | 0.183 | 0.797 |
+| distance_line_content (Minhash) | hdfs_balanced_5k | 0.032 | 0.039 | 0.053 | 0.063 |
+| distance_line_content (Minhash) | bgl_split_10 | 0.069 | 0.082 | 0.226 | 0.420 |

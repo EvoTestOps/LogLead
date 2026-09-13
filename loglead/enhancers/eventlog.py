@@ -39,21 +39,25 @@ class EventLogEnhancer:
             raise ValueError(f"Missing prerequisites for enrichment: {', '.join(prerequisites)}")
 
     # Function-based enricher to split messages into words
-    def words(self, column="m_message"):
+    def words(self, column="m_message", reparse=False):
+        """Split messages into words as ``e_words``.
+
+        :param reparse: recompute even when the output columns already exist.
+            Without it this short-circuits on column name alone, so a second call
+            naming a different ``column`` silently returns the first result.
+        """
         self._handle_prerequisites([column])
-        if "e_words" not in self.df.columns:
-            self.df = self.df.with_columns(pl.col(column).str.split(by=" ").alias("e_words"))
+        if reparse or "e_words" not in self.df.columns:
+            split = pl.col(column).str.split(by=" ")
             self.df = self.df.with_columns(
-                e_words_len = pl.col("e_words").list.len(),
+                split.alias("e_words"), split.list.len().alias("e_words_len")
             )
-        else:
-            print("e_words already found")
         return self.df
 
     # Function-based enricher to extract alphanumeric tokens from messages
-    def alphanumerics(self, column="m_message"):
+    def alphanumerics(self, column="m_message", reparse=False):
         self._handle_prerequisites([column])
-        if "e_alphanumerics" not in self.df.columns:
+        if reparse or "e_alphanumerics" not in self.df.columns:
             self.df = self.df.with_columns(
                 pl.col(column).str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
             )
@@ -62,28 +66,17 @@ class EventLogEnhancer:
             )
         return self.df
 
-    # Function-based enricher to create trigrams from messages
-    # Trigrams enrichment is slow 1M lines in 40s.
-    # Trigram flag to be removed after this is fixed.
-    # https://github.com/pola-rs/polars/issues/10833
-    # https://github.com/pola-rs/polars/issues/10890
-    def old_trigrams(self, column="m_message"):
-        self._handle_prerequisites([column])
-        if "e_trigrams" not in self.df.columns:
-            self.df = self.df.with_columns(
-                pl.col(column).map_elements(
-                    lambda mes: self._create_cngram(message=mes, ngram=3), return_dtype=pl.List(pl.Utf8)).alias("e_trigrams")
-            )
-            self.df = self.df.with_columns(
-                e_trigrams_len = pl.col("e_trigrams").list.len()
-            )
-        return self.df
+    # Function-based enricher to create character trigrams from messages
+    def trigrams(self, column="m_message", reparse=False):
+        """Character trigrams of ``column``, as ``e_trigrams``.
 
-    def trigrams(self, column="m_message"):
-        """
-        This one runs fast three char splits with extract_all at 3 different positions
-        which results in same trigrams as above. They are not arranged, but this is 
-        much faster. These use the same "e_trigrams" column name.
+        Runs three char splits with extract_all at 3 different positions. The
+        trigrams come out unordered, but this is far faster than building them
+        per row in Python.
+
+        :param reparse: recompute even when ``e_trigrams`` already exists.
+            Without it this short-circuits on column name alone, so a second call
+            naming a different ``column`` silently returns the first result.
         """
         def extract_trigrams(text_column: str, start_pos: int) -> pl.Expr:
             return (
@@ -92,7 +85,7 @@ class EventLogEnhancer:
                 .str.extract_all(r'.{3}')
             )
         self._handle_prerequisites([column])
-        if "e_trigrams" not in self.df.columns:
+        if reparse or "e_trigrams" not in self.df.columns:
             trigrams_pos0 = extract_trigrams(column, 0)
             trigrams_pos1 = extract_trigrams(column, 1)
             trigrams_pos2 = extract_trigrams(column, 2)
@@ -106,11 +99,56 @@ class EventLogEnhancer:
 
         return self.df
 
-    @staticmethod
-    def _create_cngram(message, ngram=3):
-        if ngram <= 0:
-            return []
-        return [message[i:i + ngram] for i in range(len(message) - ngram + 1)]
+    # Function-based enricher to bucket look-alike lines by a minhash signature
+    def minhash(self, token_column="e_trigrams", rows=4, seed=0, reparse=False):
+        """Minhash signature of a token column, as ``e_minhash_<tokens>``.
+
+        One band of ``rows`` min-hashes over the row's token set, joined into a
+        single string. Two rows get the same signature with probability
+        ``J ** rows`` for Jaccard similarity ``J``, so identical token sets always
+        collide and near-duplicates collide often -- the column is a bucket key,
+        not a distance.
+
+        :param token_column: an existing ``List(Utf8)`` column, such as the
+            ``e_words`` or ``e_trigrams`` an earlier enricher built. It names the
+            output: ``e_words`` gives ``e_minhash_words``.
+        :param rows: min-hashes per signature. More rows means fewer collisions.
+        :param seed: base hash seed. Signatures built with different seeds or row
+            counts are not comparable, so pass ``reparse`` when changing either.
+        :param reparse: recompute even when the output column already exists.
+        """
+        if rows < 1:
+            raise ValueError(f"rows must be >= 1, got {rows}")
+        self._handle_prerequisites([token_column])
+        if self.df.schema[token_column] != pl.List(pl.Utf8):
+            raise ValueError(
+                f"minhash needs a list-of-tokens column, but {token_column!r} is "
+                f"{self.df.schema[token_column]}. Build e_words or e_trigrams first."
+            )
+
+        output = f"e_minhash_{token_column.removeprefix('e_')}"
+        if not reparse and output in self.df.columns:
+            return self.df
+
+        # K permutations are K hash seeds, each reduced with min() over the
+        # row's tokens: one explode and one group_by, no Python loop over rows.
+        # A line with no tokens explodes to a null, which hashes to a value like
+        # any other -- so empty lines share a bucket rather than going null.
+        signature = (
+            self.df.select(token_column)
+            .with_row_index("_minhash_row")
+            .explode(token_column)
+            .group_by("_minhash_row")
+            .agg([pl.col(token_column).hash(seed=seed + j).min().alias(f"_h{j}")
+                  for j in range(rows)])
+            .sort("_minhash_row")
+            .select(
+                pl.concat_str([pl.col(f"_h{j}").cast(pl.Utf8) for j in range(rows)],
+                              separator="-").alias(output)
+            )
+        )
+        self.df = self.df.with_columns(signature.to_series())
+        return self.df
 
     # Enrich with drain parsing results
     def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False, persistence=False):
@@ -407,9 +445,12 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
-    def create_neural_emb(self, field="e_message_normalized"):
+    def create_neural_emb(self, field="e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
-        if "e_bert_emb" not in self.df.columns:
+        if reparse or "e_bert_emb" not in self.df.columns:
+            if "e_bert_emb" in self.df.columns:
+                # hstack appends a duplicate name rather than replacing the column
+                self.df = self.df.drop("e_bert_emb")
             from loglead.parsers import BertEmbeddings
             #if "e_message_normalized" not in self.df.columns:
             #    self.normalize()
@@ -425,9 +466,9 @@ class EventLogEnhancer:
             self.df = self.df.hstack(bert_emb_col_df)
         return self.df
 
-    def length(self, column="m_message"):
-        self._handle_prerequisites(["m_message"])
-        if "e_chars_len" not in self.df.columns:
+    def length(self, column="m_message", reparse=False):
+        self._handle_prerequisites([column])
+        if reparse or "e_chars_len" not in self.df.columns:
             self.df = self.df.with_columns(
                 e_chars_len=pl.col(column).str.len_chars(),
                 e_lines_len=pl.col(column).str.count_matches(r"(\n|\r|\r\n)"),

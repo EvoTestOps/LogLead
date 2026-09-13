@@ -35,6 +35,8 @@ CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 #: resolved dynamically against :class:`EventLogEnhancer`.
 _PARSE_PREFIX = "Parse-"
 
+#TODO Lot of stuff about the line comparer in logroot. Clearn up needed
+
 #: How a log root may be read, keyed by name. ``"auto"`` detects the format per
 #: file; every other entry pins one format family for the whole log root.
 #:

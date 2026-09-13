@@ -97,9 +97,9 @@ the cell directory to re-measure the grid from scratch.
 | distance_file_content | hadoop_renamed | 0.424 | 0.470 | 1.08 | 1.54 |
 | distance_file_content | hdfs_balanced_5k | 0.584 | 0.613 | 0.837 | 1.10 |
 | distance_file_content | bgl_split_10 | 1.18 | 1.64 | 5.18 | 10.16 |
-| distance_line_content | hadoop_renamed | 0.435 | 0.488 | 1.10 | 1.56 |
-| distance_line_content | hdfs_balanced_5k | 0.585 | 0.617 | 0.852 | 1.11 |
-| distance_line_content | bgl_split_10 | 1.18 | 1.65 | 5.26 | 10.20 |
+| distance_line_content | hadoop_renamed | 0.361 | 0.402 | 0.598 | 4.31 |
+| distance_line_content | hdfs_balanced_5k | 0.337 | 0.352 | 0.440 | 0.451 |
+| distance_line_content | bgl_split_10 | 0.464 | 0.615 | 1.60 | 3.11 |
 
 ## Table A3 -- Anomaly tools
 
@@ -197,9 +197,9 @@ the cell directory to re-measure the grid from scratch.
 | distance_file_content | hadoop_renamed | 0.432 | 0.484 | 1.09 | 1.56 |
 | distance_file_content | hdfs_balanced_5k | 0.584 | 0.613 | 0.837 | 1.10 |
 | distance_file_content | bgl_split_10 | 1.18 | 1.65 | 5.26 | 10.20 |
-| distance_line_content | hadoop_renamed | 0.438 | 0.500 | 1.11 | 1.56 |
-| distance_line_content | hdfs_balanced_5k | 0.587 | 0.620 | 0.867 | 1.11 |
-| distance_line_content | bgl_split_10 | 1.18 | 1.65 | 5.26 | 10.20 |
+| distance_line_content | hadoop_renamed | 0.361 | 0.402 | 0.607 | 4.32 |
+| distance_line_content | hdfs_balanced_5k | 0.337 | 0.355 | 0.454 | 0.452 |
+| distance_line_content | bgl_split_10 | 0.464 | 0.616 | 1.61 | 3.11 |
 
 ## Table B3 -- Anomaly tools
 
@@ -240,7 +240,7 @@ the cell directory to re-measure the grid from scratch.
 
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call. `distance_folder_filename` (jaccard/overlap distance over file names only) and `distance_line_content` (a text diff, no measures) are not broken down further -- neither computes multiple vectorized measures in one pass.
+The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
 
 # Part C -- cold (first call)
 
@@ -325,6 +325,15 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_file_content (containment) | hadoop_renamed | 0.476 | 0.584 | 1.02 | 2.50 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.373 | 0.404 | 0.664 | 0.775 |
 | distance_file_content (containment) | bgl_split_10 | 0.826 | 1.34 | 4.77 | 4.68 |
+| distance_line_content (Exact) | hadoop_renamed | 0.333 | 0.361 | 0.456 | 2.73 |
+| distance_line_content (Exact) | hdfs_balanced_5k | 0.324 | 0.333 | 0.383 | 0.430 |
+| distance_line_content (Exact) | bgl_split_10 | 0.456 | 0.599 | 1.55 | 3.07 |
+| distance_line_content (Prefix) | hadoop_renamed | 0.336 | 0.380 | 0.504 | 2.83 |
+| distance_line_content (Prefix) | hdfs_balanced_5k | 0.334 | 0.342 | 0.408 | 0.443 |
+| distance_line_content (Prefix) | bgl_split_10 | 0.459 | 0.603 | 1.59 | 3.09 |
+| distance_line_content (Minhash) | hadoop_renamed | 0.348 | 0.394 | 0.577 | 4.22 |
+| distance_line_content (Minhash) | hdfs_balanced_5k | 0.335 | 0.349 | 0.432 | 0.448 |
+| distance_line_content (Minhash) | bgl_split_10 | 0.460 | 0.614 | 1.60 | 3.11 |
 
 # Part D -- warm (repeated call)
 
@@ -409,3 +418,12 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_file_content (containment) | hadoop_renamed | 0.476 | 0.584 | 1.02 | 2.51 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.373 | 0.404 | 0.664 | 0.775 |
 | distance_file_content (containment) | bgl_split_10 | 0.826 | 1.34 | 4.78 | 4.70 |
+| distance_line_content (Exact) | hadoop_renamed | 0.335 | 0.379 | 0.496 | 2.82 |
+| distance_line_content (Exact) | hdfs_balanced_5k | 0.332 | 0.342 | 0.408 | 0.443 |
+| distance_line_content (Exact) | bgl_split_10 | 0.459 | 0.602 | 1.58 | 3.09 |
+| distance_line_content (Prefix) | hadoop_renamed | 0.337 | 0.388 | 0.528 | 2.86 |
+| distance_line_content (Prefix) | hdfs_balanced_5k | 0.335 | 0.349 | 0.431 | 0.448 |
+| distance_line_content (Prefix) | bgl_split_10 | 0.460 | 0.613 | 1.60 | 3.10 |
+| distance_line_content (Minhash) | hadoop_renamed | 0.361 | 0.402 | 0.589 | 4.30 |
+| distance_line_content (Minhash) | hdfs_balanced_5k | 0.337 | 0.352 | 0.433 | 0.451 |
+| distance_line_content (Minhash) | bgl_split_10 | 0.464 | 0.614 | 1.60 | 3.11 |

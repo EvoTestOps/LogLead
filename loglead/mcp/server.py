@@ -739,15 +739,19 @@ def read_log_lines(
     offset: int = 0,
     limit: int = 100,
     masked: bool = False,
+    #TODO
     new_tokens_vs: Optional[FolderSelector] = None,
     only_new: bool = False,
     match_file_name: bool = False,
 ) -> dict:
     """Read actual log lines. Use this to see the evidence behind a score.
 
-    With new_tokens_vs, each line also lists its new tokens: words that occur
-    in none of those comparison log folders. only_new then returns just the
-    lines that have one, so the read shows what is new in this file.
+    With new_tokens_vs, each line lists its new tokens: words that occur
+    in none of those comparison log folders. 
+    
+    only_new returns just the lines that have new tokens with respect to comparison
+    folder. This kind filtering is useful in finding suspicious lines in a log 
+    folder if masking has been properly done. 
 
     Args:
         session_id: Handle from open_log_root.
@@ -899,15 +903,15 @@ def new_tokens(
 ) -> dict:
     """List the tokens a log folder has that the comparison folders never have.
 
-    One row per new token: how often it occurs, on how many lines and files,
-    and the first line it is on. No model is trained -- the baseline is every
-    token of the comparison folders -- so this is fast even on large log roots,
-    and a repeat call reuses the baseline.
-
     A new token is either something that went differently -- an error message,
     an event the others never logged -- or an id, path or number the mask
     missed. The second kind turns up in every log folder; register_mask_pattern
     and remask_log_root remove it.
+
+    One row per new token: how often it occurs, on how many lines and files,
+    and the first line it is on. 
+    
+    Fast even on large log roots, and a repeat call reuses the baseline.
 
     Args:
         session_id: Handle from open_log_root.
@@ -1306,6 +1310,17 @@ def distance_file_content(
     )
 
 
+_LINE_BUCKET_NOTE = (
+    "Each row is a group of look-alike lines, not a line. target_only=true "
+    "means no comparison log folder has any line in that bucket, so those are "
+    "the point anomalies; a large delta_pct on a shared bucket is a frequency "
+    "shift, which a line-by-line comparison cannot see at all. Rank by the "
+    "coarsest measure that flags a bucket: a coarse measure absorbs benign "
+    "variation and so has a lower false-positive floor, but is blind to "
+    "anomalies that differ only late in the line."
+)
+
+
 @tool
 def distance_line_content(
     session_id: str,
@@ -1313,58 +1328,91 @@ def distance_line_content(
     comparison_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     mask: bool = True,
-    max_changed_lines: int = 40,
+    content_format: str = "Words",
+    measures: Optional[Sequence[str]] = None,
+    prefix_tokens: int = 3,
+    minhash_rows: int = 4,
+    max_rows: int = 25,
 ) -> dict:
-    """Line-by-line diff of a file between the target log folder and others.
+    """Which kinds of line does this file have that the other do not have?
+    Groups / clusters lines by their content. Allows two use cases
+    1) Comparing target vs comparison on group frequencies which indicate 
+    execution pattern anomalies  2) Finding groups that mainly appear in target 
+    which can indicate point anomalies, but also groups that mainly appear in 
+    comparison which can indicate point anomaly of missing an excution. 
 
-    Unlike the other distance_* tools, this does not vectorize and score --
-    it runs a text diff, which only reads well between two specific log
-    folders. Use it once the other measures have narrowed things down to a
-    small comparison set, not as a first pass over many log folders.
-
-    Returns change counts per comparison plus a sample of the differing lines;
-    the complete diff for each pair is written to disk.
+    Grouping can be done with different measures, e.g. prefix token match
+    (fastest), exact match (also fast, but needs accurate masking), or minhash
+    (slowest, but tolerates inaccurate masking). content_format picks what is
+    grouped; a measure picks how coarsely it is grouped.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
         comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
-            One diff is produced per comparison log folder per file, so narrow this.
+            These are pooled into one baseline, so widening this makes
+            target_only stricter rather than producing more output.
         target_files: "ALL", a list of file names, an int N, or a "name*" wildcard.
-        mask: Diff the masked text, which hides timestamp and id churn.
-        max_changed_lines: Changed lines sampled per pair.
+        mask: Must be true. On raw lines nearly every line is distinct, so
+            almost all of them land in target-only buckets and say nothing.
+        content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            "Prefix" and "Minhash" read tokens, so they need "Words" or "3grams";
+            "Exact" buckets any of them, a parser's mined template included.
+        measures: Leave unset for ["Prefix", "Exact"], coarse first. Both are
+            near-free, so the pair runs on every call. Also accepts "Minhash",
+            : Minhash is more robust but slower than Prefix or Exact. Minhass
+            tolerates masking problems that  missed a parameter and, 
+            unlike "Prefix", is not blind to a late-line
+            anomaly. It costs about 2x the default pair over "Words" and about
+            10x over "3grams", so run it as a second pass over what the default
+            flagged.
+        prefix_tokens: How many leading tokens "Prefix" groups on.
+        minhash_rows: Min-hashes per "Minhash" signature. More rows means fewer
+            collisions, so finer buckets.
+        max_rows: Rows returned inline, target-only buckets first and largest
+            first within that.
     """
     session = STORE.get(session_id)
-    diffs = distance.distance_line_content(
-        session.df, target_folder, comparison_folders, target_files, mask
+    # ensure_content materializes the content column over the whole log root, so
+    # check there is something to compare before paying for it -- otherwise a log
+    # root whose folders share no file name pays in full for an empty result.
+    comparable = distance.comparable_files(
+        session.df, target_folder, comparison_folders, target_files
     )
+    if comparable:
+        session.ensure_content(mask, content_format)
 
-    comparisons = []
-    for file_name, other_folder, diff_df in diffs:
+    per_file, summary, session.df = distance.distance_line_content(
+        session.df, target_folder, comparison_folders, target_files, mask,
+        content_format, measures, prefix_tokens, minhash_rows,
+    )
+    session.flush()
+
+    files, frames = [], []
+    for _, file_name, bucket_df in per_file:
         artifact = _write(
-            session, diff_df, "dis", 4, target_folder=target_folder,
-            comparison_folder=other_folder, mask=mask, file=file_name,
+            session, bucket_df, "dis", 4, target_folder=target_folder,
+            comparison_folder="Many", mask=mask, file=file_name,
         )
-        changed = diff_df.filter(pl.col("difference").is_in(["-", "+"]))
-        comparisons.append({
+        files.append({
             "file_name": file_name,
-            "comparison_folder": other_folder,
-            "summary": distance.summarize_diff(diff_df),
-            "changed_sample": changed.head(max_changed_lines).to_dicts(),
-            "changed_truncated": changed.height > max_changed_lines,
+            "measures": distance.summarize_line_buckets(bucket_df).to_dicts(),
             "artifact": artifact,
         })
+        frames.append(bucket_df.with_columns(pl.lit(file_name).alias("file_name")))
 
-    return {
-        "session_id": session_id,
-        "analysis": "distance_line_content",
-        "level": 4,
-        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
-                   "target_files": target_files, "mask": mask},
-        "n_comparisons": len(comparisons),
-        "comparisons": comparisons,
-        "notes": ["'-' is present only in the target log folder, '+' only in the comparison."],
-    }
+    buckets = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
+    return formatting.result(
+        session, "distance_line_content", 4,
+        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+         "target_files": target_files, "mask": mask, "content_format": content_format,
+         "measures": measures, "prefix_tokens": prefix_tokens,
+         "minhash_rows": minhash_rows},
+        buckets, None, max_rows, sort_by=["target_only", "target_n"],
+        notes=[_LINE_BUCKET_NOTE],
+        extra={"n_files": len(files), "files": files,
+               "summary": summary.to_dicts() if summary.height else []},
+    )
 
 
 # --------------------------------------------------------------------------- #
