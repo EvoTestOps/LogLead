@@ -39,41 +39,19 @@ class EventLogEnhancer:
             raise ValueError(f"Missing prerequisites for enrichment: {', '.join(prerequisites)}")
 
     # Function-based enricher to split messages into words
-    def words(self, column="m_message", prefixes=None, reparse=False):
-        """Split messages into words as ``e_words``, with optional prefix columns.
+    def words(self, column="m_message", reparse=False):
+        """Split messages into words as ``e_words``.
 
-        :param prefixes: iterable of word counts. Each ``k`` adds
-            ``e_words_prefix_<k>``, the first k words joined by a space, built in
-            the same pass as ``e_words``.
         :param reparse: recompute even when the output columns already exist.
             Without it this short-circuits on column name alone, so a second call
             naming a different ``column`` silently returns the first result.
         """
         self._handle_prerequisites([column])
-        prefixes = sorted({int(k) for k in prefixes}) if prefixes else []
-        if any(k < 1 for k in prefixes):
-            raise ValueError(f"prefixes must be >= 1, got {prefixes}")
-
-        need_words = reparse or "e_words" not in self.df.columns
-        need_prefix = [k for k in prefixes
-                       if reparse or f"e_words_prefix_{k}" not in self.df.columns]
-        if not need_words and not need_prefix:
-            return self.df
-
-        split = pl.col(column).str.split(by=" ")
-        exprs = []
-        if need_words:
-            exprs += [split.alias("e_words"), split.list.len().alias("e_words_len")]
-        for k in need_prefix:
-            # splitn stops after k+1 fields. Slicing e_words instead would tokenize
-            # the whole line first, which measures slower for the same result.
-            parts = pl.col(column).str.splitn(" ", k + 1)
-            exprs.append(
-                pl.concat_str([parts.struct.field(f"field_{i}") for i in range(k)],
-                              separator=" ", ignore_nulls=True)
-                .alias(f"e_words_prefix_{k}")
+        if reparse or "e_words" not in self.df.columns:
+            split = pl.col(column).str.split(by=" ")
+            self.df = self.df.with_columns(
+                split.alias("e_words"), split.list.len().alias("e_words_len")
             )
-        self.df = self.df.with_columns(exprs)
         return self.df
 
     # Function-based enricher to extract alphanumeric tokens from messages
@@ -121,46 +99,36 @@ class EventLogEnhancer:
 
         return self.df
 
-    #: Minhash tokenizer name -> the token column it reads.
-    MINHASH_TOKENIZERS = {"3gram": "e_trigrams", "words": "e_words"}
-    #TODO 3gram and e_trigrams should be the same WTF.
     # Function-based enricher to bucket look-alike lines by a minhash signature
-    def minhash(self, column="m_message", tokenizer="3gram", rows=4, seed=0, reparse=False):
-        """Minhash signature of ``column``, as ``e_minhash_<tokenizer>_r<rows>_s<seed>``.
+    def minhash(self, token_column="e_trigrams", rows=4, seed=0, reparse=False):
+        """Minhash signature of a token column, as ``e_minhash_<tokens>``.
 
-        One band of ``rows`` min-hashes over the line's token set, joined into a
-        single string. Two lines get the same signature with probability
-        ``J ** rows`` for Jaccard similarity ``J``, so identical lines always
+        One band of ``rows`` min-hashes over the row's token set, joined into a
+        single string. Two rows get the same signature with probability
+        ``J ** rows`` for Jaccard similarity ``J``, so identical token sets always
         collide and near-duplicates collide often -- the column is a bucket key,
         not a distance.
 
-        :param tokenizer: ``"3gram"`` reads ``e_trigrams``, ``"words"`` reads
-            ``e_words``. Whichever it needs is built first, from ``column``.
+        :param token_column: an existing ``List(Utf8)`` column, such as the
+            ``e_words`` or ``e_trigrams`` an earlier enricher built. It names the
+            output: ``e_words`` gives ``e_minhash_words``.
         :param rows: min-hashes per signature. More rows means fewer collisions.
-        :param seed: base hash seed. Signatures built with different seeds, row
-            counts or tokenizers are not comparable, which is why all three are
-            in the column name.
-        :param reparse: recompute even when the output column already exists,
-            and rebuild the token column it reads.
+        :param seed: base hash seed. Signatures built with different seeds or row
+            counts are not comparable, so pass ``reparse`` when changing either.
+        :param reparse: recompute even when the output column already exists.
         """
-        token_column = self.MINHASH_TOKENIZERS.get(tokenizer)
-        if token_column is None:
-            raise ValueError(
-                f"Unknown minhash tokenizer {tokenizer!r}. "
-                f"Valid options: {sorted(self.MINHASH_TOKENIZERS)}"
-            )
         if rows < 1:
             raise ValueError(f"rows must be >= 1, got {rows}")
-        self._handle_prerequisites([column])
+        self._handle_prerequisites([token_column])
+        if self.df.schema[token_column] != pl.List(pl.Utf8):
+            raise ValueError(
+                f"minhash needs a list-of-tokens column, but {token_column!r} is "
+                f"{self.df.schema[token_column]}. Build e_words or e_trigrams first."
+            )
 
-        output = f"e_minhash_{tokenizer}_r{rows}_s{seed}"
+        output = f"e_minhash_{token_column.removeprefix('e_')}"
         if not reparse and output in self.df.columns:
             return self.df
-
-        if tokenizer == "3gram":
-            self.trigrams(column, reparse=reparse)
-        else:
-            self.words(column, reparse=reparse)
 
         # K permutations are K hash seeds, each reduced with min() over the
         # row's tokens: one explode and one group_by, no Python loop over rows.

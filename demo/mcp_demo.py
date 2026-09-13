@@ -299,11 +299,11 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     res = server.distance_line_content("demo", target, comparison_folders=3,
                                        target_files=1)
     for entry in res["files"]:
-        for row in entry["resolutions"]:
-            print(f"   {entry['file_name']} @ {row['resolution']}: "
+        for row in entry["measures"]:
+            print(f"   {entry['file_name']} @ {row['measure']}: "
                   f"{row['buckets']} buckets, {row['target_only_buckets']} target-only "
                   f"({row['target_only_pct']:.2f}% of lines)")
-    show(res, ["resolution", "target_pct", "comparison_pct", "target_only",
+    show(res, ["measure", "target_pct", "comparison_pct", "target_only",
                "representative_line"])
 
     # ------------------------------------------------------------- anomaly --

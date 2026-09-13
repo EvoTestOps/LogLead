@@ -19,12 +19,19 @@ cost of ``compression`` (a bz2 pass over the full text, the expensive one) from
 ``cosine``/``jaccard``/``containment`` (matrix ops on the vectors already built
 for the comparison). Narrowing weakens ``rank_sum``/``zscore_sum`` the same way
 narrowing ``detectors`` does for the anomaly tools.
+
+``distance_line_content`` takes ``measures`` too, but its measures are bucket
+granularities (``Exact``, ``Prefix``, ``Minhash``) rather than vector distances:
+``content_format`` picks the representation and a measure decides how coarsely
+that representation is grouped. Each one yields its own bucket histogram, so
+there is no ``rank_sum`` combining them.
 """
 
 import numpy as np
 import polars as pl
 
 from .. import LogDistance
+from ..enhancers import EventLogEnhancer
 from . import log_root, scoring
 
 #: distance measure name -> ``LogDistance`` method name.
@@ -187,28 +194,60 @@ def distance_file_content(
     return pl.DataFrame(results), df
 
 
-#: Bucket resolutions to run when the caller names none, coarse first. Both are
+#: How coarsely a line's content representation is bucketed. ``content_format``
+#: picks the representation; a measure decides how coarsely it is grouped. Unlike
+#: :data:`DISTANCE_MEASURES` these are not vector distances, so each one yields
+#: its own bucket histogram rather than a column combined into ``rank_sum``.
+BUCKET_MEASURES = ("Exact", "Prefix", "Minhash")
+
+#: Bucket measures to run when the caller names none, coarse first. Both are
 #: near-free, so the pair runs on every call.
 #:
-#: ``Minhash-<tokenizer>`` and ``Parse-<Algorithm>`` are valid resolutions but
-#: are left out of the default: both are a second pass over what the first one
-#: flagged. Measured on 94k BGL lines, ``Minhash-words`` costs about 2x the pair
-#: above and ``Minhash-3gram`` about 10x. ``Parse-Drain`` is slower again, and
-#: its template ids are not stable while ``max_clusters`` eviction is enabled in
-#: ``drain3.ini``.
-DEFAULT_RESOLUTIONS = ("Prefix-3", "Exact")
+#: ``Minhash`` is left out of the default: it is a second pass over what these
+#: flagged. Measured on 94k BGL lines it costs about 2x the pair above over
+#: ``content_format="Words"`` and about 10x over ``"3grams"``.
+DEFAULT_BUCKET_MEASURES = ["Prefix", "Exact"]
 
 
-def _resolution_format(resolution):
-    """Resolution name -> ``content_format``. ``Exact`` is the masked line itself."""
-    return "Sklearn" if resolution == "Exact" else resolution
+def _resolve_bucket_measures(measures):
+    measures = list(DEFAULT_BUCKET_MEASURES) if measures is None else list(measures)
+    if not measures:
+        raise ValueError("At least one measure is required.")
+    unknown = [m for m in measures if m not in BUCKET_MEASURES]
+    if unknown:
+        raise ValueError(
+            f"Unknown measures {unknown}. Valid options: {list(BUCKET_MEASURES)}"
+        )
+    return measures
 
 
-def _bucket_label(schema, field):
-    """One string per row to group on: a token list is joined, a scalar cast."""
-    if schema[field] == pl.List(pl.Utf8):
-        return pl.col(field).list.join(" ")
-    return pl.col(field).cast(pl.Utf8, strict=False)
+def _require_tokens(schema, field, measure, content_format):
+    """``Prefix`` and ``Minhash`` read a line's tokens, so they need a list column."""
+    if schema[field] != pl.List(pl.Utf8):
+        raise ValueError(
+            f"Measure {measure!r} needs a token column, but content_format "
+            f"{content_format!r} gives {field!r}, which is {schema[field]}. Use "
+            f"content_format 'Words' or '3grams', or measure 'Exact', which "
+            f"buckets any representation."
+        )
+
+
+def _minhash_column(field):
+    """Where :meth:`EventLogEnhancer.minhash` writes a signature over ``field``."""
+    return f"e_minhash_{field.removeprefix('e_')}"
+
+
+def _bucket_label(schema, field, measure, prefix_tokens):
+    """One string per row to group on, for one measure."""
+    if measure == "Exact":
+        # A token list is joined back into a line; a scalar -- a parser's event
+        # id, the masked text -- is cast as it stands.
+        if schema[field] == pl.List(pl.Utf8):
+            return pl.col(field).list.join(" ")
+        return pl.col(field).cast(pl.Utf8, strict=False)
+    if measure == "Prefix":
+        return pl.col(field).list.head(prefix_tokens).list.join(" ")
+    return pl.col(_minhash_column(field))
 
 
 def _divergences(bucket_df, target_lines, comparison_lines):
@@ -250,9 +289,8 @@ def comparable_files(df, target_folder, comparison_folders="ALL", target_files="
     return [name for name in file_names if name in shared]
 
 
-def _bucket_histogram(target_df, comparison_df, field, resolution):
+def _bucket_histogram(target_df, comparison_df, label, measure):
     """One row per bucket, with both sides' share of it."""
-    label = _bucket_label(target_df.schema, field)
     target = (
         target_df.select(label.alias("bucket"), "m_message")
         .group_by("bucket")
@@ -272,7 +310,7 @@ def _bucket_histogram(target_df, comparison_df, field, resolution):
         .with_columns(pl.col("target_n").fill_null(0),
                       pl.col("comparison_n").fill_null(0))
         .with_columns(
-            pl.lit(resolution).alias("resolution"),
+            pl.lit(measure).alias("measure"),
             # A bucket only the comparison side has still needs a readable line.
             pl.coalesce("representative_line", "_comparison_line")
               .alias("representative_line"),
@@ -283,7 +321,7 @@ def _bucket_histogram(target_df, comparison_df, field, resolution):
             (pl.col("target_pct") - pl.col("comparison_pct")).alias("delta_pct"),
             (pl.col("comparison_n") == 0).alias("target_only"),
         )
-        .select("resolution", "bucket", "representative_line",
+        .select("measure", "bucket", "representative_line",
                 "target_n", "target_pct", "comparison_n", "comparison_pct",
                 "delta_pct", "target_only")
         # Target-only buckets first, then by how much of the target they hold:
@@ -295,7 +333,7 @@ def _bucket_histogram(target_df, comparison_df, field, resolution):
 
 def distance_line_content(
     df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
-    resolutions=DEFAULT_RESOLUTIONS,
+    content_format="Words", measures=None, prefix_tokens=3, minhash_rows=4,
 ):
     """Compare a file's distribution of line types against the same file elsewhere.
 
@@ -308,25 +346,29 @@ def distance_line_content(
     The comparison log folders are pooled into one baseline, so ``target_only``
     means "absent from every comparison log folder", not from one of them.
 
-    :param resolutions: bucket granularities, **coarse first**. A coarse
-        resolution such as ``Prefix-3`` absorbs benign variation and so carries a
-        lower false-positive floor, but is blind to anomalies that differ only
-        late in the line; ``Exact`` is never blind but is noisier. Running both
-        is cheap, and the coarsest resolution that flags a bucket is the
-        strength of the evidence. Accepts any ``content_format``, plus
-        ``"Exact"`` for the masked line.
+    :param content_format: the representation to bucket, as elsewhere. ``Prefix``
+        and ``Minhash`` read a line's tokens, so they need ``"Words"`` or
+        ``"3grams"``; ``Exact`` buckets any of them, a parser's event id included.
+    :param measures: subset of :data:`BUCKET_MEASURES`, **coarse first**. A coarse
+        measure such as ``Prefix`` absorbs benign variation and so carries a lower
+        false-positive floor, but is blind to anomalies that differ only late in
+        the line; ``Exact`` is never blind but is noisier. Running both is cheap,
+        and the coarsest measure that flags a bucket is the strength of the
+        evidence. ``None`` runs :data:`DEFAULT_BUCKET_MEASURES`.
 
-        ``Minhash-<tokenizer>`` buckets by similarity rather than by position,
-        so unlike ``Prefix-3`` it is not blind to a late-line anomaly and unlike
-        ``Exact`` it tolerates masking that missed a parameter. It absorbs
-        probabilistically -- two lines share a bucket with probability
-        ``J ** rows`` -- so a bucket it does not flag is weaker evidence than
-        one a deterministic resolution does not flag. Opt in; see
-        :data:`DEFAULT_RESOLUTIONS` for the cost.
+        ``Minhash`` buckets by similarity rather than by position, so unlike
+        ``Prefix`` it is not blind to a late-line anomaly and unlike ``Exact`` it
+        tolerates masking that missed a parameter. It absorbs probabilistically --
+        two lines share a bucket with probability ``J ** minhash_rows`` -- so a
+        bucket it does not flag is weaker evidence than one a deterministic
+        measure does not flag.
+    :param prefix_tokens: how many leading tokens ``Prefix`` groups on.
+    :param minhash_rows: min-hashes per ``Minhash`` signature. More rows means
+        fewer collisions, so finer buckets.
     :returns: ``(per_file, summary_df, df)``. ``per_file`` is a list of
         ``(target_folder, file_name, bucket_df)``, one entry per file present in
         both the target and at least one comparison log folder; ``summary_df``
-        has one row per (file, resolution) with ``target_only_mass``,
+        has one row per (file, measure) with ``target_only_mass``,
         ``js_divergence`` and ``total_variation``; ``df`` is the (possibly
         enhanced) input frame, to be kept so a session avoids re-parsing.
     """
@@ -336,9 +378,11 @@ def distance_line_content(
             "line is distinct, so nearly all of them fall into target-only "
             "buckets and the histogram carries no signal."
         )
-    resolutions = list(resolutions)
-    if not resolutions:
-        raise ValueError("At least one resolution is required.")
+    measures = _resolve_bucket_measures(measures)
+    if prefix_tokens < 1:
+        raise ValueError(f"prefix_tokens must be >= 1, got {prefix_tokens}")
+    if minhash_rows < 1:
+        raise ValueError(f"minhash_rows must be >= 1, got {minhash_rows}")
 
     # Before materializing anything: prepare_content runs over the whole log
     # root, while the analysis only ever reads files the target shares with a
@@ -348,16 +392,30 @@ def distance_line_content(
     if not comparable:
         return [], pl.DataFrame(), df
 
-    fields = {}
-    for resolution in resolutions:
-        df, field = log_root.prepare_content(df, mask, _resolution_format(resolution))
-        fields[resolution] = field
+    df, field = log_root.prepare_content(df, mask, content_format)
+    # Every measure groups on tokens, Exact included -- what sets Exact apart is
+    # that it never reaches *inside* the list. Exact joins whatever it is handed. 
+    # Prefix slices the list and Minhash explodes it, so those 
+    # need List(Utf8) and have to be checked here.
+    for measure in measures:
+        if measure != "Exact":
+            _require_tokens(df.schema, field, measure, content_format)
 
-    # After prepare_content, so these views carry the resolution columns.
+    # Only content_format's column is cached; a measure is computed per call, the
+    # same contract the vectorized measures keep. Minhash is the one that cannot
+    # be a plain expression -- it explodes and regroups -- so it rides on a
+    # working copy that is never handed back for a session to cache.
+    work = df
+    if "Minhash" in measures:
+        work = EventLogEnhancer(df).minhash(field, rows=minhash_rows)
+    labels = {measure: _bucket_label(work.schema, field, measure, prefix_tokens)
+              for measure in measures}
+
+    # After prepare_content, so these views carry the content column.
     target_df, comparison_folder_names = log_root.prepare_folders(
-        df, target_folder, comparison_folders
+        work, target_folder, comparison_folders
     )
-    comparison_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
+    comparison_df = work.filter(pl.col("folder").is_in(comparison_folder_names))
 
     per_file, summaries = [], []
     for file_name in comparable:
@@ -369,15 +427,15 @@ def distance_line_content(
             continue
 
         frames = []
-        for resolution in resolutions:
+        for measure in measures:
             buckets, summary = _bucket_histogram(
-                target_lines, comparison_lines, fields[resolution], resolution
+                target_lines, comparison_lines, labels[measure], measure
             )
             frames.append(buckets)
             summaries.append({
                 "target_folder": target_folder,
                 "file_name": file_name,
-                "resolution": resolution,
+                "measure": measure,
                 "comparison_folders": " ".join(comparison_folder_names),
                 **summary,
             })
@@ -389,9 +447,9 @@ def distance_line_content(
 
 
 def summarize_line_buckets(bucket_df):
-    """Per-resolution counts for one file, for a compact tool result."""
+    """Per-measure counts for one file, for a compact tool result."""
     return (
-        bucket_df.group_by("resolution", maintain_order=True)
+        bucket_df.group_by("measure", maintain_order=True)
         .agg(
             pl.len().alias("buckets"),
             pl.col("target_only").sum().alias("target_only_buckets"),

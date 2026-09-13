@@ -434,9 +434,9 @@ GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
 #: / ``distance.DEFAULT_MEASURES`` rather than hardcoded, so a detector or
 #: measure added there shows up here without a second edit.
 #: ``distance_folder_filename`` (jaccard/overlap distance over file names only)
-#: and ``distance_line_content`` (bucket histograms, which take resolutions
-#: rather than measures) have nothing to isolate -- neither computes multiple
-#: vectorized measures in one pass.
+#: and ``distance_line_content`` (bucket histograms rather than vectorized
+#: distances) have nothing to isolate -- neither computes multiple vectorized
+#: measures in one pass.
 DETAIL_ANOMALY_TOOLS = ("anomaly_folder_filename", "anomaly_folder_content",
                         "anomaly_file_content", "anomaly_line_content")
 DETAIL_DISTANCE_TOOLS = ("distance_folder_content", "distance_file_content")
@@ -955,7 +955,7 @@ _DETAIL_INTRO = [
     "`measures=[\"<name>\"]`), so the cost of narrowing either is visible on "
     "its own rather than folded into the combined call. `distance_folder_filename` "
     "(jaccard/overlap distance over file names only) and `distance_line_content` "
-    "(bucket histograms, which take resolutions rather than measures) are not "
+    "(bucket histograms rather than vectorized distances) are not "
     "broken down further -- neither computes multiple vectorized measures in "
     "one pass.",
 ]

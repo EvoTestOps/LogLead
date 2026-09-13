@@ -739,15 +739,19 @@ def read_log_lines(
     offset: int = 0,
     limit: int = 100,
     masked: bool = False,
+    #TODO
     new_tokens_vs: Optional[FolderSelector] = None,
     only_new: bool = False,
     match_file_name: bool = False,
 ) -> dict:
     """Read actual log lines. Use this to see the evidence behind a score.
 
-    With new_tokens_vs, each line also lists its new tokens: words that occur
-    in none of those comparison log folders. only_new then returns just the
-    lines that have one, so the read shows what is new in this file.
+    With new_tokens_vs, each line lists its new tokens: words that occur
+    in none of those comparison log folders. 
+    
+    only_new returns just the lines that have new tokens with respect to comparison
+    folder. This kind filtering is useful in finding suspicious lines in a log 
+    folder if masking has been properly done. 
 
     Args:
         session_id: Handle from open_log_root.
@@ -899,15 +903,15 @@ def new_tokens(
 ) -> dict:
     """List the tokens a log folder has that the comparison folders never have.
 
-    One row per new token: how often it occurs, on how many lines and files,
-    and the first line it is on. No model is trained -- the baseline is every
-    token of the comparison folders -- so this is fast even on large log roots,
-    and a repeat call reuses the baseline.
-
     A new token is either something that went differently -- an error message,
     an event the others never logged -- or an id, path or number the mask
     missed. The second kind turns up in every log folder; register_mask_pattern
     and remask_log_root remove it.
+
+    One row per new token: how often it occurs, on how many lines and files,
+    and the first line it is on. 
+    
+    Fast even on large log roots, and a repeat call reuses the baseline.
 
     Args:
         session_id: Handle from open_log_root.
@@ -1311,7 +1315,7 @@ _LINE_BUCKET_NOTE = (
     "means no comparison log folder has any line in that bucket, so those are "
     "the point anomalies; a large delta_pct on a shared bucket is a frequency "
     "shift, which a line-by-line comparison cannot see at all. Rank by the "
-    "coarsest resolution that flags a bucket: a coarse resolution absorbs benign "
+    "coarsest measure that flags a bucket: a coarse measure absorbs benign "
     "variation and so has a lower false-positive floor, but is blind to "
     "anomalies that differ only late in the line."
 )
@@ -1324,7 +1328,10 @@ def distance_line_content(
     comparison_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     mask: bool = True,
-    resolutions: Optional[Sequence[str]] = None,
+    content_format: str = "Words",
+    measures: Optional[Sequence[str]] = None,
+    prefix_tokens: int = 3,
+    minhash_rows: int = 4,
     max_rows: int = 25,
 ) -> dict:
     """Which kinds of line does this file have that the other do not have?
@@ -1334,9 +1341,10 @@ def distance_line_content(
     which can indicate point anomalies, but also groups that mainly appear in 
     comparison which can indicate point anomaly of missing an excution. 
 
-    Grouping can be done at different resolutions, e.g. prefix token match
-    (fastest), exact masked line (also fast, but needs accurate masking), or
-    minhash over character 3-grams (slowest, but tolerates inaccurate masking).
+    Grouping can be done with different measures, e.g. prefix token match
+    (fastest), exact match (also fast, but needs accurate masking), or minhash
+    (slowest, but tolerates inaccurate masking). content_format picks what is
+    grouped; a measure picks how coarsely it is grouped.
 
     Args:
         session_id: Handle from open_log_root.
@@ -1347,35 +1355,36 @@ def distance_line_content(
         target_files: "ALL", a list of file names, an int N, or a "name*" wildcard.
         mask: Must be true. On raw lines nearly every line is distinct, so
             almost all of them land in target-only buckets and say nothing.
-        resolutions: Leave unset for ["Prefix-3", "Exact"], coarse first. Both
-            are near-free, so the pair runs on every call. Also accepts:
-            "Prefix-<k>" for any k;
-            "Minhash-3gram" or "Minhash-words" to group  look-alike lines by a
-            minhash signature, which tolerates masking that missed a parameter
-            and, unlike Prefix-<k>, is not blind to a late-line anomaly.
-             "Minhash-words" costs about 2x and "Minhash-3gram" about 10x,
-            so run them as a second pass over what the default flagged. Takes
-            optional "-r<rows>" (more rows, fewer collisions; default 4) and
-            "-s<seed>" (default 0) suffixes, e.g. "Minhash-3gram-r6-s7";
-            "Parse-<Algorithm>" Parse-Drain, Parse-Tip to bucket by mined template.
+        content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
+            "Prefix" and "Minhash" read tokens, so they need "Words" or "3grams";
+            "Exact" buckets any of them, a parser's mined template included.
+        measures: Leave unset for ["Prefix", "Exact"], coarse first. Both are
+            near-free, so the pair runs on every call. Also accepts "Minhash",
+            : Minhash is more robust but slower than Prefix or Exact. Minhass
+            tolerates masking problems that  missed a parameter and, 
+            unlike "Prefix", is not blind to a late-line
+            anomaly. It costs about 2x the default pair over "Words" and about
+            10x over "3grams", so run it as a second pass over what the default
+            flagged.
+        prefix_tokens: How many leading tokens "Prefix" groups on.
+        minhash_rows: Min-hashes per "Minhash" signature. More rows means fewer
+            collisions, so finer buckets.
         max_rows: Rows returned inline, target-only buckets first and largest
             first within that.
     """
     session = STORE.get(session_id)
-    resolutions = list(resolutions) if resolutions else list(distance.DEFAULT_RESOLUTIONS)
-    # ensure_content materializes a resolution column over the whole log root,
-    # so check there is something to compare before paying for it -- otherwise a
-    # log root whose folders share no file name pays in full for an empty result.
+    # ensure_content materializes the content column over the whole log root, so
+    # check there is something to compare before paying for it -- otherwise a log
+    # root whose folders share no file name pays in full for an empty result.
     comparable = distance.comparable_files(
         session.df, target_folder, comparison_folders, target_files
     )
-    # Per resolution, so the session's own staleness guard drops a derived
-    # column that was built from a different source column.
-    for resolution in (resolutions if comparable else []):
-        session.ensure_content(mask, distance._resolution_format(resolution))
+    if comparable:
+        session.ensure_content(mask, content_format)
 
     per_file, summary, session.df = distance.distance_line_content(
-        session.df, target_folder, comparison_folders, target_files, mask, resolutions,
+        session.df, target_folder, comparison_folders, target_files, mask,
+        content_format, measures, prefix_tokens, minhash_rows,
     )
     session.flush()
 
@@ -1387,7 +1396,7 @@ def distance_line_content(
         )
         files.append({
             "file_name": file_name,
-            "resolutions": distance.summarize_line_buckets(bucket_df).to_dicts(),
+            "measures": distance.summarize_line_buckets(bucket_df).to_dicts(),
             "artifact": artifact,
         })
         frames.append(bucket_df.with_columns(pl.lit(file_name).alias("file_name")))
@@ -1396,7 +1405,9 @@ def distance_line_content(
     return formatting.result(
         session, "distance_line_content", 4,
         {"target_folder": target_folder, "comparison_folders": comparison_folders,
-         "target_files": target_files, "mask": mask, "resolutions": resolutions},
+         "target_files": target_files, "mask": mask, "content_format": content_format,
+         "measures": measures, "prefix_tokens": prefix_tokens,
+         "minhash_rows": minhash_rows},
         buckets, None, max_rows, sort_by=["target_only", "target_n"],
         notes=[_LINE_BUCKET_NOTE],
         extra={"n_files": len(files), "files": files,

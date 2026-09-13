@@ -722,15 +722,15 @@ def stage_hadoop_distance(check, session_id, target, file_name):
                max_rows=5)
     check.eq("one entry for the one target file", l4["n_files"], 1)
     entry = l4["files"][0]
-    check.eq("both default resolutions ran", len(entry["resolutions"]), 2)
-    check.eq("coarse resolution first",
-             [row["resolution"] for row in entry["resolutions"]], ["Prefix-3", "Exact"])
+    check.eq("both default measures ran", len(entry["measures"]), 2)
+    check.eq("coarse measure first",
+             [row["measure"] for row in entry["measures"]], ["Prefix", "Exact"])
     check.ok("a coarse bucket set is smaller than an exact one",
-             entry["resolutions"][0]["buckets"] <= entry["resolutions"][1]["buckets"],
-             f"{entry['resolutions'][0]['buckets']} <= {entry['resolutions'][1]['buckets']}")
+             entry["measures"][0]["buckets"] <= entry["measures"][1]["buckets"],
+             f"{entry['measures'][0]['buckets']} <= {entry['measures'][1]['buckets']}")
     check.ok("target-only buckets never outnumber all buckets",
              all(row["target_only_buckets"] <= row["buckets"]
-                 for row in entry["resolutions"]))
+                 for row in entry["measures"]))
     check.ok("the bucket table was written out", os.path.isfile(entry["artifact"]))
     check.ok("rows are buckets carrying a readable line",
              all("representative_line" in row and "target_only" in row
@@ -750,22 +750,27 @@ def stage_hadoop_distance(check, session_id, target, file_name):
 
     l4m = timed("distance_line_content (minhash)", server.distance_line_content,
                 session_id, target, comparison_folders=2, target_files=[file_name],
-                resolutions=["Minhash-3gram-r4", "Exact"], max_rows=5)
+                content_format="3grams", measures=["Minhash", "Exact"], max_rows=5)
     minhash_entry = l4m["files"][0]
-    check.eq("the opt-in minhash resolution ran",
-             [row["resolution"] for row in minhash_entry["resolutions"]],
-             ["Minhash-3gram-r4", "Exact"])
-    # A signature is a function of the masked line, so identical lines always
+    check.eq("the opt-in minhash measure ran",
+             [row["measure"] for row in minhash_entry["measures"]],
+             ["Minhash", "Exact"])
+    # A signature is a function of the line's tokens, so identical lines always
     # collide and minhash can only ever merge buckets Exact kept apart.
     check.ok("minhash never splits what Exact groups",
-             minhash_entry["resolutions"][0]["buckets"]
-             <= minhash_entry["resolutions"][1]["buckets"],
-             f"{minhash_entry['resolutions'][0]['buckets']} <= "
-             f"{minhash_entry['resolutions'][1]['buckets']}")
-    check.raises("an unknown minhash tokenizer is refused", ValueError,
+             minhash_entry["measures"][0]["buckets"]
+             <= minhash_entry["measures"][1]["buckets"],
+             f"{minhash_entry['measures'][0]['buckets']} <= "
+             f"{minhash_entry['measures'][1]['buckets']}")
+    check.raises("an unknown measure is refused", ValueError,
                  server.distance_line_content, session_id, target,
                  comparison_folders=2, target_files=[file_name],
-                 resolutions=["Minhash-bigram"])
+                 measures=["Bigram"])
+    # Prefix and Minhash read tokens, so a scalar content_format cannot serve them.
+    check.raises("a token measure over a non-token content_format is refused",
+                 ValueError, server.distance_line_content, session_id, target,
+                 comparison_folders=2, target_files=[file_name],
+                 content_format="Sklearn", measures=["Prefix"])
     return l2
 
 

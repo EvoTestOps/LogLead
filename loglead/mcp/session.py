@@ -532,21 +532,15 @@ class SessionStore:
             # bookkeeping ensure_content keeps. A column whose source was never
             # recorded is treated as masked-derived: dropping one that was not
             # only costs a recompute, while keeping one that was is a wrong answer.
-            # Prefix widths and minhash configurations are not tracked in session
-            # state, so they are read back off the columns themselves.
-            widths = sorted({column.rsplit("_", 1)[1] for column in session.df.columns
-                             if column.startswith("e_words_prefix_")})
             formats = (["Words", "3grams"]
-                       + [f"Prefix-{width}" for width in widths]
-                       + log_root.minhash_formats(session.df.columns)
                        + [f"Parse-{parser}" for parser in session.parsers])
             for content_format in formats:
                 target = log_root.content_column(True, content_format)
                 if session.content_source.get(target) == "m_message":
                     continue
                 derived = log_root.derived_columns(content_format)
-                # Formats overlap -- Words and Prefix-<k> share e_words -- and
-                # drop() rejects a repeated name.
+                # Formats can share a derived column, and drop() rejects a
+                # repeated name.
                 dropped.extend(column for column in derived
                                if column in session.df.columns and column not in dropped)
                 for column in derived:
