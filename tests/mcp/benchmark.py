@@ -428,15 +428,17 @@ GRID_ROWS = (
 GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
                      ("anomaly", "Anomaly tools"), ("plot", "Plot tools"))
 
-#: The four anomaly tools and the two content-based distance tools, each run
-#: with a single detector/measure instead of the default all-four -- Part C/D
-#: of PERFORMANCE.md and PERF_MEMORY.md. Built from ``anomaly.DEFAULT_DETECTORS``
-#: / ``distance.DEFAULT_MEASURES`` rather than hardcoded, so a detector or
-#: measure added there shows up here without a second edit.
-#: ``distance_folder_filename`` (jaccard/overlap distance over file names only)
-#: and ``distance_line_content`` (bucket histograms rather than vectorized
-#: distances) have nothing to isolate -- neither computes multiple vectorized
-#: measures in one pass.
+#: The four anomaly tools and the two vectorized-distance content tools, each
+#: run with a single detector/measure instead of the default all-four -- Part
+#: C/D of PERFORMANCE.md and PERF_MEMORY.md. Built from
+#: ``anomaly.DEFAULT_DETECTORS`` / ``distance.DEFAULT_MEASURES`` rather than
+#: hardcoded, so a detector or measure added there shows up here without a
+#: second edit. ``distance_folder_filename`` (jaccard/overlap distance over
+#: file names only) has nothing to isolate -- it computes one measure, not a
+#: default pair. ``distance_line_content`` isolates its own bucket measures
+#: (``distance.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
+#: since the default call already runs Prefix+Exact together rather than one
+#: at a time.
 DETAIL_ANOMALY_TOOLS = ("anomaly_folder_filename", "anomaly_folder_content",
                         "anomaly_file_content", "anomaly_line_content")
 DETAIL_DISTANCE_TOOLS = ("distance_folder_content", "distance_file_content")
@@ -447,6 +449,9 @@ DETAIL_GRID_ROWS = tuple(
 ) + tuple(
     ("distance_detail", f"{tool} ({measure})")
     for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DEFAULT_MEASURES
+) + tuple(
+    ("distance_detail", f"distance_line_content ({measure})")
+    for measure in distance.BUCKET_MEASURES
 )
 
 DETAIL_TABLE_TITLES = (("anomaly_detail", "Anomaly tools detailed"),
@@ -729,6 +734,12 @@ def grid_detail_cells(ctx):
             "distance_detail", f"distance_file_content ({measure})",
             lambda measure=measure: call(lambda: server.distance_file_content(
                 sid, target, measures=[measure]))))
+
+    for measure in distance.BUCKET_MEASURES:
+        cells.append((
+            "distance_detail", f"distance_line_content ({measure})",
+            lambda measure=measure: call(lambda: server.distance_line_content(
+                sid, target, target_files=[file_name], measures=[measure]))))
     return cells
 
 
@@ -950,14 +961,15 @@ _DETAIL_INTRO = [
     "",
     "The tables above run every anomaly tool with all four detectors, and "
     "`distance_folder_content`/`distance_file_content` with all four measures, "
-    "at once. Part C/D below break the same figure down per detector / per "
-    "measure run in isolation (`detectors=[\"<name>\"]` / "
+    "at once; `distance_line_content` defaults to its coarse pair (Prefix + "
+    "Exact) in one pass. Part C/D below break the same figure down per "
+    "detector / per measure run in isolation (`detectors=[\"<name>\"]` / "
     "`measures=[\"<name>\"]`), so the cost of narrowing either is visible on "
-    "its own rather than folded into the combined call. `distance_folder_filename` "
-    "(jaccard/overlap distance over file names only) and `distance_line_content` "
-    "(bucket histograms rather than vectorized distances) are not "
-    "broken down further -- neither computes multiple vectorized measures in "
-    "one pass.",
+    "its own rather than folded into the combined call -- `distance_line_content` "
+    "included, run once per bucket measure (Exact, Prefix, Minhash) so they can "
+    "be compared directly. `distance_folder_filename` (jaccard/overlap "
+    "distance over file names only) is not broken down further -- it computes "
+    "one measure, not a default pair.",
 ]
 
 
