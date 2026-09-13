@@ -85,6 +85,17 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def root_key(value):
+    """Canonical string identifying a log root, or several, for exact-match ledger lookup.
+
+    A single root's key is exactly ``str(that absolute path)`` -- unchanged from
+    before several roots existed, so an old ledger entry still matches. Several
+    roots join with a newline, which cannot appear in a path.
+    """
+    paths = value if isinstance(value, (list, tuple)) else [value]
+    return "\n".join(os.path.abspath(os.path.expanduser(str(p))) for p in paths)
+
+
 def _enabled_by_env():
     return os.environ.get("LOGLEAD_MCP_CRASH_LOG", "1").lower() not in ("0", "false", "no")
 
@@ -346,10 +357,10 @@ class CrashLog:
             record["truncated_args"] = [key for key, value in open_args.items()
                                         if isinstance(value, (dict, list, tuple))
                                         and len(value) > MAX_ITEMS]
-            record["root"] = str(session.root)
+            record["root"] = root_key(session.roots)
             record["shape"] = self._shape(session)
         elif root:
-            record["root"] = os.path.abspath(os.path.expanduser(str(root)))
+            record["root"] = root_key(root)
         # Encoded before the file is opened, and written in one call: this runs
         # in front of every tool, including the ones that cost 3ms in total.
         blob = json.dumps(record)

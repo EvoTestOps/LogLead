@@ -8,7 +8,7 @@ the exit code is non-zero if anything failed.
 Run it with::
 
     uv run tests/mcp/server.py                     # everything
-    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect, crash
+    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect, crash, multi_root
     uv run tests/mcp/server.py --regenerate        # rebuild the log roots first
     uv run tests/mcp/server.py --keep-artifacts    # keep the tables and plots written
 
@@ -1646,6 +1646,100 @@ def stage_crash(check, workdir):
 
 
 # --------------------------------------------------------------------------- #
+# Stage 17 -- open_log_root with several roots
+# --------------------------------------------------------------------------- #
+
+def stage_multi_root(check, workdir):
+    """``open_log_root`` given several directories instead of one.
+
+    Synthetic, and in the default set for the same reason as split/detect/crash:
+    what is checked here -- two roots pooled into one session, kept apart by a
+    folder-name prefix -- is a property of the server, not of any corpus.
+
+    The two roots share a log folder name ("shared") on purpose. That collision
+    is the entire risk of pooling roots at all: get the prefix wrong and a run
+    from root_a is silently merged with a same-named run from root_b, comparing
+    content that was never meant to be compared and never telling anyone.
+    """
+    check.section("17. open_log_root with several roots (synthetic)")
+
+    root_a = os.path.join(workdir, "multi-root-a")
+    root_b = os.path.join(workdir, "multi-root-b")
+    for root, marker in ((root_a, "A"), (root_b, "B")):
+        shared = os.path.join(root, "shared")
+        only = os.path.join(root, f"only_{marker.lower()}")
+        os.makedirs(shared)
+        os.makedirs(only)
+        with open(os.path.join(shared, "app.log"), "w") as handle:
+            handle.write(f"2024-01-01 00:00:00 INFO MARKER_{marker} line one\n"
+                        f"2024-01-01 00:00:01 INFO MARKER_{marker} line two\n")
+        with open(os.path.join(only, "app.log"), "w") as handle:
+            handle.write(f"2024-01-01 00:00:00 INFO MARKER_{marker}_ONLY the only run\n")
+
+    # Two different directories that happen to share a name -- the case the
+    # validation exists for, distinct from passing the same root twice.
+    dup_a = os.path.join(workdir, "dup-parent-1", "same_name")
+    dup_b = os.path.join(workdir, "dup-parent-2", "same_name")
+    os.makedirs(dup_a)
+    os.makedirs(dup_b)
+
+    previous = server.STORE
+    server.STORE = SessionStore(cache_dir=os.path.join(workdir, "multi-root-cache"),
+                                output_root=os.path.join(workdir, "multi-root-output"))
+    try:
+        check.raises("roots with the same directory name are rejected", ValueError,
+                     server.open_log_root, path=[dup_a, dup_b], mask=False)
+
+        opened = server.open_log_root(path=[root_a, root_b], session_id="multi-root",
+                                      mask=False)
+        check.eq("both roots' folders are pooled into one session", opened["n_folders"], 4)
+        check.eq("...prefixed by which root they came from, not merged by name",
+                 sorted(opened["folders"]),
+                 ["multi-root-a/only_a", "multi-root-a/shared",
+                  "multi-root-b/only_b", "multi-root-b/shared"])
+        check.eq("the session reports every root, not just the first",
+                 sorted(opened["root"]), sorted([root_a, root_b]))
+
+        # The actual risk: content from the two same-named "shared" folders
+        # must never mix, or every comparison across them is meaningless.
+        found_a = server.search_log_lines("multi-root", pattern="MARKER_A", regex=False)
+        counted_a = {row["folder"]: row["matches"] for row in found_a["matches_per_folder"]}
+        check.eq("root_a's lines stay under root_a's folders",
+                 counted_a, {"multi-root-a/shared": 2, "multi-root-a/only_a": 1})
+
+        found_b = server.search_log_lines("multi-root", pattern="MARKER_B", regex=False)
+        counted_b = {row["folder"]: row["matches"] for row in found_b["matches_per_folder"]}
+        check.eq("...and root_b's lines stay under root_b's folders",
+                 counted_b, {"multi-root-b/shared": 2, "multi-root-b/only_b": 1})
+
+        # A folder name coined by the merge can still be renamed and read, like
+        # any other folder.
+        renamed = server.set_folder_names("multi-root", {"multi-root-a/shared": "A_run"})
+        check.eq("a prefixed folder name can be renamed like any other",
+                 renamed["named"], 1)
+        check.ok("...and the rename sticks",
+                 "A_run_multi-root-a/shared" in server.STORE.get("multi-root").folders)
+
+        # One root wrapped in a list is exactly one root: no prefix, no
+        # behaviour change, the same cache entry a bare string would use.
+        as_string = server.open_log_root(path=root_a, session_id="single-string", mask=False)
+        as_list = server.open_log_root(path=[root_a], session_id="single-list", mask=False)
+        check.eq("a one-element list is the same log root as a bare string",
+                 as_list["cache_path"], as_string["cache_path"])
+        check.eq("...with unprefixed folder names",
+                 sorted(as_list["folders"]), ["only_a", "shared"])
+
+        # Reopening the same combination is a cache hit, exactly as for one root.
+        reopened = server.open_log_root(path=[root_a, root_b], session_id="multi-root-again",
+                                        mask=False)
+        check.ok("reopening the same combination hits the cache", reopened["cache_hit"])
+        check.eq("...the very entry the first open wrote",
+                 reopened["cache_path"], opened["cache_path"])
+    finally:
+        server.STORE = previous
+
+
+# --------------------------------------------------------------------------- #
 # Stage 14 -- BGL: the real single-file case, opt-in
 # --------------------------------------------------------------------------- #
 
@@ -1727,12 +1821,12 @@ def stage_bgl(check, datasets_folder, workdir):
 
 # --------------------------------------------------------------------------- #
 
-STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "bgl")
+STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root", "bgl")
 
 #: What runs when no --only is given. 'bgl' is out because it needs the 743 MB
 #: loghub download and writes a second copy of it; everything else here runs on
 #: data this suite builds for itself.
-DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash")
+DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root")
 
 
 def main():
@@ -1802,6 +1896,8 @@ def main():
             run_stage(check, stage_detect, check, workdir)
         if "crash" in stages:
             run_stage(check, stage_crash, check, workdir)
+        if "multi_root" in stages:
+            run_stage(check, stage_multi_root, check, workdir)
         if "bgl" in stages:
             run_stage(check, stage_bgl, check, datasets_folder, workdir)
     finally:

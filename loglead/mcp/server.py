@@ -1,5 +1,12 @@
 #CLAUDE DO NOT TOUCH OR EDIT THESE TODO comments. 
- 
+
+# TODO We need to better adverstise the OOVD (out-of-vocabulary detection)
+# It is now in two places in unsupervised anomaly detection
+# but one can also use it new_tokens_vs and filter log lines with it
+# The logline filtering with new lines should be a separate tools
+# We could allow bucket based filtering if distance_line_content is run first and the buckets are saved
+#  
+
 # TODO: One should be able to supply own mask patterns also in openlog_root
 # We also want away to for MCP client to inspect a sample of log lines
 # max diversity of log lines to sample for mask pattern detection. 
@@ -400,7 +407,7 @@ def split_log_file(
 
 @tool
 def open_log_root(
-    path: str,
+    path: Union[str, Sequence[str]],
     filename_pattern: str = "*.log",
     format: str = "auto",
     max_detect_files: int = DEFAULT_MAX_DETECT_FILES,
@@ -429,7 +436,22 @@ def open_log_root(
     nothing is re-read or re-parsed.
 
     Args:
-        path: The log root directory. Its subdirectories are log files or log folders.
+        path: The log root directory. Its subdirectories are log files or log
+            folders. Pass a list of directories, e.g.
+            ["/data/Labeled", "/data/Hidden_Group_1"], when the log folders
+            you want to compare are not siblings under one path -- each root
+            keeps its own subdirectories as its own log folders, but folder
+            names get
+            prefixed with that root's directory name (a run named "correct_1"
+            under .../Labeled becomes folder "Labeled/correct_1") so a
+            same-named folder under a different root is never pooled with it.
+            The given directories' own names must therefore be distinct.
+            Passing their common ancestor instead does not give the same
+            result even when one exists: a log folder is only ever an
+            *immediate* subdirectory of `path`, so opening .../LO2-Challenge
+            (the parent of both "Labeled" and "Hidden_Group_1") would treat
+            each of those two as one giant log folder, losing the individual
+            runs inside them.
         filename_pattern: Glob applied inside each log folder.
         format: How to read the files. The default, "auto", looks at each file
             and guesses its format. Check the result's `detected_formats`
@@ -457,7 +479,7 @@ def open_log_root(
             registered earlier with register_mask_pattern, to use your own
             regexes instead of or on top of a built-in one. See
             list_mask_patterns for what is available.
-        parsers: Template log parsers to run up front, e.g. tipiing ["tip"] or ["drain"].
+        parsers: Template log parsers to run up front, e.g. tipping ["tip"] or ["drain"].
         file_name_normalizer: "none", or "strip_folder_id" when file names embed
             the folder id (Hadoop container logs do). Without it, file-level and
             line-level analyses find no files in common between log folders.
@@ -504,7 +526,7 @@ def open_log_root(
     # Before anything about this open: what this log root did to a previous
     # process. It outlives the restart that found it, so a client meeting this
     # log root for the first time is warned too.
-    history = crash_log().history(str(session.root))
+    history = crash_log().history(crash.root_key(session.roots))
     if history:
         summary["previous_crashes"] = [crash.summarize(record) for record in history[-3:]]
         notes.append(crash.history_note(history))

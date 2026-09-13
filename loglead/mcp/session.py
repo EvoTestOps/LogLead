@@ -72,7 +72,9 @@ class Session:
     """One loaded log root, plus every enhanced column derived from it so far."""
 
     session_id: str
-    root: Path
+    #: One directory per element. Almost always one -- see :func:`log_root.read_log_roots`
+    #: for what changes when it is more.
+    roots: tuple
     filename_pattern: str
     df: pl.DataFrame
     masked: bool
@@ -122,6 +124,11 @@ class Session:
         return self.df.select("folder").unique().sort("folder").to_series().to_list()
 
     @property
+    def root_label(self):
+        """Cache-file / default-session-id stem: one root's name, or several joined."""
+        return "+".join(root.name for root in self.roots)
+
+    @property
     def enhanced_columns(self):
         """The ``e_*`` columns computed so far, i.e. what is cached and free."""
         return sorted(col for col in self.df.columns if col.startswith("e_"))
@@ -138,7 +145,7 @@ class Session:
     def summary(self):
         return {
             "session_id": self.session_id,
-            "root": str(self.root),
+            "root": str(self.roots[0]) if len(self.roots) == 1 else [str(r) for r in self.roots],
             "filename_pattern": self.filename_pattern,
             "format": self.format,
             "detected_formats": self.detected_formats,
@@ -170,7 +177,7 @@ class Session:
         call rather than a description of one.
         """
         return {
-            "path": str(self.root),
+            "path": str(self.roots[0]) if len(self.roots) == 1 else [str(r) for r in self.roots],
             "filename_pattern": self.filename_pattern,
             "format": self.format,
             "max_detect_files": self.max_detect_files,
@@ -338,15 +345,21 @@ class SessionStore:
         resolved = self.mask_registry.resolve(mask_pattern)
         return resolved, f"{mask_pattern}:{json.dumps(resolved)}"
 
-    def _cache_key(self, root, filename_pattern, mask_signature, file_name_normalizer,
+    def _cache_key(self, roots, filename_pattern, mask_signature, file_name_normalizer,
                    min_file_size, folder_names=None, keep_original_folder_name=True,
                    format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
-        n_files, total_bytes, max_mtime = log_root.count_log_root_files(
-            root, filename_pattern, min_file_size
-        )
+        n_files = total_bytes = 0
+        max_mtime = 0.0
+        for root in roots:
+            root_files, root_bytes, root_mtime = log_root.count_log_root_files(
+                root, filename_pattern, min_file_size
+            )
+            n_files += root_files
+            total_bytes += root_bytes
+            max_mtime = max(max_mtime, root_mtime)
         if n_files == 0:
             raise FileNotFoundError(
-                f"No files matching {filename_pattern!r} under {root}"
+                f"No files matching {filename_pattern!r} under {list(roots)}"
             )
         # The on-disk fingerprint is cheap (stat only) but catches added, removed,
         # and rewritten files, so a stale parquet cannot be served.
@@ -366,7 +379,8 @@ class SessionStore:
         # sort_keys because dict order is insertion order, and two equal
         # mappings must hash the same.
         payload = "|".join([
-            str(root), filename_pattern, mask_signature or "", file_name_normalizer,
+            "\n".join(str(root) for root in roots), filename_pattern, mask_signature or "",
+            file_name_normalizer,
             str(min_file_size), str(n_files), str(total_bytes), f"{max_mtime:.0f}",
             json.dumps(folder_names or {}, sort_keys=True), str(keep_original_folder_name),
             format, str(max_detect_files), self._PREPROCESSING_VERSION,
@@ -381,8 +395,15 @@ class SessionStore:
              min_file_size=0, output_dir=None, table_format="csv", session_id=None,
              refresh=False, folder_names=None, keep_original_folder_name=True,
              format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):
-        """Load a log root into a session, reusing the parquet cache when possible.
+        """Load one or more log roots into a session, reusing the parquet cache when possible.
 
+        :param path: a directory, or several. Passing several is the only way
+            to compare log folders that live under different parents -- each
+            root keeps its own subdirectories as its own log folders, prefixed
+            with that root's directory name (``"Labeled/correct_1"``) so
+            same-named folders under different roots are never pooled
+            together. Their directory names must be distinct. See
+            :func:`log_root.read_log_roots`.
         :param mask: run :meth:`EventLogEnhancer.normalize` at open time.
             Required by every ``mask=True`` analysis and by all pre-parsing.
         :param mask_pattern: a built-in name from
@@ -399,6 +420,7 @@ class SessionStore:
         :param keep_original_folder_name: keep the folder name as a suffix.
         :param format: which loader reads the files -- a name from
             :func:`log_root.available_formats`. ``"auto"`` detects per file.
+            Applied to every root when ``path`` is several.
         :param max_detect_files: how many files ``"auto"`` probes before
             applying their answer to the rest; 0 probes every file.
         :returns: ``(session, info)`` where ``info`` records the cache outcome.
@@ -408,13 +430,28 @@ class SessionStore:
                 f"Unknown table_format {table_format!r}. "
                 f"Valid options: {list(export.TABLE_FORMATS)}"
             )
-        root = Path(os.path.abspath(os.path.expanduser(str(path))))
-        if not root.is_dir():
-            raise FileNotFoundError(f"Log root not found: {root}")
+        given_paths = path if isinstance(path, (list, tuple)) else [path]
+        if not given_paths:
+            raise ValueError("open_log_root needs at least one path.")
+        roots = tuple(Path(os.path.abspath(os.path.expanduser(str(p)))) for p in given_paths)
+        for root in roots:
+            if not root.is_dir():
+                raise FileNotFoundError(f"Log root not found: {root}")
+        if len(roots) > 1:
+            names = [root.name for root in roots]
+            duplicates = sorted({name for name in names if names.count(name) > 1})
+            if duplicates:
+                raise ValueError(
+                    f"Log root directory names must be unique when opening several at once "
+                    f"(each becomes a folder-name prefix) -- got repeated name(s) {duplicates} "
+                    f"among {[str(root) for root in roots]}. Rename the directories, or open "
+                    f"them one at a time."
+                )
+        root_label = "+".join(root.name for root in roots)
         # Validate everything cheap before reading a single log file.
         if session_id and session_id in self._sessions:
             raise ValueError(f"Session id {session_id!r} is already in use.")
-        session_id = session_id or f"{root.name}-{uuid.uuid4().hex[:8]}"
+        session_id = session_id or f"{root_label}-{uuid.uuid4().hex[:8]}"
 
         effective_mask_pattern = mask_pattern if mask else None
         resolved_mask, mask_signature = self._resolve_mask(effective_mask_pattern)
@@ -430,10 +467,10 @@ class SessionStore:
 
         max_detect_files = max(int(max_detect_files or 0), 0)
         digest, n_files = self._cache_key(
-            root, filename_pattern, mask_signature, file_name_normalizer,
+            roots, filename_pattern, mask_signature, file_name_normalizer,
             min_file_size, folder_names, keep_original_folder_name, format, max_detect_files,
         )
-        cache_path = self.cache_dir / f"{root.name}-{digest}.parquet"
+        cache_path = self.cache_dir / f"{root_label}-{digest}.parquet"
 
         started = time.time()
         cache_hit = cache_path.exists() and not refresh
@@ -445,8 +482,12 @@ class SessionStore:
             if sidecar.exists():
                 content_source = json.loads(sidecar.read_text())
         else:
-            df, read_info = log_root.read_log_root(root, filename_pattern, min_file_size, format,
-                                                   max_detect_files)
+            if len(roots) == 1:
+                df, read_info = log_root.read_log_root(roots[0], filename_pattern, min_file_size,
+                                                       format, max_detect_files)
+            else:
+                df, read_info = log_root.read_log_roots(roots, filename_pattern, min_file_size,
+                                                        format, max_detect_files)
             if mask:
                 df = EventLogEnhancer(df).normalize(regexs=resolved_mask)
             df = log_root.normalize_file_names(df, file_name_normalizer)
@@ -457,7 +498,7 @@ class SessionStore:
 
         session = Session(
             session_id=session_id,
-            root=root,
+            roots=roots,
             filename_pattern=filename_pattern,
             df=df,
             masked=mask,
@@ -515,11 +556,11 @@ class SessionStore:
         cache_path = None
         if previous_cache_path is not None:
             digest, _ = self._cache_key(
-                session.root, session.filename_pattern, mask_signature,
+                session.roots, session.filename_pattern, mask_signature,
                 session.file_name_normalizer, session.min_file_size, session.folder_names,
                 session.keep_original_folder_name, session.format, session.max_detect_files,
             )
-            cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
+            cache_path = self.cache_dir / f"{session.root_label}-{digest}.parquet"
 
         dropped = []
         restored = cache_path is not None and cache_path.exists()
@@ -586,11 +627,11 @@ class SessionStore:
         if session.cache_path is not None:
             _, mask_signature = self._resolve_mask(session.mask_pattern)
             digest, _ = self._cache_key(
-                session.root, session.filename_pattern, mask_signature,
+                session.roots, session.filename_pattern, mask_signature,
                 session.file_name_normalizer, session.min_file_size, folder_names,
                 keep_original, session.format, session.max_detect_files,
             )
-            session.cache_path = self.cache_dir / f"{session.root.name}-{digest}.parquet"
+            session.cache_path = self.cache_dir / f"{session.root_label}-{digest}.parquet"
 
         session.df = df
         session.vocabularies.clear()  # keyed on folder names

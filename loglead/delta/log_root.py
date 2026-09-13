@@ -245,6 +245,74 @@ def read_folders(root, filename_pattern="*.log", min_file_size=0, format="auto",
     return df, info["n_folders"]
 
 
+def read_log_roots(roots, filename_pattern="*.log", min_file_size=0, format="auto",
+                   max_detect_files=DEFAULT_MAX_DETECT_FILES):
+    """Load several log roots into one frame, log folders kept apart by name.
+
+    Each root is read exactly as :func:`read_log_root` reads it alone -- its own
+    subdirectories become its own log folders. The only difference is what the
+    ``folder`` column says afterwards: prefixed with that root's own directory
+    name (``"Labeled/correct_1"``, ``"Hidden_Group_1/Run_1"``), so a run named
+    ``correct_1`` under one root is never pooled with a same-named run under
+    another. This is what makes ``roots`` comparable in one session at all: two
+    directories opened separately can never be compared against each other, only
+    against their own siblings.
+
+    :param roots: two or more directories. Their directory names must be
+        distinct, since that name is the only thing telling two log folders of
+        the same name apart afterwards.
+    :param filename_pattern: applied within every root, same as :func:`read_log_root`.
+    :param format: applied to every root; a log root read as one format cannot
+        be mixed with one read as another in a single call.
+    :returns: ``(df, info)`` shaped like :func:`read_log_root`'s, with the
+        per-root counts summed and ``detected_formats`` merged.
+    """
+    roots = [os.path.abspath(os.path.expanduser(str(root))) for root in roots]
+    if len(roots) < 2:
+        raise ValueError(
+            f"read_log_roots needs at least two roots, got {roots}. Use read_log_root for one."
+        )
+    names = [os.path.basename(root.rstrip(os.sep)) for root in roots]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"Log root directory names must be unique when opening several at once, since that "
+            f"name is what tells two same-named log folders apart -- got repeated name(s) "
+            f"{duplicates} among {roots}. Rename the directories, or open them one at a time."
+        )
+
+    frames = []
+    detected = {}
+    n_folders = n_files = n_rows = dropped_rows = 0
+    probed_files = 0
+    any_probed = False
+    for root, name in zip(roots, names):
+        frame, info = read_log_root(root, filename_pattern, min_file_size, format, max_detect_files)
+        frame = frame.with_columns((pl.lit(f"{name}/") + pl.col("folder")).alias("folder"))
+        frames.append(frame)
+        for detected_format, count in info["detected_formats"].items():
+            detected[detected_format] = detected.get(detected_format, 0) + count
+        n_folders += info["n_folders"]
+        n_files += info["n_files"]
+        n_rows += info["n_rows"]
+        dropped_rows += info["dropped_rows"]
+        if info["probed_files"] is not None:
+            probed_files += info["probed_files"]
+            any_probed = True
+
+    df = pl.concat(frames, how="diagonal_relaxed")
+    info = {
+        "format": str(format),
+        "detected_formats": detected,
+        "probed_files": probed_files if any_probed else None,
+        "n_folders": n_folders,
+        "n_files": n_files,
+        "n_rows": n_rows,
+        "dropped_rows": dropped_rows,
+    }
+    return df, info
+
+
 def count_log_root_files(root, filename_pattern="*.log", min_file_size=0):
     """Fingerprint a log root on disk without reading any file contents.
 
