@@ -404,7 +404,7 @@ GRID_ROWS = (
     ("aux", "set_folder_names"),
     ("aux", "read_log_lines"),
     ("aux", "search_log_lines"),
-    ("aux", "read_log_lines (new tokens)"),
+    ("aux", "filter_log_lines"),
     ("aux", "new_tokens"),
     ("aux", "query_result"),
     ("aux", "split_log_file"),
@@ -646,8 +646,8 @@ def grid_cells(ctx):
          lambda: call(lambda: server.read_log_lines(sid, target, file_name, limit=100))),
         ("aux", "search_log_lines",
          lambda: call(lambda: server.search_log_lines(sid, r"[Ee]rror"))),
-        ("aux", "read_log_lines (new tokens)",
-         fresh_vocabulary(lambda: server.read_log_lines(
+        ("aux", "filter_log_lines",
+         fresh_vocabulary(lambda: server.filter_log_lines(
              sid, target, file_name, limit=100, new_tokens_vs="ALL"))),
         ("aux", "new_tokens",
          fresh_vocabulary(lambda: server.new_tokens(sid, target))),

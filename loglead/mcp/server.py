@@ -18,7 +18,20 @@
 #Splits by block_ID as in HDFS and other custom splits. NOT DONE.abs
 #The last two require reading in the the file
 
+#TODO execution pattern anomalies not really implemented. 
+#Drain and next event predication should do the job. 
 
+#TODO
+#Missing whole class of contextual anomalies. 
+#They are anomalies that only anomalies when a certain context is present. 
+#Root access for a person that works in helpdesk. 
+#| Primitive (The "What") | Contextual Variables (The "Condition") |
+#| :---                                     | :--- |
+#| **Point** (Payload, template, value)     | **Time:** Time of day, day of week, seasonal baseline |
+#| **Execution Order** (Sequence, state)    | **Space:** IP, region, host, network zone |
+#| **Distribution** (Rate, count, volume)   | **Identity:** User, service account, role |
+#|                                          | **State:** Deployment status, system load, maintenance mode |
+#End TODO
 
 """MCP server exposing LogLead's log folder comparison analyses.
 
@@ -70,28 +83,36 @@ split_log_file turns into slices you can compare. Then open_log_root, and drill
 down through folder-name, folder-content, file-content, and line-content, in
 that order.
 
-WORK TOP DOWN, NOT SEARCH OR READ LOGS FIRST. This server is built around narrowing a
-haystack, not searching it. Top level approaches are statistics plots and machine learning.
-learning approaches. The intended path is: folder/file/line and in tools
-plot_* first followed by distance_* or anomaly_* funciotns. First, look
-folder level to see which folder is the outlier, then the same at the file
+1) Start by finding a good mask pattern.
+Run new_tokens over a couple of known good log folders. If you see token-wise differences,
+they are a good indication of what needs to be masked. Once you have a good mask pattern,
+run remask_log_root. Ensure your mask matches your target. When finding execution anomalies,
+you want to mask things like IP addresses. If you are searching for security anomalies, you might
+want to keep IP addresses. Masking too much or too little will cause problems. 
+
+2) Then work top down.
+Top-level approaches are statistical plots and machine learning approaches. The intended path is: folder/file/line, and in tools,
+plot_* first followed by distance_* or anomaly_* functions.
+First, look at the folder level to see which folder is the outlier, then the same at the file
 level within that folder to see which file is the outlier, then at the line
 level within that file to see which lines are the outliers. It is recommended
-to run line level anomaly detection and look at lines that have high 
-anomaly scores. Finally only after all statistics based approaches have been 
-tried resort functions read_log_lines or search_log_lines to look at the specific 
-lines that the narrowing surfaced. Jumping straight to 
-search_log_lines or read_log_lines on a whole log root is starting from a guess 
-about what might be wrong; the distance/anomaly/plot tools exist precisely so 
-you don't have to guess. Prefer statistics ML stuff and treat search/read as the
-last step that inspects a result, not the first step that produces one.
+to run line-level anomaly detection and look at lines that have high
+anomaly scores. Finally, only after all statistics-based approaches have been
+tried, resort to functions read_log_lines or search_log_lines to look at the specific
+lines that the narrowing surfaced. 
 
-new_tokens is a statistics step too: it lists the words a log folder has that the
+3) Try to find point anomalies. For them, try distance_line_content
+that does fuzzy diff and anomaly_line_content. new_tokens is a statistics step too: it lists the words a log folder has that
 comparison folders never have, and read_log_lines(new_tokens_vs=..., only_new=True)
 shows the lines they are on.
 
-COST. These tools span milliseconds to hours. Every result reports its own
-elapsed_seconds: make one narrow call.""")
+4) Remember to search for both point anomalies and distributional pattern anomalies. 
+
+5) Try remasking as you see needed.
+
+Write custom scripts only as last resort. The tools listed here are faster as they run on top of
+Rust and are optimized for speed. Custom scripts will be slower and will not scale to large log folders.
+""")
 
 #: Set by main(); tests and demos construct their own.
 STORE = SessionStore()
@@ -788,58 +809,7 @@ def close_log_root(session_id: str) -> dict:
     return {"closed": STORE.close(session_id)}
 
 
-@tool
-def read_log_lines(
-    session_id: str,
-    folder: str,
-    file_name: str,
-    offset: int = 0,
-    limit: int = 100,
-    masked: bool = False,
-    #TODO
-    new_tokens_vs: Optional[FolderSelector] = None,
-    only_new: bool = False,
-    match_file_name: bool = False,
-) -> dict:
-    """Read actual log lines. Use this to see the evidence behind a score.
-
-    With new_tokens_vs, each line lists its new tokens: words that occur
-    in none of those comparison log folders. 
-    
-    only_new returns just the lines that have new tokens with respect to comparison
-    folder. This kind filtering is useful in finding suspicious lines in a log 
-    folder if masking has been properly done. 
-
-    Args:
-        session_id: Handle from open_log_root.
-        folder: Log folder name.
-        file_name: File name, relative to its log folder.
-        offset: First line to return, 0-based. With only_new, counted among the
-            lines that have new tokens.
-        limit: How many lines (capped at 500).
-        masked: Return the masked text instead of the raw message.
-        new_tokens_vs: Comparison log folders -- "ALL", a list, an int N, or
-            "Prefix*". Point it at known-good folders when you have them: a word
-            that also occurs in a comparison folder is not new. Words come from
-            the masked text when the session is masked.
-        only_new: Return only lines with at least one new token. Needs new_tokens_vs.
-        match_file_name: Compare against the same-named file in the comparison
-            folders only, rather than all their files.
-    """
-    session = STORE.get(session_id)
-    column = "e_message_normalized" if masked else "m_message"
-    if column not in session.df.columns:
-        raise ValueError(f"Column {column!r} is not available in this session.")
-    if only_new and new_tokens_vs is None:
-        raise ValueError(
-            "only_new needs new_tokens_vs: the log folders whose words do not count as new."
-        )
-
-    field = None
-    if new_tokens_vs is not None:
-        _, field = session.ensure_content(session.masked, "Words")
-        session.flush()
-
+def _selected_lines(session, folder: str, file_name: str) -> pl.DataFrame:
     selected = session.df.filter(
         (pl.col("folder") == folder) & (pl.col("file_name") == file_name)
     ).with_row_index("line_number")
@@ -848,7 +818,95 @@ def read_log_lines(
             f"No lines for folder={folder!r} file={file_name!r}. "
             "Check describe_log_root for valid names."
         )
+    return selected
 
+
+@tool
+def read_log_lines(
+    session_id: str,
+    folder: str,
+    file_name: str,
+    offset: int = 0,
+    limit: int = 100,
+    masked: bool = False,
+) -> dict:
+    """Read actual log lines. Use this to see the evidence behind a score.
+
+    For lines filtered by new/unseen tokens, use filter_log_lines instead.
+
+    Args:
+        session_id: Handle from open_log_root.
+        folder: Log folder name.
+        file_name: File name, relative to its log folder.
+        offset: First line to return, 0-based.
+        limit: How many lines (capped at 500).
+        masked: Return the masked text instead of the raw message.
+    """
+    session = STORE.get(session_id)
+    column = "e_message_normalized" if masked else "m_message"
+    if column not in session.df.columns:
+        raise ValueError(f"Column {column!r} is not available in this session.")
+
+    selected = _selected_lines(session, folder, file_name)
+    limit = max(1, min(int(limit), 500))
+    window = selected.slice(offset, limit).select(["line_number", column])
+    return {
+        "session_id": session_id,
+        "folder": folder,
+        "file_name": file_name,
+        "total_lines": selected.height,
+        "offset": offset,
+        "returned": window.height,
+        "lines": window.to_dicts(),
+    }
+
+
+@tool
+def filter_log_lines(
+    session_id: str,
+    folder: str,
+    file_name: str,
+    new_tokens_vs: FolderSelector,
+    offset: int = 0,
+    limit: int = 100,
+    masked: bool = False,
+    only_new: bool = False,
+    match_file_name: bool = False,
+) -> dict:
+    """Read log lines annotated with their new tokens. Use this to find suspicious
+    lines in a log folder, or to see the evidence behind a new_tokens result.
+
+    Each line lists its new tokens: words that occur in none of the comparison
+    log folders. Pass only_new to return just the lines that have new tokens --
+    useful for finding suspicious lines if you have set a proper masking.
+
+    Also useful for finding tokens that would need masking. 
+
+    Args:
+        session_id: Handle from open_log_root.
+        folder: Log folder name.
+        file_name: File name, relative to its log folder.
+        new_tokens_vs: Comparison log folders -- "ALL", a list, an int N, or
+            "Prefix*". Point it at known-good folders when you have them: a word
+            that also occurs in a comparison folder is not new. Words come from
+            the masked text when the session is masked.
+        offset: First line to return, 0-based. With only_new, counted among the
+            lines that have new tokens.
+        limit: How many lines (capped at 500).
+        masked: Return the masked text instead of the raw message.
+        only_new: Return only lines with at least one new token.
+        match_file_name: Compare against the same-named file in the comparison
+            folders only, rather than all their files.
+    """
+    session = STORE.get(session_id)
+    column = "e_message_normalized" if masked else "m_message"
+    if column not in session.df.columns:
+        raise ValueError(f"Column {column!r} is not available in this session.")
+
+    _, field = session.ensure_content(session.masked, "Words")
+    session.flush()
+
+    selected = _selected_lines(session, folder, file_name)
     limit = max(1, min(int(limit), 500))
     result = {
         "session_id": session_id,
@@ -857,32 +915,30 @@ def read_log_lines(
         "total_lines": selected.height,
         "offset": offset,
     }
-    if field is None:
-        window = selected.slice(offset, limit).select(["line_number", column])
-    else:
-        _, comparison = log_root.prepare_folders(session.df, folder, new_tokens_vs)
-        vocab = vocabulary.baseline_vocabulary(
-            session.df, comparison, field, match_file_name, session.cached_vocabulary
+
+    _, comparison = log_root.prepare_folders(session.df, folder, new_tokens_vs)
+    vocab = vocabulary.baseline_vocabulary(
+        session.df, comparison, field, match_file_name, session.cached_vocabulary
+    )
+    if match_file_name and vocab.filter(pl.col("file_name") == file_name).height == 0:
+        raise ValueError(
+            f"No comparison log folder has a file named {file_name!r}. Leave "
+            "match_file_name unset to compare against all their files."
         )
-        if match_file_name and vocab.filter(pl.col("file_name") == file_name).height == 0:
-            raise ValueError(
-                f"No comparison log folder has a file named {file_name!r}. Leave "
-                "match_file_name unset to compare against all their files."
-            )
-        annotated = vocabulary.annotate(selected, vocab, field)
-        has_new = annotated.filter(pl.col("new_tokens").list.len() > 0)
-        window = ((has_new if only_new else annotated)
-                  .slice(offset, limit).select(["line_number", column, "new_tokens"]))
-        result.update({
-            "n_comparison_folders": len(comparison),
-            "lines_with_new_tokens": has_new.height,
-            "baseline_vocabulary_size": vocab.height,
-        })
-        if only_new and offset + window.height < has_new.height:
-            result["notes"] = [
-                f"Showing {window.height} of {has_new.height} lines with new tokens. "
-                "Raise offset for the next page."
-            ]
+    annotated = vocabulary.annotate(selected, vocab, field)
+    has_new = annotated.filter(pl.col("new_tokens").list.len() > 0)
+    window = ((has_new if only_new else annotated)
+              .slice(offset, limit).select(["line_number", column, "new_tokens"]))
+    result.update({
+        "n_comparison_folders": len(comparison),
+        "lines_with_new_tokens": has_new.height,
+        "baseline_vocabulary_size": vocab.height,
+    })
+    if only_new and offset + window.height < has_new.height:
+        result["notes"] = [
+            f"Showing {window.height} of {has_new.height} lines with new tokens. "
+            "Raise offset for the next page."
+        ]
     result.update({"returned": window.height, "lines": window.to_dicts()})
     return result
 
@@ -1392,16 +1448,16 @@ def distance_line_content(
     max_rows: int = 25,
 ) -> dict:
     """Which kinds of line does this file have that the other do not have?
-    Groups / clusters lines by their content. Allows two use cases
-    1) Comparing target vs comparison on group frequencies which indicate 
-    execution pattern anomalies  2) Finding groups that mainly appear in target 
-    which can indicate point anomalies, but also groups that mainly appear in 
-    comparison which can indicate point anomaly of missing an excution. 
-
+    Groups / clusters lines by their content (FuzzyDiff). Allows two use cases
+    1) Comparing target vs comparison on log line group frequencies which indicate 
+    execution pattern anomalies  2) Finding groups that mainly appear in target
+    or comparison which both indicate point anomalies, but of different nature.
+    Former indicates an extra log line while the latter missing log lines.  
+     
     Grouping can be done with different measures, e.g. prefix token match
     (fastest), exact match (also fast, but needs accurate masking), or minhash
-    (slowest, but tolerates inaccurate masking). content_format picks what is
-    grouped; a measure picks how coarsely it is grouped.
+    (slowest, but tolerates inaccurate masking). Content_format allows different
+    inputs words, character 3grams etc. 
 
     Args:
         session_id: Handle from open_log_root.
