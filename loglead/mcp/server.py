@@ -108,7 +108,7 @@ shows the lines they are on.
 
 4) Remember to search for both point anomalies and distributional pattern anomalies. 
 
-5) Try remasking as you see needed.
+5) Try relaxing the mask as well and remasking with it. Too tight mask can miss anomalies.
 
 Write custom scripts only as last resort. The tools listed here are faster as they run on top of
 Rust and are optimized for speed. Custom scripts will be slower and will not scale to large log folders.
