@@ -1,10 +1,13 @@
 import os
 import glob
+import logging
 
 import polars as pl
 
 from . import line_policy
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['HadoopLoader']
 
@@ -48,6 +51,7 @@ class HadoopLoader(BaseLoader):
                     )
                     queries.append(q)
                 except pl.exceptions.NoDataError: # some CSV files can be empty.
+                    logger.debug("HadoopLoader: %s is empty, skipped.", file)
                     continue
         dataframes = pl.collect_all(queries)
         self.df = pl.concat(dataframes)

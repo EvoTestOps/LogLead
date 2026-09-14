@@ -1,8 +1,11 @@
+import logging
 import time
 
 import tensorflow as tf
 from transformers import AlbertTokenizer, TFAlbertModel
 from transformers import BertTokenizer, TFBertModel
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['BertEmbeddings']
 
@@ -11,26 +14,21 @@ class BertEmbeddings:
     def __init__(self, bertmodel="basebert"):
 
         self.basebert = bertmodel
-        
-        # Print out all GPU and CPU devices
-        devices = tf.config.list_physical_devices()
-        print("All physical devices: ", devices)
 
-        gpus = tf.config.list_physical_devices('GPU')
-        print("GPUs: ", gpus)
-
-        cpus = tf.config.list_physical_devices('CPU')
-        print("CPUs: ", cpus)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("All physical devices: %s", tf.config.list_physical_devices())
+            logger.debug("GPUs: %s", tf.config.list_physical_devices('GPU'))
+            logger.debug("CPUs: %s", tf.config.list_physical_devices('CPU'))
 
         if self.basebert == 'basebert':
             self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             self.model = TFBertModel.from_pretrained('bert-base-uncased', output_hidden_states=True)
-            print("Using basebert")
+            logger.info("BertEmbeddings: using basebert")
 
         if self.basebert == 'albert':
             self.tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2')
             self.model = TFAlbertModel.from_pretrained('albert-base-v2', output_hidden_states=True)
-            print("Using albert")
+            logger.info("BertEmbeddings: using albert")
 
     def create_bert_emb(self, sentences):
         # length in word piece tokens
@@ -78,5 +76,5 @@ class BertEmbeddings:
 
         # Calculate and print the time taken in seconds
         elapsed_time = end_time - start_time
-        print(f"Time taken: {elapsed_time:.2f} seconds")
+        logger.debug("create_bert_emb: time taken: %.2f seconds", elapsed_time)
         return embeddings

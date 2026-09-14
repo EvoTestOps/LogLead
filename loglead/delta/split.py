@@ -29,9 +29,12 @@ or 70 GB.
 """
 
 import gzip
+import logging
 import os
 import shutil
 import time
+
+logger = logging.getLogger(__name__)
 
 #: Bytes moved per read/write while streaming. Large enough that the syscall
 #: overhead disappears, small enough to stay irrelevant next to a log frame.
@@ -269,6 +272,8 @@ def split_log_file(path, out_dir, n_slices=10, by="lines", stem=None, overwrite=
             else:
                 os.remove(victim)
 
+    logger.info("split_log_file: %s into %d slice(s) by %s, writing to %s.",
+                path, n_slices, by, out_dir)
     if by == "lines":
         written = _split_by_lines(path, targets, total_lines)
     else:
@@ -278,6 +283,9 @@ def split_log_file(path, out_dir, n_slices=10, by="lines", stem=None, overwrite=
         {"file": os.path.basename(target), "bytes": size, "lines": lines}
         for target, size, lines in written
     ]
+    for entry in slices:
+        logger.debug("split_log_file: wrote %s (%d bytes, %d lines).",
+                     entry["file"], entry["bytes"], entry["lines"])
     return {
         "source": path,
         "out_dir": out_dir,

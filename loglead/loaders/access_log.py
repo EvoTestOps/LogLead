@@ -1,5 +1,6 @@
 import fnmatch
 import glob
+import logging
 import os
 import re
 
@@ -7,6 +8,8 @@ import polars as pl
 import yaml
 
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['AccessLogLoader']
 
@@ -316,9 +319,11 @@ class AccessLogLoader(BaseLoader):
             # preprocess() needs to know which rows to fall back to the raw line for, and cannot
             # recompute it: null_token is about to make nulls out of matched fields too.
             self.df = self.df.with_columns(mask.alias(_UNMATCHED))
-        print(f"AccessLogLoader: {count} of {total} lines ({count / total:.3%}) did not match the "
-              f"format and were {'dropped' if self.on_error == 'drop' else 'kept unparsed'}. "
-              f"First one: {example}")
+        dropped = self.on_error == "drop"
+        log = logger.warning if dropped else logger.info
+        log("AccessLogLoader: %d of %d lines (%.3f%%) did not match the format and were %s. "
+            "First one: %s", count, total, count / total * 100,
+            "dropped" if dropped else "kept unparsed", example)
 
     def _first_unmatched(self, keep_raw, mask):
         """The first line that did not match, quoted in the error - which is the whole diagnostic.
@@ -397,9 +402,9 @@ class AccessLogLoader(BaseLoader):
         floats = source.cast(pl.Float64, strict=False)
         lost = present - (len(floats) - floats.null_count())
         if lost > 0:
-            print(f"WARNING! AccessLogLoader could not read {lost} of {present} values in "
-                  f"'{field}' as a number; they are null. Drop it from numeric_fields if it is "
-                  f"not one.")
+            logger.warning("AccessLogLoader: could not read %d of %d value(s) in '%s' as a number; "
+                            "they are null. Drop it from numeric_fields if it is not one.",
+                            lost, present, field)
         return floats.alias(field)
 
     def _resolve(self, field):
@@ -451,8 +456,9 @@ class AccessLogLoader(BaseLoader):
             parsed = parsed.cast(pl.Datetime("us", getattr(parsed.dtype, "time_zone", None)))
         unparsed = parsed.null_count() - strings.null_count()
         if unparsed > 0:
-            print(f"WARNING! AccessLogLoader could not parse {unparsed} of {len(parsed)} values in "
-                  f"'{self.timestamp_field}' into m_timestamp. Check timestamp_formats.")
+            logger.warning("AccessLogLoader: could not parse %d of %d value(s) in '%s' into "
+                            "m_timestamp. Check timestamp_formats.",
+                            unparsed, len(parsed), self.timestamp_field)
         self.df = self.df.with_columns(parsed.alias("m_timestamp"))
 
     @staticmethod
@@ -478,25 +484,14 @@ class AccessLogLoader(BaseLoader):
 
     def check_for_nulls_and_non_utf8(self):
         """
-        Same reasoning as JsonLoader's override: BaseLoader prints a four-line warning per column
-        that has nulls, and here nulls are the *designed* outcome. null_token turns CLF's "-" into
-        null, and "-" is exactly what a web server writes for every field a request did not carry -
-        remote_user is empty on almost every public site, referrer on direct traffic, and
-        X-Forwarded-For on everything not behind a proxy. Summarize instead, and keep the non-UTF-8
-        warning, which is a real problem rather than an expected shape.
+        Same reasoning as JsonLoader's override: BaseLoader warns per column that has nulls, and
+        here nulls are the *designed* outcome. null_token turns CLF's "-" into null, and "-" is
+        exactly what a web server writes for every field a request did not carry - remote_user is
+        empty on almost every public site, referrer on direct traffic, and X-Forwarded-For on
+        everything not behind a proxy. Summarize instead, and keep the non-UTF-8 warning, which is
+        a real problem rather than an expected shape.
         """
-        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
-        if sparse:
-            worst = sorted(sparse, key=lambda item: -item[1])[:3]
-            listed = ", ".join(f"{c} ({n})" for c, n in worst)
-            print(f"AccessLogLoader: {len(sparse)} of {self.df.width} columns contain nulls out of "
-                  f"{len(self.df)} rows - expected, as null_token={self.null_token!r} marks the "
-                  f"fields a request did not carry. Most null: {listed}.")
-
-        for column, dtype in self.df.schema.items():
-            if dtype == pl.Utf8:
-                bad = self.df.filter(pl.col(column).str.contains("�")).height
-                if bad:
-                    print(f"WARNING! Column '{column}' has {bad} non-UTF-8 encoded values out of "
-                          f"{len(self.df)}. To investigate: "
-                          f"<DF_NAME>.filter(pl.col('{column}').str.contains('�'))")
+        self._log_nulls_and_non_utf8(
+            "AccessLogLoader",
+            f"expected, as null_token={self.null_token!r} marks the fields a request did not "
+            f"carry.")

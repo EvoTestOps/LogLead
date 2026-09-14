@@ -2,7 +2,6 @@ import glob
 import os
 import re
 import json
-import traceback
 import logging
 
 import polars as pl
@@ -116,11 +115,12 @@ class NezhaLoader(BaseLoader):
                         #Metrics are set here
                         setattr(self, f'df_metric_{group}', df)
                 except pl.exceptions.ShapeError as e:
-                    print(f"Error concatenating group '{group}': {e}")
-                    # Debugging: print out column names for each DataFrame in the group
-                    for q in queries:
-                        collected_df = q.collect()
-                        print(f"Columns in {group}: {collected_df.columns}")
+                    logger.error("NezhaLoader: could not concatenate group '%s': %s", group, e)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        for q in queries:
+                            collected_df = q.collect()
+                            logger.debug("NezhaLoader: columns in %s: %s",
+                                         group, collected_df.columns)
                     raise
 
     def load_rca (self, file_path):
@@ -152,12 +152,10 @@ class NezhaLoader(BaseLoader):
                     )
                     label_data = label_data.vstack(df)
         except json.JSONDecodeError as e:
-            print(f"JSON decoding error in file: {file_path}")
-            print(f"Error: {e}")
+            logger.warning("NezhaLoader: JSON decoding error in file %s: %s", file_path, e)
         except Exception as e:
-            print(f"Error processing file: {file_path}")
-            print(f"Error: {e}")
-            traceback.print_exc()
+            logger.warning("NezhaLoader: error processing file %s: %s", file_path, e)
+            logger.debug("NezhaLoader: traceback for %s", file_path, exc_info=True)
         return label_data
     
     def load_metric(self, folder_path, date_str, queries, ano_folder):
@@ -273,9 +271,12 @@ class NezhaLoader(BaseLoader):
             df_normal_json = self.df.filter(pl.col("normal_json")).select("raw_m_message", "row_key",  "SpanID" )
             df_abnormal_json = self.df.filter(~pl.col("normal_json")).select("raw_m_message", "row_key", "SpanID" )
                     
-            logger.info (f"WS df_normal_json: {df_normal_json[0]['raw_m_message'] [0]}")
-            logger.info (f"WS df_abnormal_json: {df_abnormal_json[0]['raw_m_message'][0]}")
-        
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("WS df_normal_json: %.200s",
+                             df_normal_json[0]['raw_m_message'][0])
+                logger.debug("WS df_abnormal_json: %.200s",
+                             df_abnormal_json[0]['raw_m_message'][0])
+
             # Dtype for outer JSON: {log, stream, time}
             outer_dtype = pl.Struct([
                 pl.Field("log", pl.String),
@@ -284,14 +285,6 @@ class NezhaLoader(BaseLoader):
             ])
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").str.json_decode(dtype=outer_dtype))
             df_normal_json = df_normal_json.with_columns(pl.col("raw_m_message").struct.field("log"))
-            #Debug bad JSON
-            # for index, row in enumerate(df_normal_json.to_dicts()):
-            #     try:
-            #         if index % 100 == 0:
-            #             print(".", end="")
-            #         row["log"] = df_normal_json[index].with_columns(pl.col("log").str.json_decode())
-            #     except Exception as e:
-            #         logger.error(f"Row {index}:{df_normal_json[index]['log'][0]} {str(e)}")
 
             # Dtype for inner JSON: {message, severity, ...}
             inner_dtype = pl.Struct([
@@ -322,9 +315,8 @@ class NezhaLoader(BaseLoader):
             #df_abnormal_json = self.df.filter(~pl.col("normal_json")).select("raw_m_message", "row_key", "SpanID" )
            
             #df_abnormal_json =  self.df.select("raw_m_message", "row_key",  "SpanID" )
-            logger.info (f"TT df_normal_json: {df_normal_json[0]['raw_m_message'][0]}")
-
-            #logger.info (f"TT df_abnormal_json: {df_abnormal_json[0]['raw_m_message']}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("TT df_normal_json: %.200s", df_normal_json[0]['raw_m_message'][0])
 
             #We split on the closing { as there should not be anything after that
             df_normal_json = df_normal_json.with_columns(
@@ -340,15 +332,6 @@ class NezhaLoader(BaseLoader):
                 .then(pl.col("raw_m_message_fix") + pl.lit('}'))
                 .otherwise(pl.col("raw_m_message_fix"))
             )
-            #Debug bad JSON
-            # for index, row in enumerate(df_normal_json.to_dicts()):
-            #     try:
-            #         if index % 100 == 0:
-            #             print(".", end="")
-            #         row["raw_m_message_fix"] = df_normal_json[index].with_columns(pl.col("raw_m_message_fix").str.json_decode())
-            #     except Exception as e:
-            #         logger.error(f"Row {index}:{df_normal_json[index]['raw_m_message_fix'][0]} {str(e)}")
-            # #Fix broken JSON
             df_normal_json = df_normal_json.drop("json_error_part")
             # Dtype for JSON: {log, stream, time}
             json_dtype = pl.Struct([

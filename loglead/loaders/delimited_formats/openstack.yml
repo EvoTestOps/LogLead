@@ -1,0 +1,30 @@
+name: openstack
+description: >
+  The OpenStack dataset's own already-parsed CSV (OpenStack_data_original.csv), same shape as
+  loghub's structured form but not one of its systems: it carries its own EventId/EventTemplate/
+  ParameterList plus a ground-truth 'anom_label' (0/1) that loghub's plain CSVs never have. The
+  date is split across 'timestamp' (date only) and 'hour' (time, with either 3 or 6 fractional
+  digits depending on the row) - joined with a space and left to Polars' own inference rather than
+  a fixed chrono format, since a fixed number of fraction digits would reject half the rows.
+
+  message_ascii_only is on because some Content values carry non-ASCII bytes (e.g. Italian error
+  text with a non-breaking space) that crash tipping's Rust parser with a "not a char boundary"
+  panic - the same reason demo/OpenStack_samples.py strips non-ASCII characters by hand.
+
+header: row
+
+message_field: Content
+message_ascii_only: true
+
+timestamp_field: [timestamp, hour]
+
+level_field: level
+
+label_field: anom_label
+anomaly_values: [1]
+
+extra_fields: keep
+
+sample:
+  - 'real_index,LineId,timestamp,hour,pid,level,service,Content,test_id,parent_service,round_1,round_2,api_round_1,api_round_2,assertions_round_1,assertions_round_2,time_hour,clusters,round,EventId,EventTemplate,ParameterList,anom_label,encoded_labels'
+  - '423968,423970,2018-06-26,03:34:27.982275,None,INFO,[sample_workload.sh]:,Workload started!,1,foreground,FAILURE,NO_FAILURE,not_applicable,not_applicable,FAILURE_VOLUME_ATTACHED,NO_FAILURE,2018-06-26 03:34:27.982275,0,2,e17b68d6,Workload started!,[],0,422'

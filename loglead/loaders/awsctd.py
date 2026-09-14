@@ -1,9 +1,12 @@
 from glob import glob
+import logging
 import os
 
 import polars as pl
 
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['AWSCTDLoader']
 
@@ -38,7 +41,7 @@ class AWSCTDLoader(BaseLoader):
             self.df_seq = pl.concat(pl.collect_all(queries))
             self.df = self.df_seq # Saving this here just in case it's mandatory somewhere, but the actual df is created in preprocessing
         else:
-            print("No valid data files processed.")
+            logger.warning("AWSCTDLoader: no valid data files processed.")
 
     def preprocess(self):
         if self.df_seq is not None:
@@ -47,28 +50,54 @@ class AWSCTDLoader(BaseLoader):
                 pl.col('m_message').str.split(",")
             )
 
+            # Vectorized label/message extraction. The trailing element of each line is the
+            # label; everything before it is the syscall-id sequence. Avoiding map_elements here
+            # matters because this dataset explodes to ~175M event rows (self.df below) - a
+            # Python-level UDF over the pre-explode column was materializing multiple full extra
+            # copies of the data and OOM-killing the process on machines with ~15GB RAM.
+            msg_len = pl.col('m_message').list.len()
             self.df_seq = self.df_seq.with_columns(
-                pl.col('m_message').map_elements(lambda x: x[-1] if len(x) > 0 else None, return_dtype=pl.String).alias('label')
+                pl.when(msg_len > 0).then(pl.col('m_message').list.last()).otherwise(None).alias('label')
             )
             self.df_seq = self.df_seq.with_columns(
-                pl.col('m_message').map_elements(lambda x: x[:-1] if len(x) > 1 else None, return_dtype=pl.List(pl.String))
+                pl.when(msg_len > 1)
+                .then(pl.col('m_message').list.slice(0, msg_len - 1))
+                .otherwise(None)
+                .alias('m_message')
             )
             self.df_seq = self.df_seq.with_columns(
-                pl.col('label').map_elements(lambda label: "Normal" if label == "Clean" else label, return_dtype=pl.String).alias('label')
+                pl.when(pl.col('label') == "Clean").then(pl.lit("Normal")).otherwise(pl.col('label')).alias('label')
             )
 
-            # Explode the 'split_message' while retaining 'seq_id' and 'label' for each exploded item
-            self.df = self.df_seq.explode('m_message')
+            # seq_id/label get broadcast to every exploded row below (~175M of them from ~590k
+            # lines); dictionary-encoding them first keeps that from ballooning memory the way
+            # repeated plain strings would.
+            self.df_seq = self.df_seq.with_columns(
+                pl.col('seq_id').cast(pl.Categorical),
+                pl.col('label').cast(pl.Categorical),
+            )
+
+            # Explode through a dictionary-encoded copy of the list column: the ~175M-row
+            # intermediate this produces never needs a full Utf8 buffer, only small integer
+            # codes into the (~few hundred value) dictionary. Cast back to Utf8 afterwards since
+            # AnomalyDetector._prepare_data only accepts Utf8 / List[Utf8] for this column, and
+            # leave self.df_seq's own m_message as List(Utf8) for the same reason.
+            self.df = (
+                self.df_seq
+                .with_columns(pl.col('m_message').cast(pl.List(pl.Categorical)))
+                .explode('m_message')
+                .with_columns(pl.col('m_message').cast(pl.Utf8))
+            )
 
             # Create a 'normal' column that is True where label is 'Normal', otherwise False
             self.df_seq = self.df_seq.with_columns(
                 (pl.col('label') == "Normal").alias('normal'),
             )
             self.df_seq = self.df_seq.with_columns(
-                (~pl.any('normal')).alias('anomaly')
+                (~pl.col('normal')).alias('anomaly')
             )
 
         else:
-            print("DataFrame is empty, no data to process.")
+            logger.warning("AWSCTDLoader: DataFrame is empty, no data to process.")
 
 

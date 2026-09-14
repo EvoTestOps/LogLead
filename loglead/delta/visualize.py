@@ -15,11 +15,16 @@ DataFrame, so a caller that cannot look at the picture can still reason about
 the positions.
 """
 
+import logging
+import time
+
 import numpy as np
 import plotly.graph_objects as go
 import polars as pl
 
 from . import log_root, scoring
+
+logger = logging.getLogger(__name__)
 
 # Colors and shapes are combined, so the number of groups that stay apart is the
 # count of colors times the count of shapes. The colors are picked from the
@@ -167,7 +172,11 @@ def _document_term_matrix(documents, content_format, vectorizer_type):
               "token_pattern": None, "lowercase": False}
     )
     vect = log_root.create_vectorizer(vectorizer_type)(**params)
-    return vect.fit_transform(documents)
+    started = time.perf_counter()
+    dtm = vect.fit_transform(documents)
+    logger.debug("_document_term_matrix: %d document(s) in %.2fs.",
+                 len(documents), time.perf_counter() - started)
+    return dtm
 
 
 def _umap_2d(dtm, random_seed=None):
@@ -185,7 +194,10 @@ def _umap_2d(dtm, random_seed=None):
     import umap
 
     reducer = umap.UMAP(random_state=random_seed) if isinstance(random_seed, int) else umap.UMAP()
-    return reducer.fit_transform(dtm.toarray())
+    started = time.perf_counter()
+    embeddings = reducer.fit_transform(dtm.toarray())
+    logger.debug("_umap_2d: %d document(s) in %.2fs.", dtm.shape[0], time.perf_counter() - started)
+    return embeddings
 
 
 def _points_frame(embeddings_2d, unique_terms, line_counts, folder_groups, grouped):

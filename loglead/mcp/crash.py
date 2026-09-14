@@ -55,11 +55,14 @@ the call as well as the pid before making tool calls concurrent.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
+
+logger = logging.getLogger(__name__)
 
 #: Crash records kept per cache directory, oldest dropped first. The ledger is
 #: read on every ``open_log_root``, so it stays small enough to read in full.
@@ -116,7 +119,8 @@ def memory_snapshot():
             "available_gb": round(virtual.available / 1e9, 2),
             "total_gb": round(virtual.total / 1e9, 2),
         }
-    except psutil.Error:  # a memory reading is never worth failing a call over
+    except psutil.Error as error:  # a memory reading is never worth failing a call over
+        logger.debug("_memory_snapshot: could not read memory: %s", error)
         return {}
 
 
@@ -153,7 +157,8 @@ def _alive(pid, started_at):
         if started_at is None:
             return True
         return abs(process.create_time() - float(started_at)) < 1.0
-    except (psutil.Error, TypeError, ValueError):
+    except (psutil.Error, TypeError, ValueError) as error:
+        logger.debug("_alive: could not check pid %s: %s", pid, error)
         return False
 
 
@@ -370,7 +375,9 @@ class CrashLog:
                 self._made_dir = True
             with open(self.inflight_path, "w") as handle:
                 handle.write(blob)
-        except OSError:
+        except OSError as error:
+            logger.debug("CrashLog.start_call: could not write %s, disabling: %s",
+                         self.inflight_path, error)
             self.enabled = False  # an unwritable cache dir is not worth retrying per call
 
     def finish_call(self):
@@ -379,8 +386,9 @@ class CrashLog:
             return
         try:
             self.inflight_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        except OSError as error:
+            logger.debug("CrashLog.finish_call: could not remove %s: %s",
+                         self.inflight_path, error)
 
     def _shape(self, session):
         """How big the session is, computed once per session and kept.
@@ -414,7 +422,8 @@ class CrashLog:
         for path in sorted(self.dir.glob("inflight-*.json")):
             try:
                 record = json.loads(path.read_text())
-            except (OSError, ValueError):
+            except (OSError, ValueError) as error:
+                logger.debug("CrashLog.sweep: could not read %s: %s", path, error)
                 record = None
             if record is None:  # a torn write: nothing to report, nothing to keep
                 self._unlink(path)
@@ -445,7 +454,8 @@ class CrashLog:
     def read_ledger(self):
         try:
             return json.loads(self.ledger_path.read_text()).get("crashes", [])
-        except (OSError, ValueError, AttributeError):
+        except (OSError, ValueError, AttributeError) as error:
+            logger.debug("CrashLog.read_ledger: could not read %s: %s", self.ledger_path, error)
             return []
 
     def _append(self, records):
@@ -462,12 +472,12 @@ class CrashLog:
             with open(temporary, "w") as handle:
                 json.dump({"crashes": crashes}, handle, indent=1)
             os.replace(temporary, self.ledger_path)
-        except OSError:
-            pass
+        except OSError as error:
+            logger.debug("CrashLog._append: could not write %s: %s", self.ledger_path, error)
 
     @staticmethod
     def _unlink(path):
         try:
             path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        except OSError as error:
+            logger.debug("CrashLog._unlink: could not remove %s: %s", path, error)

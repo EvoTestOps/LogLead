@@ -38,6 +38,7 @@ import functools
 import hashlib
 import inspect
 import json
+import logging
 import os
 import sys
 import time
@@ -57,6 +58,8 @@ from ..delta import (anomaly, distance, export, log_root, masking, scoring, spli
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import crash, formatting
 from .session import SessionStore
+
+logger = logging.getLogger(__name__)
 
 mcp = _Server("loglead", instructions="""\
 Compares log folders (test runs, deployments, nodes -- any set of logs that
@@ -106,6 +109,33 @@ FileSelector = Union[str, int, Sequence[str]]
 PlotSelector = Sequence[str]
 
 
+class _NoteCollector(logging.Handler):
+    """Collects WARNING+ records logged under 'loglead' during one tool call, so they can be
+    added to the result's ``notes`` (docs/logging.md §6). The logger's own level is left alone;
+    only this handler is scoped to WARNING and only for the call's duration."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(self.format(record))
+
+
+def _add_warning_notes(result, messages):
+    seen = []
+    for message in messages:
+        if message not in seen:
+            seen.append(message)
+    if not seen:
+        return
+    notes = list(result.get("notes") or [])
+    notes.extend(seen[:10])
+    if len(seen) > 10:
+        notes.append(f"{len(seen) - 10} more warning(s) on the server's stderr.")
+    result["notes"] = notes
+
+
 def tool(fn):
     """Register a function as an MCP tool, keep stdout clean, and time it.
 
@@ -134,16 +164,21 @@ def tool(fn):
         started = time.perf_counter()
         recorder = crash_log()
         _record_call(recorder, fn.__name__, signature, args, kwargs)
+        collector = _NoteCollector()
+        loglead_logger = logging.getLogger("loglead")
+        loglead_logger.addHandler(collector)
         try:
             with contextlib.redirect_stdout(sys.stderr):
                 result = fn(*args, **kwargs)
         finally:
+            loglead_logger.removeHandler(collector)
             # A raised exception is not a crash: the client was told about it.
             # Only a call that never reaches here leaves its breadcrumb behind.
             recorder.finish_call()
         if isinstance(result, dict):
             result.setdefault("elapsed_seconds", round(time.perf_counter() - started, 2))
             _report_crashes(recorder, result)
+            _add_warning_notes(result, collector.messages)
         return result
 
     mcp.tool()(wrapper)
@@ -2251,7 +2286,14 @@ def main():
         "--output-dir", default=None,
         help="Root for result tables and plots. Defaults to <cache-dir>/output.",
     )
+    parser.add_argument(
+        "--log-level", default=os.environ.get("LOGLEAD_MCP_LOG_LEVEL", "INFO"),
+        help="Level for the 'loglead' logger. Also LOGLEAD_MCP_LOG_LEVEL. Above WARNING also "
+             "stops warnings from being added to tool results' notes.",
+    )
     args = parser.parse_args()
+
+    logging.getLogger("loglead").setLevel(args.log_level)
 
     global STORE
     STORE = SessionStore(cache_dir=args.cache_dir, output_root=args.output_dir)
@@ -2259,9 +2301,9 @@ def main():
     # Anything left in flight belongs to a process that is gone. Say so here for
     # whoever reads the server log; the client is told on its first tool result.
     for record in crash_log().sweep():
-        print(f"[loglead-mcp] the previous process died during {record.get('tool')} "
-              f"(started {record.get('started_at')}); reporting it on the first result.",
-              file=sys.stderr)
+        logger.warning("[loglead-mcp] the previous process died during %s (started %s); "
+                        "reporting it on the first result.",
+                        record.get('tool'), record.get('started_at'))
 
     kwargs = {} if args.transport == "stdio" else {"host": args.host, "port": args.port}
     mcp.run(transport=args.transport, **kwargs)

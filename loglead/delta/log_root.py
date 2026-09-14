@@ -19,6 +19,7 @@ files.
 
 import fnmatch
 import glob
+import logging
 import os
 import re
 
@@ -28,6 +29,8 @@ from ..enhancers import EventLogEnhancer
 from ..loaders import (DEFAULT_MAX_DETECT_FILES, AccessLogLoader, AutoLoader, DelimitedLoader,
                        JsonLoader, LogfmtLoader, RawLoader, SyslogLoader, detect_format,
                        name_shape)
+
+logger = logging.getLogger(__name__)
 
 CONTENT_FORMATS = ("Words", "3grams", "Sklearn", "File")
 
@@ -231,6 +234,9 @@ def read_log_root(root, filename_pattern="*.log", min_file_size=0, format="auto"
         "n_rows": df.height,
         "dropped_rows": raw_height - df.height,
     }
+    logger.info("read_log_root: %s - %d folder(s), %d file(s), format %s, %d row(s), "
+                "%d dropped.", root, info["n_folders"], info["n_files"], format, info["n_rows"],
+                info["dropped_rows"])
     return df, info
 
 
@@ -327,7 +333,8 @@ def count_log_root_files(root, filename_pattern="*.log", min_file_size=0):
         for path in glob.glob(os.path.join(subdir, filename_pattern)):
             try:
                 stat = os.stat(path)
-            except OSError:
+            except OSError as error:
+                logger.debug("count_log_root_files: could not stat %s, skipped: %s", path, error)
                 continue
             if stat.st_size <= min_file_size:
                 continue
@@ -406,6 +413,7 @@ def _probe_file(path, sample_lines):
     except Exception as error:  # a probe must never be the thing that fails
         entry["format"] = None
         entry["error"] = str(error)
+        logger.debug("_probe_file: could not detect format for %s: %s", path, error)
     return entry
 
 
@@ -523,7 +531,8 @@ def peek_log_root(path, filename_pattern="*.log", probe_files=5, sample_lines=5,
             match = os.path.join(subdir, name)
             try:
                 stat = os.stat(match)
-            except OSError:
+            except OSError as error:
+                logger.debug("peek_log_root: could not stat %s, skipped: %s", match, error)
                 continue
             n_files += 1
             total_bytes += stat.st_size
@@ -955,7 +964,8 @@ def prepare_files(target_df, files="ALL"):
     if isinstance(files, list):
         missing = [f for f in files if f not in available]
         if missing:
-            print(f"Warning: files not present in the target log folder, skipping: {missing}")
+            logger.warning("prepare_files: files not present in the target log folder, "
+                            "skipping: %s", missing)
         files = [f for f in files if f in available]
         if not files:
             raise ValueError("No valid files found in the provided list for processing.")

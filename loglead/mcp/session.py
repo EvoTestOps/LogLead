@@ -18,6 +18,7 @@ from __future__ import annotations  # `X | None` annotations on Python 3.9
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
@@ -32,6 +33,8 @@ import polars as pl
 from ..delta import export, log_root
 from ..enhancers import EventLogEnhancer
 from ..loaders import DEFAULT_MAX_DETECT_FILES
+
+logger = logging.getLogger(__name__)
 from .mask_registry import MaskPatternRegistry
 
 #: Columns present straight from the loader, before any enhancement. Which
@@ -476,6 +479,8 @@ class SessionStore:
         cache_hit = cache_path.exists() and not refresh
         content_source = {}
         read_info = {}
+        logger.debug("SessionStore.open: parquet cache %s for %s.",
+                     "hit" if cache_hit else "miss", cache_path)
         if cache_hit:
             df = pl.read_parquet(cache_path)
             sidecar = cache_path.with_suffix(".json")
@@ -660,10 +665,12 @@ class SessionStore:
         session = self.get(session_id)
         session.flush()
         del self._sessions[session_id]
+        logger.info("SessionStore.close: closed session %s.", session_id)
         return session.summary()
 
     def clear_cache(self):
         """Delete the whole parquet cache. Open sessions keep working in memory."""
         if self.cache_dir.exists():
             shutil.rmtree(self.cache_dir)
+        logger.info("SessionStore.clear_cache: deleted %s.", self.cache_dir)
         return str(self.cache_dir)

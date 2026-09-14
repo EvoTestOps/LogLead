@@ -1,9 +1,12 @@
 import os
 import polars as pl
+import logging
 from datetime import datetime
 from .base import BaseLoader
 import random
 import json
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['LO2Loader']
 
@@ -26,16 +29,16 @@ class LO2Loader(BaseLoader):
         self.single_error_type = single_error_type
         if single_service in ["", "client", "code", "key", "refresh-token", "service", "token", "user"]:
             self.service_type = "oauth2-oauth2-"+single_service
-            print("Service type set:", single_service)
+            logger.info("LO2Loader: service type set to %r.", single_service)
         else:
-            print("Invalid service type given!")
+            logger.warning("LO2Loader: invalid service type given: %r.", single_service)
 
         # Adjust settings if single_error_type is set
         if self.single_error_type:
             self.dup_errors = True
             self.errors_per_run = 1
-            print(f"single_error_type is set to '{self.single_error_type}'. "
-                  f"Setting dup_errors to True and errors_per_run to 1.")
+            logger.info("LO2Loader: single_error_type is set to %r. Setting dup_errors to True "
+                        "and errors_per_run to 1.", self.single_error_type)
 
         self.selected_random_error = None  # Store the randomly chosen error if single_error_type == "random"
         self.metrics_df = None
@@ -47,6 +50,7 @@ class LO2Loader(BaseLoader):
         data = []
         n = 0
         total_errors_needed = self.n_runs * self.errors_per_run
+        processing_errors = []
 
         for run in os.listdir(self.filename):
             run_path = os.path.join(self.filename, run)
@@ -63,9 +67,11 @@ class LO2Loader(BaseLoader):
                     if self.selected_random_error is None:
                         if available_errors:
                             self.selected_random_error = random.choice(available_errors)
-                            print(f"Randomly selected error type: {self.selected_random_error}")
+                            logger.info("LO2Loader: randomly selected error type: %s",
+                                        self.selected_random_error)
                         else:
-                            print(f"No errors available in the first run to select randomly. Skipping.")
+                            logger.warning("LO2Loader: no errors available in the first run to "
+                                            "select randomly. Skipping.")
                             continue
                     error_cases = [self.selected_random_error]
                 elif self.single_error_type:
@@ -73,7 +79,8 @@ class LO2Loader(BaseLoader):
                     if self.single_error_type in available_errors:
                         error_cases = [self.single_error_type]
                     else:
-                        print(f"Warning: Error type '{self.single_error_type}' not found in run {run}. Skipping.")
+                        logger.warning("LO2Loader: error type '%s' not found in run %s. "
+                                        "Skipping.", self.single_error_type, run)
                         continue
                 elif not self.dup_errors:
                     # Filter out previously used errors
@@ -81,8 +88,9 @@ class LO2Loader(BaseLoader):
 
                     # Check if we have enough unique errors remaining
                     if len(available_errors) < self.errors_per_run:
-                        print(f"Warning: Not enough unique errors available for run {run}. "
-                              f"Needed {self.errors_per_run}, but only {len(available_errors)} remaining.")
+                        logger.warning("LO2Loader: not enough unique errors available for run "
+                                        "%s. Needed %d, but only %d remaining.",
+                                        run, self.errors_per_run, len(available_errors))
                         error_cases = available_errors  # Use all remaining unique errors
                     else:
                         error_cases = random.sample(available_errors, self.errors_per_run)
@@ -102,18 +110,22 @@ class LO2Loader(BaseLoader):
                         for log_file in os.listdir(test_case_path):
                             log_file_path = os.path.join(test_case_path, log_file)
                             if os.path.isfile(log_file_path) and self.service_type in log_file:
-                                #print(f"Processing: {log_file_path}")
                                 try:
                                     log_df = self._process_log_file(log_file_path, run, test_case, log_file)
                                     if log_df is not None:
                                         data.append(log_df)
                                 except Exception as e:
-                                    print(f"Error processing {log_file_path}: {e}")
+                                    processing_errors.append((log_file_path, e))
+
+        if processing_errors:
+            names = ", ".join(path for path, _ in processing_errors[:5])
+            logger.warning("LO2Loader: %d of the log files processed raised an error and were "
+                            "skipped, first ones: %s", len(processing_errors), names)
 
         # Check if we got enough errors when dup_errors is False
         if not self.dup_errors and len(self.used_errors) < total_errors_needed:
-            print(f"Warning: Could not find enough unique errors. "
-                  f"Needed {total_errors_needed}, but only found {len(self.used_errors)}")
+            logger.warning("LO2Loader: could not find enough unique errors. Needed %d, but only "
+                            "found %d.", total_errors_needed, len(self.used_errors))
 
         if data:
             self.df = pl.concat(data, how="vertical").drop_nulls()
@@ -125,6 +137,7 @@ class LO2Loader(BaseLoader):
             'metric_node_load1.json'
         ]
         metrics_data = []
+        processing_errors = []
         for run in os.listdir(self.filename):
             run_path = os.path.join(self.filename, run)
             if os.path.isdir(run_path):
@@ -135,13 +148,18 @@ class LO2Loader(BaseLoader):
                         for metrics_file in os.listdir(metrics_path):
                             metrics_file_path = os.path.join(metrics_path, metrics_file)
                             if metrics_file in temporal_metrics:
-                                print(f"Processing metrics: {metrics_file_path}")
+                                logger.debug("LO2Loader: processing metrics: %s",
+                                             metrics_file_path)
                                 try:
                                     metrics_df = self._process_metrics_file(metrics_file_path, run, test_case)
                                     if metrics_df is not None:
                                         metrics_data.append(metrics_df)
                                 except Exception as e:
-                                    print(f"Error processing metrics {metrics_file_path}: {e}")
+                                    processing_errors.append((metrics_file_path, e))
+        if processing_errors:
+            names = ", ".join(path for path, _ in processing_errors[:5])
+            logger.warning("LO2Loader: %d metrics file(s) raised an error and were skipped, "
+                            "first ones: %s", len(processing_errors), names)
         if metrics_data:
             self.metrics_df = pl.concat(metrics_data, how="vertical")
 

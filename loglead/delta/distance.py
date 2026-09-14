@@ -27,12 +27,16 @@ that representation is grouped. Each one yields its own bucket histogram, so
 there is no ``rank_sum`` combining them.
 """
 
+import logging
+
 import numpy as np
 import polars as pl
 
 from .. import LogDistance
 from ..enhancers import EventLogEnhancer
 from . import log_root, scoring
+
+logger = logging.getLogger(__name__)
 
 #: distance measure name -> ``LogDistance`` method name.
 DISTANCE_MEASURES = {"cosine": "cosine", "jaccard": "jaccard",
@@ -424,6 +428,8 @@ def distance_line_content(
         # No comparison log folder has a file of this name, so there is nothing
         # to judge it against -- the same rule distance_file_content applies.
         if target_lines.height == 0 or comparison_lines.height == 0:
+            logger.debug("distance_line_content: %s/%s has no lines on one side, skipped.",
+                         target_folder, file_name)
             continue
 
         frames = []

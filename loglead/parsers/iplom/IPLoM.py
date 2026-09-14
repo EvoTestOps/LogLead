@@ -141,7 +141,6 @@ class IPLoMParser:
 
 
     def parse(self, logname="FakeName"):
-        #print("Parsing file: " + os.path.join(self.para.path, logname))
         self.logname = logname
         starttime = datetime.now()
         self.Step1()
@@ -149,8 +148,6 @@ class IPLoMParser:
         self.Step3()
         self.Step4()
         self.getOutput()
-        #self.WriteEventToFile()
-        #print("Parsing done. [Time taken: {!s}]".format(datetime.now() - starttime))
 
 
     def Step1(self):
@@ -160,6 +157,7 @@ class IPLoMParser:
         """
 #        lineCount = 1
         lineCount = 0 # In LogLead Line counting starts from zero
+        discarded = 0
         for line in self.messages:
             #line = line["Content"]
             # If line is empty, skip
@@ -181,11 +179,16 @@ class IPLoMParser:
             # Add current log to the corresponding partition
             #Quick fix to ignore too long events. 
             if len(wordSeq) > self.para.maxEventLen:
-                logger.warn (f"Event length {len(wordSeq)} longer than max {self.para.maxEventLen} DISGARDING EVENT!")
+                logger.debug("Event length %d longer than max %d, discarding event.",
+                             len(wordSeq), self.para.maxEventLen)
+                discarded += 1
                 continue
-            else:    
+            else:
                 self.partitionsL[len(wordSeq) - 1].logLL.append(wordSeq)
                 self.partitionsL[len(wordSeq) - 1].numOfLogs += 1
+        if discarded:
+            logger.warning("Step1: discarded %d event(s) longer than max %d.",
+                            discarded, self.para.maxEventLen)
 
         for partition in self.partitionsL:
             if partition.numOfLogs == 0:
@@ -287,8 +290,7 @@ class IPLoMParser:
                     p2Set.add(logL[p2])
 
                     if logL[p1] == logL[p2]:
-                        #print("Warning: p1 may be equal to p2")
-                        logger.warn("Warning: p1 may be equal to p2")
+                        logger.warning("p1 may be equal to p2")
 
                     if logL[p1] not in mapRelation1DS:
                         mapRelation1DS[logL[p1]] = set()
@@ -356,8 +358,7 @@ class IPLoMParser:
                         oneToMP2D[logL[p2]] += 1
 
             except KeyError as er:
-                print(er)
-                print("error: " + str(p1) + "\t" + str(p2))
+                logger.debug("KeyError for p1=%s p2=%s: %s", p1, p2, er)
 
             newPartitionsD = {}
             if partition.stepNo == 2:
@@ -475,7 +476,7 @@ class IPLoMParser:
                 continue
 
             if partition.numOfLogs == 0:
-                print(str(partition.stepNo) + "\t")
+                logger.debug("Step: %s, empty partition.", partition.stepNo)
 
             uniqueTokensCountLS = []
             for columnIdx in range(partition.lenOfLogs):
@@ -526,14 +527,8 @@ class IPLoMParser:
         try:
             distance = 1.0 * cardOfS / Lines_that_match_S
         except ZeroDivisionError as er1:
-            print(er1)
-            print(
-                "cardOfS: "
-                + str(cardOfS)
-                + "\t"
-                + "Lines_that_match_S: "
-                + str(Lines_that_match_S)
-            )
+            logger.debug("Get_Rank_Posistion: %s (cardOfS: %s, Lines_that_match_S: %s)",
+                         er1, cardOfS, Lines_that_match_S)
 
         if distance <= self.para.lowerBound:
             if one_m:

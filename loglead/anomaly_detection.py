@@ -1,3 +1,4 @@
+import logging
 import time
 from inspect import isclass
 
@@ -33,6 +34,8 @@ import warnings
 
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['AnomalyDetector', 'LogDistance']
 
@@ -461,7 +464,7 @@ class AnomalyDetector:
         train_methods.discard(self.train_model)
         for method in train_methods:
             if not self.print_scores:
-                print(f"Running {method.__name__}")
+                logger.info("Running %s", method.__name__)
             time_start = time.process_time()
             method()
             self.predict()
@@ -516,7 +519,8 @@ class AnomalyDetector:
             elif isinstance(model, DecisionTreeClassifier):
                 feature_importance = model.feature_importances_
             else:
-                print("Model type not supported for feature importance extraction")
+                warnings.warn("Model type not supported for feature importance extraction",
+                               stacklevel=2)
                 return
             sorted_idx = feature_importance.argsort()[::-1]  # Sort in descending order
 
@@ -543,7 +547,7 @@ class AnomalyDetector:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", UserWarning)
                     res_gp = gp_minimize(objective, space, n_calls=max_iterations, random_state=0)
-                print(f"F1 optimization time taken {(time.time() - t_start):.4f}")
+                logger.debug("F1 optimization time taken %.4f", time.time() - t_start)
                 return res_gp.x[0], -res_gp.fun
             
             titlestr = type(self.model).__name__ + " ROC" # for plot (if it's on)

@@ -251,8 +251,9 @@ class ShapExplainer:
         # amount matters, so now the warning looks for both of them.
         # Could be changed to be something better if needed, now just a warning.
         if (dataamount >= 1000*self.threshold or featureamount >= self.threshold) and self.warn:
-            print("Using large data set / many features, calculating shapvalues can be resource intensive!")
-            raise ResourceWarning
+            raise ResourceWarning(
+                "Using large data set / many features, calculating shapvalues can be resource "
+                "intensive!")
 
         self.shapdata = test_data
         expl = self.func()

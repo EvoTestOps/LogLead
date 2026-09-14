@@ -1,5 +1,6 @@
 import datetime
 import glob
+import logging
 import os
 import re
 
@@ -7,6 +8,8 @@ import polars as pl
 
 from . import line_policy
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['SyslogLoader']
 
@@ -282,9 +285,10 @@ class SyslogLoader(BaseLoader):
             "merge-add-column": f"merged into an added 'trace' column, leaving {len(self.df)} "
                                 f"of {before} events",
         }[self.multiline]
-        print(f"SyslogLoader: {count} of {total} lines ({count / total:.3%}) did not match "
-              f"{used} and were {outcome} - usually continuation lines of multi-line messages. "
-              f"First one: {example}")
+        log = logger.warning if self.multiline == "drop" else logger.info
+        log("SyslogLoader: %d of %d lines (%.3f%%) did not match %s and were %s - usually "
+            "continuation lines of multi-line messages. First one: %s",
+            count, total, count / total * 100, used, outcome, example)
 
     # Mapping ---------------------------------------------------------------------------------
 
@@ -357,8 +361,9 @@ class SyslogLoader(BaseLoader):
             }).select(pl.coalesce("rfc5424", "rfc3164")).to_series()
         unparsed = parsed.null_count() - strings.null_count()
         if unparsed > 0:
-            print(f"WARNING! SyslogLoader could not parse {unparsed} of {len(parsed)} timestamps "
-                  f"into m_timestamp. Check timestamp_formats, or year= for RFC 3164.")
+            logger.warning("SyslogLoader: could not parse %d of %d timestamp(s) into m_timestamp. "
+                            "Check timestamp_formats, or year= for RFC 3164.",
+                            unparsed, len(parsed))
         self.df = self.df.with_columns(parsed.alias("m_timestamp")).drop("timestamp")
 
     def _with_year(self, strings):
@@ -398,24 +403,11 @@ class SyslogLoader(BaseLoader):
 
     def check_for_nulls_and_non_utf8(self):
         """
-        Same reasoning as JsonLoader's and LogfmtLoader's overrides: BaseLoader prints a four-line
-        warning per column that has nulls, and here nulls are the expected shape rather than a
-        defect - most syslog lines carry no pid, RFC 5424 writes '-' for anything not supplied, and
-        the continuation lines that on_error='keep' preserves have no captures at all. Summarize
-        instead, and keep the non-UTF-8 warning, which is a real problem.
+        Same reasoning as JsonLoader's and LogfmtLoader's overrides: BaseLoader warns per column
+        that has nulls, and here nulls are the expected shape rather than a defect - most syslog
+        lines carry no pid, RFC 5424 writes '-' for anything not supplied, and the continuation
+        lines that on_error='keep' preserves have no captures at all. Summarize instead, and keep
+        the non-UTF-8 warning, which is a real problem.
         """
-        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
-        if sparse:
-            worst = sorted(sparse, key=lambda item: -item[1])[:3]
-            listed = ", ".join(f"{c} ({n})" for c, n in worst)
-            print(f"SyslogLoader: {len(sparse)} of {self.df.width} columns contain nulls out of "
-                  f"{len(self.df)} rows - expected, as syslog fields are optional. "
-                  f"Most null: {listed}.")
-
-        for column, dtype in self.df.schema.items():
-            if dtype == pl.Utf8:
-                bad = self.df.filter(pl.col(column).str.contains("�")).height
-                if bad:
-                    print(f"WARNING! Column '{column}' has {bad} non-UTF-8 encoded values out of "
-                          f"{len(self.df)}. To investigate: "
-                          f"<DF_NAME>.filter(pl.col('{column}').str.contains('�'))")
+        self._log_nulls_and_non_utf8(
+            "SyslogLoader", "expected, as syslog fields are optional.")

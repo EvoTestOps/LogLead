@@ -22,6 +22,7 @@ shadow a built-in one.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional, Sequence
@@ -29,6 +30,8 @@ from typing import Optional, Sequence
 import polars as pl
 
 from ..delta import masking
+
+logger = logging.getLogger(__name__)
 
 #: Custom pattern names are filesystem-safe and visually distinct from paths.
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -119,6 +122,8 @@ class MaskPatternRegistry:
             "patterns": [{"replacement": r, "regex": p} for r, p in resolved],
         }
         path.write_text(json.dumps(record, indent=2))
+        logger.info("MaskPatternRegistry.register: %s pattern %r with %d rule(s).",
+                    "overwrote" if overwrite else "registered", name, len(resolved))
         return record
 
     def get(self, name: str) -> list[tuple[str, str]]:
@@ -165,6 +170,7 @@ class MaskPatternRegistry:
         if not path.exists():
             raise KeyError(name)
         path.unlink()
+        logger.info("MaskPatternRegistry.delete: removed pattern %r.", name)
 
 
 def _check_pattern_compiles(regex: str, replacement: str, index: int) -> None:

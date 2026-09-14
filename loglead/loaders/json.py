@@ -1,6 +1,7 @@
 import fnmatch
 import glob
 import io
+import logging
 import os
 import re
 
@@ -8,6 +9,8 @@ import polars as pl
 import yaml
 
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['JsonLoader']
 
@@ -179,8 +182,8 @@ class JsonLoader(BaseLoader):
 
         self.df = frames[0] if len(frames) == 1 else pl.concat(frames, how="diagonal_relaxed")
         if self._dropped_lines:
-            print(f"JsonLoader: dropped {self._dropped_lines} line(s) that were not JSON objects "
-                  f"(on_error='skip').")
+            logger.warning("JsonLoader: dropped %d line(s) that were not JSON objects "
+                            "(on_error='skip').", self._dropped_lines)
 
     def _collect_paths(self):
         if not self.filename_pattern:
@@ -361,8 +364,9 @@ class JsonLoader(BaseLoader):
             parsed = parsed.cast(pl.Datetime("us", getattr(parsed.dtype, "time_zone", None)))
         unparsed = parsed.null_count()
         if unparsed:
-            print(f"WARNING! JsonLoader could not parse {unparsed} of {len(parsed)} values in "
-                  f"'{self.timestamp_field}' into m_timestamp. Check timestamp_formats.")
+            logger.warning("JsonLoader: could not parse %d of %d value(s) in '%s' into "
+                            "m_timestamp. Check timestamp_formats.",
+                            unparsed, len(parsed), self.timestamp_field)
         self.df = self.df.with_columns(parsed.alias("m_timestamp"))
 
     @staticmethod
@@ -406,23 +410,10 @@ class JsonLoader(BaseLoader):
 
     def check_for_nulls_and_non_utf8(self):
         """
-        BaseLoader prints a four-line warning per column that has nulls. For JSON that is noise,
-        not signal: keys legitimately differ per record, so a file with 90 keys routinely produces
-        80-odd sparse columns. Summarize instead, and keep the non-UTF-8 warning, which is a real
-        problem rather than an expected shape.
+        BaseLoader warns per column that has nulls. For JSON that is noise, not signal: keys
+        legitimately differ per record, so a file with 90 keys routinely produces 80-odd sparse
+        columns. Summarize instead, and keep the non-UTF-8 warning, which is a real problem rather
+        than an expected shape.
         """
-        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
-        if sparse:
-            worst = sorted(sparse, key=lambda item: -item[1])[:3]
-            listed = ", ".join(f"{c} ({n})" for c, n in worst)
-            print(f"JsonLoader: {len(sparse)} of {self.df.width} columns contain nulls out of "
-                  f"{len(self.df)} rows - expected for JSON, where keys vary per record. "
-                  f"Most null: {listed}.")
-
-        for column, dtype in self.df.schema.items():
-            if dtype == pl.Utf8:
-                bad = self.df.filter(pl.col(column).str.contains("�")).height
-                if bad:
-                    print(f"WARNING! Column '{column}' has {bad} non-UTF-8 encoded values out of "
-                          f"{len(self.df)}. To investigate: "
-                          f"<DF_NAME>.filter(pl.col('{column}').str.contains('�'))")
+        self._log_nulls_and_non_utf8(
+            "JsonLoader", "expected for JSON, where keys vary per record.")

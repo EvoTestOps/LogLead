@@ -112,8 +112,6 @@ class _lcsobj():
         seq = seq.lstrip().rstrip()
 
         ret = []
-        print(self._sep)
-        print(seq)
         p = re.split(self._sep, seq)
         for i in p:
             if len(i) != 0:

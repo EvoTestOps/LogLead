@@ -215,14 +215,14 @@ class PL_IPLoMParser:
         #self.df_iplom = self.df_iplom.get_column("events").list.len()
         df_temp = self.df.group_by('e_words_len').agg(pl.len().alias('part_len'))
         df_aggre_s1 = df_aggre_s1.join(df_temp, on='e_words_len')
-        logger.debug(f"s1 end found {df_aggre_s1.shape[0]} len clusters")
+        logger.debug("s1 end found %s len clusters", df_aggre_s1.shape[0])
         #Create dataframes for each partition
         #We iterate over rows of Dataframe.  
         for i in range(len(df_aggre_s1)):
             df_part = df_aggre_s1[i]
             len_words = df_part['e_words_len'].item(0)
             part_len = df_part['part_len'].item(0)
-            logger.debug (f"\nCreation parittions with {len_words} words and {part_len} events")
+            logger.debug("\nCreation parittions with %s words and %s events", len_words, part_len)
             df_part = df_aggre_s1[i].with_columns(pl.col("events", "row_nr")).explode("events", "row_nr")
             df_part = df_part.with_columns(pl.col("events").list.to_struct(upper_bound=len_words)).unnest("events")
             df_part = df_part.drop("e_words_len", "part_len")
@@ -254,13 +254,13 @@ class PL_IPLoMParser:
             row_dict = partition.df.partition_by(partition.df.columns[min_column_index], as_dict=True)
             #self.df_s2_dict = row_dict
             for key, dataframe in row_dict.items():
-                logger.debug(f"s2 least frequent for word dataframe Appending: {key}")
+                logger.debug("s2 least frequent for word dataframe Appending: %s", key)
                 #partition.subpartitions.append(Partition(dataframe, len = partition.len,  split_trace=partition.split_trace+" S2"))
                 self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S2 "), parent_partition=partition)
             partition.df = None #To save memory
         else: 
             self.df_s2_dict = None
-        logger.debug (f"s2 end found min unique count is {min_count} and is found in col index {min_column_index} ")
+        logger.debug("s2 end found min unique count is %s and is found in col index %s ", min_count, min_column_index)
         #return self.df_s2_dict
         #TODO ADD PST Stuff
     
@@ -289,11 +289,11 @@ class PL_IPLoMParser:
                     p1 = positions1[0] if positions1 else None
                     p2 = positions2[0] if positions2 else None
                 # Display the results for the two smallest numbers
-                logger.debug(f"Two smallest most frequent numbers:{most_freq_num1}, {most_freq_num2}")
+                logger.debug("Two smallest most frequent numbers:%s, %s", most_freq_num1, most_freq_num2)
                 most_freq_count = common_items[0][1]
-                logger.debug(f"Count: {most_freq_count}")
-                logger.debug(f"Positions of first number: {positions1}")
-                logger.debug(f"Positions of second number: {positions2}")
+                logger.debug("Count: %s", most_freq_count)
+                logger.debug("Positions of first number: %s", positions1)
+                logger.debug("Positions of second number: %s", positions2)
             elif common_items:
                 # No tie, or not enough elements for a tie. Select the most frequent number
                 most_freq_num, most_freq_count = common_items[0]
@@ -301,9 +301,9 @@ class PL_IPLoMParser:
                 p1 = positions[0]
                 p2 = positions[1]
                 # Display the results
-                logger.debug(f"Most Frequent Number:{most_freq_num}")
-                logger.debug(f"Count: {most_freq_count}")
-                logger.debug(f"Positions: {positions}")
+                logger.debug("Most Frequent Number:%s", most_freq_num)
+                logger.debug("Count: %s", most_freq_count)
+                logger.debug("Positions: %s", positions)
             else:
                 logger.debug("All elements are 1, no other frequent numbers.")
         elif (len(unique_counts) == 2):
@@ -312,17 +312,17 @@ class PL_IPLoMParser:
         else:
             p1 = -1 
             p2 = 0
-        logger.debug (f"P1 is {p1} P2 is {p2}")
+        logger.debug("P1 is %s P2 is %s", p1, p2)
         return p1, p2
 
     def s3_clust_by_bijection (self, partition):
         if partition.subpartitions:  # Checks if the subpartitions list is not empty
-            logger.debug (f"S3 Found subpartition with {len(partition.subpartitions)} dataframes")
+            logger.debug("S3 Found subpartition with %s dataframes", len(partition.subpartitions))
             for subpartition in partition.subpartitions:
                 self.s3_clust_by_bijection(subpartition)
             return 
         else:
-            logger.debug (f"S3 processing df with rows: {partition.df.shape[0]} with length {partition.len} with trace {partition.split_trace}")
+            logger.debug("S3 processing df with rows: %s with length %s with trace %s", partition.df.shape[0], partition.len, partition.split_trace)
         #S3.1 figure which columns to select for P1 and P2    
         part_df = partition.df
         #unique_counts = [len(part_df[col].unique()) for col in part_df.columns]
@@ -333,7 +333,7 @@ class PL_IPLoMParser:
         unique_counts = part_df.select(pl.col(part_df.columns[:-1]).n_unique()).transpose().to_series().to_list()
         number_of_ones = unique_counts.count(1)
         cluster_goodness = number_of_ones / len(unique_counts)
-        logger.debug (f"Cluster goodness {cluster_goodness} threshold {self.CT}")
+        logger.debug("Cluster goodness %s threshold %s", cluster_goodness, self.CT)
         if (cluster_goodness > self.CT): #Skip S3 as our cluster is good enough
             return
         p1, p2 = self._get_p1_p2 (unique_counts)
@@ -357,32 +357,32 @@ class PL_IPLoMParser:
         unique_pairs = unique_pairs.select(pl.concat_list(pl.col([col_p1, col_p2])).alias("unique_pairs"))
 
         
-        logger.debug (f"Found unique pairs {unique_pairs}")
+        logger.debug("Found unique pairs %s", unique_pairs)
         for row in unique_pairs.to_dicts():
             time_start = time.time() 
             pair = row["unique_pairs"]
             value_p1, value_p2 = pair
-            logger.debug(f"P1 value is {value_p1} P2 value is {value_p2}")
-            logger.debug(f"Col P1 is {pl.col(col_p1)} and Col P2 is {pl.col(col_p2)}")
+            logger.debug("P1 value is %s P2 value is %s", value_p1, value_p2)
+            logger.debug("Col P1 is %s and Col P2 is %s", pl.col(col_p1), pl.col(col_p2))
             count_p1 = part_df.filter(pl.col(col_p1) == value_p1).select(pl.col(col_p2)).unique().shape[0]
             count_p2 = part_df.filter(pl.col(col_p2) == value_p2).select(pl.col(col_p1)).unique().shape[0]
-            logger.debug(f"P1 count is {count_p1} P2 is count {count_p2}")
+            logger.debug("P1 count is %s P2 is count %s", count_p1, count_p2)
             #Get split position for each type
             if count_p1 > 1 and count_p2 > 1:
-                logger.debug(f"{pair}: M-M (Many-to-Many)")
+                logger.debug("%s: M-M (Many-to-Many)", pair)
                 #Journal paper says move to own partition. Earlier paper split based on lower cardinality if arrive from Step1
                 #Decision we keep it in current partition which in the end will be its own parittion. 
                 #return 4
                 split_pos = 0
             elif count_p1 > 1:
-                logger.debug(f"{pair}: 1-M (1-to-Many)")
+                logger.debug("%s: 1-M (1-to-Many)", pair)
                 #temp_df = part_df.filter(pl.col(col_p1) == value_p1).select(pl.col(col_p1))
                 s_temp_df = part_df.filter((pl.col(col_p1) == value_p1) & (pl.col(col_p2) == value_p2)).select(pl.col(col_p1))
                 len_s_temp_df = s_temp_df.shape[0]
                 cardinality_s_temp_df = s_temp_df.with_columns(pl.col(col_p1) == value_p1).unique().shape[0]
                 split_pos = self._get_rank_position(len_s_temp_df, cardinality_s_temp_df, True)
                 #logger.debug (f"s_temp is {s_temp_df}")
-                logger.debug (f"s_temp len: {len_s_temp_df} card: {cardinality_s_temp_df}")
+                logger.debug("s_temp len: %s card: %s", len_s_temp_df, cardinality_s_temp_df)
                 #Do we want all lines where M exits or just the ones that part of this pair
                 # Based on counts: 
                 #Counts + SET: This seems to use whole set of tokens https://github.com/fluency03/iplom-java/blob/master/src/iplom/IPLoM.java#L591
@@ -391,16 +391,16 @@ class PL_IPLoMParser:
                 #self.get_rank_position(len_s_temp_df, cardinality_s_temp_df)
                 #return 3
             elif count_p2 > 1:
-                logger.debug(f"{pair}: M-1 (Many-to-1)")
+                logger.debug("%s: M-1 (Many-to-1)", pair)
                 s_temp_df = part_df.filter((pl.col(col_p1) == value_p1) & (pl.col(col_p2) == value_p2)).select(pl.col(col_p2))
                 len_s_temp_df = s_temp_df.shape[0]
                 cardinality_s_temp_df = s_temp_df.with_columns(pl.col(col_p2) == value_p2).unique().shape[0]
                 split_pos = self._get_rank_position(len_s_temp_df, cardinality_s_temp_df, False)
                 #logger.debug (f"s_temp is {s_temp_df}")
-                logger.debug (f"s_temp len: {len_s_temp_df} card: {cardinality_s_temp_df}")
+                logger.debug("s_temp len: %s card: %s", len_s_temp_df, cardinality_s_temp_df)
                 #return 2
             elif count_p1 == 1 and count_p2 == 1:
-                logger.debug(f"{pair}: 1-1 (1-to-1)")
+                logger.debug("%s: 1-1 (1-to-1)", pair)
                 split_pos = 1
             else:
                 logger.warning(f"ERROR undefined relantionship !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
@@ -410,7 +410,7 @@ class PL_IPLoMParser:
             time_start = time.time()
             #Split   
             if split_pos==1:
-                logger.debug(f"Split is 1. Size of part_df: {part_df.shape[0]}")
+                logger.debug("Split is 1. Size of part_df: %s", part_df.shape[0])
                 #new_df = part_df.filter(pl.col(col_p1) == value_p1)
                 #part_df = part_df.filter(~(pl.col(col_p1) == value_p1))
                 new_df = part_df.filter((pl.col(col_p1) == value_p1) & (pl.col(col_p2) == value_p2))
@@ -420,13 +420,13 @@ class PL_IPLoMParser:
                 if value_p1 in p1_part_dict:
                     # Append new_df to the existing DataFrame for this key
                     #Dictionary exits appending.
-                    logger.debug (f"Dictionary exits appending")  
+                    logger.debug("Dictionary exits appending")  
                     p1_part_dict[value_p1] = pl.concat([p1_part_dict[value_p1], new_df])
                 else:
                     # If the key does not exist, simply add new_df to the dictionary
                     p1_part_dict[value_p1] = new_df
             elif split_pos==2:
-                logger.debug(f"Split is 2. Size of part_df: {part_df.shape[0]}")
+                logger.debug("Split is 2. Size of part_df: %s", part_df.shape[0])
                 #new_df = part_df.filter(pl.col(col_p2) == value_p2)
                 #part_df = part_df.filter(~(pl.col(col_p2) == value_p2))
                 new_df = part_df.filter((pl.col(col_p1) == value_p1) & (pl.col(col_p2) == value_p2))
@@ -435,7 +435,7 @@ class PL_IPLoMParser:
                 #logger.debug (f"part_df df:  {part_df}")
                 if value_p2 in p2_part_dict:
                     # Append new_df to the existing DataFrame for this key
-                    logger.debug (f"Dictionary exits appending") 
+                    logger.debug("Dictionary exits appending") 
                     p2_part_dict[value_p2] = pl.concat([p2_part_dict[value_p2], new_df])
                 else:
                     # If the key does not exist, simply add new_df to the dictionary
@@ -444,12 +444,12 @@ class PL_IPLoMParser:
             self.s3_loop1_split += time_elapsed
             
         for key, dataframe in p1_part_dict.items():
-            logger.debug(f"S3P1 dict with key Appending: {key}")
+            logger.debug("S3P1 dict with key Appending: %s", key)
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
             self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S3 "), parent_partition=partition)
        
         for key, dataframe in p2_part_dict.items():
-            logger.debug(f"S3P2 dict with key Appending: {key}")
+            logger.debug("S3P2 dict with key Appending: %s", key)
             #partition.subpartitions.append(Partition(dataframe, len = partition.len, split_trace=partition.split_trace+"S3"))
             self.add_partition(_Partition(dataframe, len = partition.len, split_trace=partition.split_trace + "S3 "), parent_partition=partition)
         #part_df is reduced in the process. If we do assign here we the same log rows in multiple levels
@@ -482,26 +482,26 @@ class PL_IPLoMParser:
         unique_pairs = df_part.select([col_p1, col_p2]).unique()
         unique_pairs = unique_pairs.select(pl.concat_list(pl.col([col_p1, col_p2])).alias("unique_pairs"))
         
-        logger.debug (f"Found unique pairs {unique_pairs}")
+        logger.debug("Found unique pairs %s", unique_pairs)
         for row in unique_pairs.to_dicts():
             pair = row["unique_pairs"]
             value_p1, value_p2 = pair
-            logger.debug(f"P1 value is {value_p1} P2 value is {value_p2}")
+            logger.debug("P1 value is %s P2 value is %s", value_p1, value_p2)
             count_p1 = df_part.filter(pl.col(col_p1) == value_p1).select(pl.col(col_p2)).unique().shape[0]
             count_p2 = df_part.filter(pl.col(col_p2) == value_p2).select(pl.col(col_p1)).unique().shape[0]
-            logger.debug(f"P1 count is {count_p1} P2 is count {count_p2}")
+            logger.debug("P1 count is %s P2 is count %s", count_p1, count_p2)
 
             if count_p1 > 1 and count_p2 > 1:
-                logger.debug(f"{pair}: M-M (Many-to-Many)")
+                logger.debug("%s: M-M (Many-to-Many)", pair)
                 return 4
             elif count_p1 > 1:
-                logger.debug(f"{pair}: M-1 (Many-to-1)")
+                logger.debug("%s: M-1 (Many-to-1)", pair)
                 return 3
             elif count_p2 > 1:
-                logger.debug(f"{pair}: 1-M (1-to-Many)")
+                logger.debug("%s: 1-M (1-to-Many)", pair)
                 return 2
             elif count_p1 == 1 and count_p2 == 1:
-                logger.debug(f"{pair}: 1-1 (1-to-1)")
+                logger.debug("%s: 1-1 (1-to-1)", pair)
                 return 1
             else:
                 logger.warning(f"ERROR undefined relantionship")

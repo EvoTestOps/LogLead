@@ -21,12 +21,15 @@ by at most one rank. Narrowing ``detectors`` is what breaks this, since ``rank_s
 then combines fewer measures (with one detector it is just that detector's rank).
 """
 
+import logging
 import warnings
 
 import polars as pl
 
 from .. import AnomalyDetector
 from . import log_root, scoring
+
+logger = logging.getLogger(__name__)
 
 #: detector name -> (AnomalyDetector method, output column)
 DETECTORS = {
@@ -155,6 +158,7 @@ def anomaly_file_content(
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
 
     frames = []
+    skipped = 0
     for folder_name in target_folder_names:
         target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
         # Resolve against this log folder's own files, not the previous iteration's.
@@ -174,11 +178,18 @@ def anomaly_file_content(
                 comparison_df.filter(pl.col("file_name") == file_name), "folder", field
             )
             if baseline_agg.height == 0:
-                continue  # no comparison log folder has a file of this name
+                # no comparison log folder has a file of this name
+                logger.debug("anomaly_file_content: %s/%s has no comparison log folder with that "
+                             "file, skipped.", folder_name, file_name)
+                skipped += 1
+                continue
             target_agg = log_root.aggregate_dataframe(
                 target_df.filter(pl.col("file_name") == file_name), "file_name", field
             )
             if target_agg.height == 0:
+                logger.debug("anomaly_file_content: %s/%s produced an empty target aggregate, "
+                             "skipped.", folder_name, file_name)
+                skipped += 1
                 continue
             scored = run_anomaly_detection(
                 baseline_agg, target_agg, field,
@@ -189,6 +200,9 @@ def anomaly_file_content(
                 pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"),
             ]))
 
+    if skipped:
+        logger.info("anomaly_file_content: skipped %d target file(s) with no comparable data.",
+                    skipped)
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
     results = scoring.add_combined_scores(results, scoring.ANOMALY_COLUMNS)
     return results, df

@@ -1,6 +1,9 @@
 import json
+import logging
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['BaseLoader']
 
@@ -65,30 +68,45 @@ class BaseLoader:
                     else:
                         issue_counts[col] = {"non_utf8": non_utf8_count}
 
-        # Print the results
-        if issue_counts:
-            for col, issues in issue_counts.items():
-                issue_types = []
-                if "nulls" in issues:
-                    issue_types.append(f"{issues['nulls']} null")
-                if "non_utf8" in issues:
-                    issue_types.append(f"{issues['non_utf8']} non-UTF-8 encoded")
+        # Log the results
+        for col, issues in issue_counts.items():
+            issue_types = []
+            if "nulls" in issues:
+                issue_types.append(f"{issues['nulls']} null")
+            if "non_utf8" in issues:
+                issue_types.append(f"{issues['non_utf8']} non-UTF-8 encoded")
+            issue_description = " and ".join(issue_types)
 
-                issue_description = " and ".join(issue_types)
-                print(f"WARNING! Column '{col}' has {issue_description} values out of {len(self.df)}.")
-                
-                # The merged options block
-                print(f"You have 4 options:"
-                    f" 1) Do nothing and hope for the best"
-                    f", 2) Drop the column"
-                    f", 3) Filter out rows with {issue_description} values"
-                    f", 4) Investigate and fix your Loader or Data")
+            investigate = []
+            if "nulls" in issues:
+                investigate.append(f"<DF_NAME>.filter(pl.col('{col}').is_null())")
+            if "non_utf8" in issues:
+                investigate.append(f"<DF_NAME>.filter(pl.col('{col}').str.contains('�'))")
 
-                # Instructions to investigate specific issues
-                if "nulls" in issues:
-                    print(f"To investigate null values: <DF_NAME>.filter(pl.col('{col}').is_null())")
-                if "non_utf8" in issues:
-                    print(f"To investigate non-UTF-8 values: <DF_NAME>.filter(pl.col('{col}').str.contains('�'))")
+            logger.warning(
+                "Column '%s' has %s values out of %d. You have 4 options: 1) do nothing and hope "
+                "for the best, 2) drop the column, 3) filter out rows with %s values, "
+                "4) investigate and fix your Loader or Data. To investigate: %s",
+                col, issue_description, len(self.df), issue_description, " ; ".join(investigate))
+
+    def _log_nulls_and_non_utf8(self, prefix, sparse_reason, non_utf8_suffix=None):
+        """Shared sparse-column/non-UTF-8 report for loaders where sparse columns are the expected
+        shape rather than a defect (docs/logging.md - duplicated across the format-spec loaders)."""
+        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
+        if sparse:
+            worst = sorted(sparse, key=lambda item: -item[1])[:3]
+            listed = ", ".join(f"{c} ({n})" for c, n in worst)
+            logger.info("%s: %d of %d columns contain nulls out of %d rows - %s Most null: %s.",
+                        prefix, len(sparse), self.df.width, len(self.df), sparse_reason, listed)
+
+        for column, dtype in self.df.schema.items():
+            if dtype == pl.Utf8:
+                bad = self.df.filter(pl.col(column).str.contains("�")).height
+                if bad:
+                    suffix = non_utf8_suffix or (
+                        f"To investigate: <DF_NAME>.filter(pl.col('{column}').str.contains('�'))")
+                    logger.warning("%s: column '%s' has %d non-UTF-8 encoded value(s) out of %d. %s",
+                                    prefix, column, bad, len(self.df), suffix)
 
     def check_mandatory_columns(self):
         missing_columns = [col for col in self._mandatory_columns if col not in self.df.columns]

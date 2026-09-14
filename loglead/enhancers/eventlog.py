@@ -1,6 +1,32 @@
+import functools
 import hashlib
+import logging
+import time
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
+
+
+def _log_parse(fn):
+    """One INFO record per parse_* call, plus a guarded DEBUG with the template count of
+    whichever *_id column the call added (docs/logging.md §3.6)."""
+
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        started = time.perf_counter()
+        before = set(self.df.columns)
+        result = fn(self, *args, **kwargs)
+        logger.info("%s: parsed %d row(s) in %.2fs.",
+                    fn.__name__, self.df.height, time.perf_counter() - started)
+        if logger.isEnabledFor(logging.DEBUG):
+            added = [c for c in self.df.columns if c not in before and c.endswith("_id")]
+            if added:
+                logger.debug("%s: %d distinct template(s) in %s.",
+                              fn.__name__, self.df[added[0]].n_unique(), added[0])
+        return result
+
+    return wrapper
 
 # Drain.ini default regexes
 # No lookahead or lookbedinde so reimplemented with capture groups. Still problem with overlaps See
@@ -151,6 +177,7 @@ class EventLogEnhancer:
         return self.df
 
     # Enrich with drain parsing results
+    @_log_parse
     def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False, persistence=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_drain_id" not in self.df.columns:
@@ -236,6 +263,7 @@ class EventLogEnhancer:
             # tm.drain.print_tree()
         return self.df 
     
+    @_log_parse
     def parse_brain(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_brain_id" not in self.df.columns:
@@ -249,6 +277,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
+    @_log_parse
     def parse_ael(self,field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_ael_id" not in self.df.columns:
@@ -264,6 +293,7 @@ class EventLogEnhancer:
 
     #See https://pypi.org/project/tipping/
     #and https://arxiv.org/abs/2408.00645 
+    @_log_parse
     def parse_tip(self, field = "e_message_normalized", reparse=False, templates=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_tip_id" not in self.df.columns:
@@ -302,6 +332,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
     
+    @_log_parse
     def parse_iplom(self, field = "e_message_normalized", reparse=False, CT=0.35, PST=0, lower_bound=0.1):
         self._handle_prerequisites([field])
         if reparse or "e_event_iplom_id" not in self.df.columns:
@@ -324,12 +355,12 @@ class EventLogEnhancer:
                 .then(pl.lit("e_null"))
                 .otherwise(pl.col("e_event_iplom_id"))
             )
-            #print(f'Iplom NULL count {df_output["e_event_iplom_id"].null_count()}')
             df_output = df_output.with_columns(df_output.get_column("row_nr").cast(pl.UInt32).alias("row_nr"))
             self.df = self.df.join(df_output, on="row_nr", how="left")
         return self.df
 
     #Faster version of IPLoM coming in 2024
+    @_log_parse
     def parse_pliplom(self, field = "e_message_normalized",  reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
         if reparse or "e_event_plimplom_id" not in self.df.columns:
@@ -350,6 +381,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/keiichishima/templateminer
+    @_log_parse
     def parse_lenma(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites(["e_words"])
         if reparse or "e_event_lenma_id" not in self.df.columns:
@@ -380,6 +412,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/bave/pyspell/
+    @_log_parse
     def parse_spell(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_event_spell_id" not in self.df.columns:
@@ -410,6 +443,7 @@ class EventLogEnhancer:
         return self.df
 
     # https://github.com/EvoTestOps/iplom-llm-parser
+    @_log_parse
     def parse_iplom_llm(
         self,
         field="m_message",

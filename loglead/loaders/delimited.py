@@ -1,6 +1,7 @@
 import codecs
 import fnmatch
 import glob
+import logging
 import os
 import re
 
@@ -8,6 +9,8 @@ import polars as pl
 import yaml
 
 from .base import BaseLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['DelimitedLoader']
 
@@ -103,6 +106,11 @@ Explicit keyword arguments always win over the values in a spec.
   not something the loader can spot, so name the columns you want with line_format there.
 - extra_fields (str): 'keep' (default) leaves every column as its own column; 'drop' keeps only the
   mapped ones.
+- message_ascii_only (bool): replace every character outside ASCII in the rendered m_message with a
+  space. Off by default; on for a format whose raw text is known to contain byte sequences that
+  crash a downstream parser rather than merely looking odd - the openstack spec sets it because
+  tipping (a Rust/pyo3 parser) panics on some of that dataset's non-ASCII bytes with a "not a char
+  boundary" error. This is the same workaround demo/OpenStack_samples.py applies by hand.
 
 Files are concatenated with how='diagonal_relaxed', so a directory whose files have different
 columns lands wide-and-sparse the same way heterogeneous JSON does. That is the normal case for
@@ -120,14 +128,16 @@ _UNSET = object()
 _SPEC_KEYS = ("header", "columns", "separator", "comment_prefix", "null_values", "declared_types",
               "file_pattern", "timestamp_field", "timestamp_formats", "timestamp_epoch",
               "timestamp_naive", "message_field", "line_format", "level_field", "seq_id_field",
-              "label_field", "normal_values", "anomaly_values", "extra_fields")
+              "label_field", "normal_values", "anomaly_values", "extra_fields",
+              "message_ascii_only")
 
 _DEFAULTS = {"header": "auto", "columns": None, "separator": None, "comment_prefix": _UNSET,
              "null_values": _UNSET, "declared_types": True, "file_pattern": None,
              "timestamp_field": None, "timestamp_formats": None, "timestamp_epoch": None,
              "timestamp_naive": True, "message_field": None, "line_format": None,
              "level_field": None, "seq_id_field": None, "label_field": None,
-             "normal_values": None, "anomaly_values": None, "extra_fields": "keep"}
+             "normal_values": None, "anomaly_values": None, "extra_fields": "keep",
+             "message_ascii_only": False}
 
 # Keys a spec may carry that describe the format rather than configure the loader.
 _SPEC_METADATA = ("name", "description", "sample")
@@ -179,7 +189,8 @@ class DelimitedLoader(BaseLoader):
                  timestamp_field=_UNSET, timestamp_formats=_UNSET, timestamp_epoch=_UNSET,
                  timestamp_naive=_UNSET, message_field=_UNSET, line_format=_UNSET,
                  level_field=_UNSET, seq_id_field=_UNSET, label_field=_UNSET,
-                 normal_values=_UNSET, anomaly_values=_UNSET, extra_fields=_UNSET):
+                 normal_values=_UNSET, anomaly_values=_UNSET, extra_fields=_UNSET,
+                 message_ascii_only=_UNSET):
 
         cfg = dict(_DEFAULTS)
         if format is not None:
@@ -194,7 +205,8 @@ class DelimitedLoader(BaseLoader):
                            ("line_format", line_format), ("level_field", level_field),
                            ("seq_id_field", seq_id_field), ("label_field", label_field),
                            ("normal_values", normal_values), ("anomaly_values", anomaly_values),
-                           ("extra_fields", extra_fields)):
+                           ("extra_fields", extra_fields),
+                           ("message_ascii_only", message_ascii_only)):
             if value is not _UNSET:
                 cfg[key] = value
 
@@ -428,8 +440,8 @@ class DelimitedLoader(BaseLoader):
             names = list(self.columns)
         types = directives.get("#types", "").split(separator) if "#types" in directives else None
         if types and len(types) != len(names):
-            print(f"WARNING! DelimitedLoader: {os.path.basename(path)} declares {len(names)} "
-                  f"'#fields' but {len(types)} '#types'; the types are ignored.")
+            logger.warning("DelimitedLoader: %s declares %d '#fields' but %d '#types'; the types "
+                            "are ignored.", os.path.basename(path), len(names), len(types))
             types = None
 
         declared_nulls = [directives[key] for key in ("#unset_field", "#empty_field")
@@ -522,7 +534,10 @@ class DelimitedLoader(BaseLoader):
         # file_name is left out for the same kind of reason - it is provenance, not what was logged.
         source_columns = [c for c in self.df.columns
                           if c not in ("file_name", self.label_field)]
-        mapped = [self._message_expr(source_columns).alias("m_message")]
+        message = self._message_expr(source_columns)
+        if self.message_ascii_only:
+            message = message.str.replace_all(r"[^\x00-\x7F]", " ")
+        mapped = [message.alias("m_message")]
         if self.level_field:
             mapped.append(self._resolve(self.level_field).cast(pl.String).alias("level"))
         if self.seq_id_field:
@@ -616,9 +631,10 @@ class DelimitedLoader(BaseLoader):
             parsed = parsed.cast(pl.Datetime("us", getattr(parsed.dtype, "time_zone", None)))
         unparsed = parsed.null_count() - source.null_count()
         if unparsed > 0:
-            print(f"WARNING! DelimitedLoader could not parse {unparsed} of {len(parsed)} values in "
-                  f"'{self.timestamp_field}' into m_timestamp. Check timestamp_formats"
-                  f"{' or timestamp_epoch' if self.timestamp_epoch else ''}.")
+            logger.warning("DelimitedLoader: could not parse %d of %d value(s) in '%s' into "
+                            "m_timestamp. Check timestamp_formats%s.",
+                            unparsed, len(parsed), self.timestamp_field,
+                            " or timestamp_epoch" if self.timestamp_epoch else "")
         self.df = self.df.with_columns(parsed.alias("m_timestamp"))
 
     def _epoch(self):
@@ -657,24 +673,13 @@ class DelimitedLoader(BaseLoader):
     def check_for_nulls_and_non_utf8(self):
         """
         Same reasoning as JsonLoader's, AccessLogLoader's and SyslogLoader's overrides: BaseLoader
-        prints a four-line warning per column that has nulls, and here nulls are the designed
-        outcome twice over - Zeek and W3C write a marker for every field an event did not carry,
-        and a directory of files with different headers is sparse by construction. Summarize
-        instead, and keep the non-UTF-8 warning, which is a real problem rather than a shape.
+        warns per column that has nulls, and here nulls are the designed outcome twice over - Zeek
+        and W3C write a marker for every field an event did not carry, and a directory of files with
+        different headers is sparse by construction. Summarize instead, and keep the non-UTF-8
+        warning, which is a real problem rather than a shape.
         """
-        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
-        if sparse:
-            worst = sorted(sparse, key=lambda item: -item[1])[:3]
-            listed = ", ".join(f"{c} ({n})" for c, n in worst)
-            styles = ", ".join(sorted(set(self._styles_used.values()))) or "delimited"
-            print(f"DelimitedLoader: {len(sparse)} of {self.df.width} columns contain nulls out of "
-                  f"{len(self.df)} rows - expected for {styles} data, where fields are optional "
-                  f"and files differ in what they carry. Most null: {listed}.")
-
-        for column, dtype in self.df.schema.items():
-            if dtype == pl.Utf8:
-                bad = self.df.filter(pl.col(column).str.contains("�")).height
-                if bad:
-                    print(f"WARNING! Column '{column}' has {bad} non-UTF-8 encoded values out of "
-                          f"{len(self.df)}. To investigate: "
-                          f"<DF_NAME>.filter(pl.col('{column}').str.contains('�'))")
+        styles = ", ".join(sorted(set(self._styles_used.values()))) or "delimited"
+        self._log_nulls_and_non_utf8(
+            "DelimitedLoader",
+            f"expected for {styles} data, where fields are optional and files differ in what "
+            f"they carry.")

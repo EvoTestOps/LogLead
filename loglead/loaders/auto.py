@@ -1,5 +1,6 @@
 import fnmatch
 import glob
+import logging
 import os
 import re
 
@@ -28,6 +29,8 @@ from .pro import ProLoader
 from .raw import RawLoader
 from .supercomputers import ThuSpiLibLoader
 from .syslog import SyslogLoader, _RFC3164, _RFC5424
+
+logger = logging.getLogger(__name__)
 
 __all__ = ['AutoLoader', 'Detection', 'detect_format', 'DEFAULT_MAX_DETECT_FILES',
            'name_shape', 'sample_paths']
@@ -175,6 +178,12 @@ _HEADER_CELL = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-()/ ]{0,39}$')
 # Enough of IIS's default field set to be sure a W3C file is one, and to be sure the iis spec's
 # timestamp and rendered message will find the columns they name.
 _IIS_FIELDS = {"date", "time", "cs-method", "cs-uri-stem", "sc-status"}
+
+# Enough of the OpenStack dataset's own header to tell it apart from loghub's structured CSVs,
+# which also carry 'Content' but never these: EventTemplate/ParameterList are loghub-shaped
+# columns loghub's own plain export does not have, and anom_label is this dataset's own
+# ground-truth column.
+_OPENSTACK_FIELDS = {"Content", "EventTemplate", "ParameterList", "anom_label"}
 
 # JSON keys worth trying as the message/timestamp when no shipped spec fits. The logfmt convention
 # plus the two spellings the shipped JSON datasets use.
@@ -430,9 +439,9 @@ def _detect_dataset_file(path, sample):
             labels = _first_existing(os.path.join(folder, "preprocessed", "anomaly_label.csv"),
                                      os.path.join(folder, "anomaly_label.csv"))
             if not labels:
-                print(f"AutoLoader: {base} looks like the HDFS dataset but no anomaly_label.csv "
-                      f"was found beside it, so it is read as plain timestamped text without "
-                      f"labels or sequences.")
+                logger.warning("AutoLoader: %s looks like the HDFS dataset but no "
+                                "anomaly_label.csv was found beside it, so it is read as plain "
+                                "timestamped text without labels or sequences.", base)
                 return None
             return Detection(HDFSLoader, {"labels_file_name": labels}, format="hdfs", rate=rate,
                              lines=len(sample))
@@ -447,9 +456,10 @@ def _detect_dataset_file(path, sample):
             # name is the evidence, and the majority case is the default when it says nothing.
             split = not base.startswith("liberty")
             if not (base.startswith(("liberty", "tbird", "spirit"))):
-                print(f"AutoLoader: {base} has the Thunderbird/Spirit/Liberty line shape, but its "
-                      f"name does not say which. Assuming split_component=True; pass "
-                      f"ThuSpiLibLoader(split_component=False) directly if this is Liberty.")
+                logger.warning("AutoLoader: %s has the Thunderbird/Spirit/Liberty line shape, but "
+                                "its name does not say which. Assuming split_component=True; pass "
+                                "ThuSpiLibLoader(split_component=False) directly if this is "
+                                "Liberty.", base)
             return Detection(ThuSpiLibLoader, {"split_component": split},
                              format="thunderbird/spirit/liberty", rate=rate, lines=len(sample))
 
@@ -638,6 +648,9 @@ def _detect_delimited_header(sample, min_match_rate):
         return None
 
     present = set(names)
+    if _OPENSTACK_FIELDS <= present:
+        return Detection(DelimitedLoader, {"format": "openstack"}, format="delimited/openstack",
+                         rate=rate, lines=len(sample))
     if "Content" in present:
         # loghub's own already-parsed form, which ships one of these per dataset in this project.
         spec = "loghub_labeled" if {"Label", "Timestamp"} <= present else "loghub"
@@ -699,9 +712,9 @@ def detect_format(path, min_match_rate=0.5, sample_lines=_SAMPLE_LINES):
         or _detect_generic(sample, min_match_rate))
 
     if detection is None:
-        print(f"AutoLoader: no format matched {os.path.basename(path)} at "
-              f"{min_match_rate:.0%} of {len(sample)} sampled lines, so it is read as plain text "
-              f"(m_message only). Name a loader explicitly if it should be something else.")
+        logger.info("AutoLoader: no format matched %s at %.0f%% of %d sampled lines, so it is "
+                    "read as plain text (m_message only). Name a loader explicitly if it should "
+                    "be something else.", os.path.basename(path), min_match_rate * 100, len(sample))
         detection = Detection(RawLoader, {}, format="text", rate=0.0, lines=len(sample),
                               note="no format matched")
 
@@ -709,9 +722,9 @@ def detect_format(path, min_match_rate=0.5, sample_lines=_SAMPLE_LINES):
     if replacements:
         # A file that did not decode and a file whose format was guessed wrong look identical
         # downstream, so the two are told apart here rather than left to be confused later.
-        print(f"AutoLoader: {os.path.basename(path)} has {replacements} undecodable character(s) "
-              f"in its first {len(sample)} lines. It was read as {detection.format}, but check the "
-              f"file's encoding before trusting that.")
+        logger.warning("AutoLoader: %s has %d undecodable character(s) in its first %d lines. It "
+                        "was read as %s, but check the file's encoding before trusting that.",
+                        os.path.basename(path), replacements, len(sample), detection.format)
     return detection
 
 
@@ -839,8 +852,8 @@ class AutoLoader(BaseLoader):
         filename = kwargs.pop("_root", None) or kwargs.pop("_file", None) or \
             kwargs.pop("_glob", None) or self.filename
         child = detection.loader(filename=filename, **kwargs)
-        print(f"AutoLoader: {self.filename} is the {detection.format} dataset, "
-              f"loading it with {detection.loader.__name__}.")
+        logger.info("AutoLoader: %s is the %s dataset, loading it with %s.",
+                    self.filename, detection.format, detection.loader.__name__)
         child.load()
         child.preprocess()
         self.df, self.df_seq = child.df, child.df_seq
@@ -878,9 +891,9 @@ class AutoLoader(BaseLoader):
                                  f"{detection.rate:.1%} of {detection.lines} sampled lines "
                                  f"matched.") from error
             if child.df_seq is not None:
-                print(f"AutoLoader: {os.path.basename(path)} produced a sequence-level frame, "
-                      f"which is dropped when files of different formats are merged. Load it on "
-                      f"its own to keep df_seq.")
+                logger.warning("AutoLoader: %s produced a sequence-level frame, which is dropped "
+                                "when files of different formats are merged. Load it on its own "
+                                "to keep df_seq.", os.path.basename(path))
             name = path
             if self.strip_full_data_prefix:
                 name = name[len(self.strip_full_data_prefix):] \
@@ -911,12 +924,13 @@ class AutoLoader(BaseLoader):
         total = len(self._detections)
         if len(self._probed) < total:
             shapes = len({name_shape(path) for path in self._probed})
-            print(f"AutoLoader: probed {len(self._probed)} of {total} file(s), covering {shapes} "
-                  f"file-name shape(s), and they all say {listed} - reading every file that way. "
-                  f"Pass max_detect_files=0 to detect each file instead.")
+            logger.info("AutoLoader: probed %d of %d file(s), covering %d file-name shape(s), "
+                        "and they all say %s - reading every file that way. Pass "
+                        "max_detect_files=0 to detect each file instead.",
+                        len(self._probed), total, shapes, listed)
             return
-        print(f"AutoLoader: detected {len(counts)} format(s) across "
-              f"{total} file(s): {listed}.")
+        logger.info("AutoLoader: detected %d format(s) across %d file(s): %s.",
+                    len(counts), total, listed)
 
     def detections(self):
         """How each file was read, and how strong the evidence was.
@@ -952,21 +966,10 @@ class AutoLoader(BaseLoader):
     def check_for_nulls_and_non_utf8(self):
         """
         Same reasoning as the overrides in JsonLoader, LogfmtLoader and SyslogLoader: BaseLoader
-        prints a four-line warning per column that has nulls, and a frame merged from several
-        formats is null wherever one format has a column another does not. That is the expected
-        shape here rather than a defect, so summarize it instead - and keep the non-UTF-8 warning,
-        which is a real problem.
+        warns per column that has nulls, and a frame merged from several formats is null wherever
+        one format has a column another does not. That is the expected shape here rather than a
+        defect, so summarize it instead - and keep the non-UTF-8 warning, which is a real problem.
         """
-        sparse = [(c, n) for c, n in zip(self.df.columns, self.df.null_count().row(0)) if n]
-        if sparse:
-            worst = sorted(sparse, key=lambda item: -item[1])[:3]
-            listed = ", ".join(f"{c} ({n})" for c, n in worst)
-            print(f"AutoLoader: {len(sparse)} of {self.df.width} columns contain nulls out of "
-                  f"{len(self.df)} rows - expected, as different formats carry different fields. "
-                  f"Most null: {listed}.")
-        for column in self.df.columns:
-            if self.df.schema[column] == pl.Utf8:
-                count = self.df.filter(pl.col(column).str.contains("�")).height
-                if count:
-                    print(f"WARNING! Column '{column}' has {count} non-UTF-8 encoded values out of "
-                          f"{len(self.df)}. See detections() for which files did not decode.")
+        self._log_nulls_and_non_utf8(
+            "AutoLoader", "expected, as different formats carry different fields.",
+            non_utf8_suffix="See detections() for which files did not decode.")

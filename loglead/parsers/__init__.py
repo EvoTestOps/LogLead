@@ -3,11 +3,14 @@ __all__ = ['AELParser', 'BrainParser', 'IPLoMParser', 'IPLoMLLMParser', 'LenmaTe
            'DrainPersistenceTemplateMiner', 'DrainPersistenceTemplateMinerNoMasking']
 import logging
 from .AEL.AEL import AELParser
+
+logger = logging.getLogger(__name__)
+
 try:
     from .bert.bertembedding import BertEmbeddings
     __all__.append('BertEmbeddings')
 except Exception as e:
-    logging.warning(f"Could not import BertEmbeddings because of: {e}")
+    logger.debug(f"Could not import BertEmbeddings because of: {e}")
 from .Brain.Brain import BrainParser
 from .drain3.drain import DrainTemplateMiner, DrainTemplateMinerNoMasking, DrainPersistenceTemplateMiner, DrainPersistenceTemplateMinerNoMasking
 from .iplom.IPLoM import IPLoMParser

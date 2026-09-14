@@ -180,7 +180,6 @@ class _LenmaTemplate(_Template):
             return ac2_score * cos_score
         elif case == 4:
             (ac2_score, ac2_wcr) = self._get_accuracy_score2(new_words)
-            print(ac2_score, ac2_wcr)
             tw = 0.5
             if ac2_score < tw + (ac2_wcr * (1 - tw)):
                 return 0
