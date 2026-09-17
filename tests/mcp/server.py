@@ -116,6 +116,7 @@ TOOLS = (
     "plot_folder_content", "plot_file_content", "run_config",
     "peek_log_root", "split_log_file",
     "register_mask_pattern", "list_mask_patterns", "remask_log_root", "new_tokens",
+    "read_bucket_lines",
 )
 
 
@@ -745,6 +746,32 @@ def stage_hadoop_distance(check, session_id, target, file_name):
     check.raises("mask=False is refused", ValueError,
                  server.distance_line_content, session_id, target,
                  comparison_folders=2, target_files=[file_name], mask=False)
+
+    bucket_row = l4["rows"][0]
+    opened = timed("read_bucket_lines", server.read_bucket_lines,
+                   session_id, target, bucket_row["file_name"], bucket_row["bucket"],
+                   measure=bucket_row["measure"], limit=500)
+    check.eq("a bucket opens to exactly the lines it counted",
+             opened["lines_in_bucket"], bucket_row["target_n"])
+    check.ok("the representative line is one of them",
+             bucket_row["representative_line"]
+             in [line["m_message"] for line in opened["lines"]])
+    # The same numbering read_log_lines uses, so a line_number from one tool
+    # addresses the same line in the other.
+    check.ok("line numbers address the same lines read_log_lines does",
+             all(server.read_log_lines(session_id, target, bucket_row["file_name"],
+                                       offset=line["line_number"], limit=1)
+                 ["lines"][0]["m_message"] == line["m_message"]
+                 for line in opened["lines"][:3]))
+    missing = server.read_bucket_lines(session_id, target, file_name,
+                                       "no bucket has this label", measure="Prefix")
+    check.eq("a bucket label nothing matches returns no lines",
+             missing["lines_in_bucket"], 0)
+    check.ok("and the note says the label is recomputed",
+             any("recomputed" in note for note in missing["notes"]), str(missing["notes"]))
+    check.raises("an unknown measure is refused", ValueError,
+                 server.read_bucket_lines, session_id, target, file_name,
+                 bucket_row["bucket"], measure="Bigram")
 
     l4m = timed("distance_line_content (minhash)", server.distance_line_content,
                 session_id, target, comparison_folders=2, target_files=[file_name],

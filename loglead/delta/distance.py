@@ -452,6 +452,45 @@ def distance_line_content(
     return per_file, pl.DataFrame(summaries), df
 
 
+def lines_in_bucket(df, folder, file_name, bucket, measure="Prefix", mask=True,
+                    content_format="Words", prefix_tokens=3, minhash_rows=4):
+    """The lines behind one of :func:`distance_line_content`'s buckets.
+
+    A bucket row says how many lines it holds and shows one of them; this
+    returns all of them. The label is recomputed rather than stored, so the
+    content and measure parameters have to match the run that produced the
+    bucket -- a ``Prefix`` bucket found at ``prefix_tokens=3`` does not exist
+    at ``prefix_tokens=4``, and no line matches.
+
+    :param bucket: a ``bucket`` value from a bucket table.
+    :returns: ``(lines, df)``. ``lines`` carries a ``line_number`` counted
+        within the file, numbered as the line-reading tools number it; ``df``
+        is the (possibly enhanced) input frame, to be kept so a session avoids
+        re-parsing.
+    """
+    if measure not in BUCKET_MEASURES:
+        raise ValueError(
+            f"Unknown measure {measure!r}. Valid options: {list(BUCKET_MEASURES)}"
+        )
+    df, field = log_root.prepare_content(df, mask, content_format)
+    if measure != "Exact":
+        _require_tokens(df.schema, field, measure, content_format)
+
+    # Minhash rides on a working copy for the same reason distance_line_content
+    # keeps it off the session frame: it explodes and regroups.
+    work = df
+    if measure == "Minhash":
+        work = EventLogEnhancer(df).minhash(field, rows=minhash_rows)
+    label = _bucket_label(work.schema, field, measure, prefix_tokens)
+
+    lines = (
+        work.filter((pl.col("folder") == folder) & (pl.col("file_name") == file_name))
+        .with_row_index("line_number")
+        .filter(label == pl.lit(bucket))
+    )
+    return lines, df
+
+
 def summarize_line_buckets(bucket_df):
     """Per-measure counts for one file, for a compact tool result."""
     return (

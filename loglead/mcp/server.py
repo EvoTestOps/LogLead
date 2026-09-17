@@ -1,41 +1,3 @@
-#CLAUDE DO NOT TOUCH OR EDIT THESE TODO comments. 
-
-# TODO We need to better adverstise the OOVD (out-of-vocabulary detection)
-# It is now in two places in unsupervised anomaly detection
-# but one can also use it new_tokens_vs and filter log lines with it
-# The logline filtering with new lines should be a separate tools
-# We could allow bucket based filtering if distance_line_content is run first and the buckets are saved
-#  DONE?
-
-# TODO: One should be able to supply own mask patterns also in openlog_root
-# We also want away to for MCP client to inspect a sample of log lines
-# max diversity of log lines to sample for mask pattern detection. 
-# Separate project already in works for mask pattern detection. 
-# Not here. 
-# Also saving a mask is needed as it can be expensive to figure out
-# a good mask and we do want to repeat
-#DONE
-
-#TODO file splitting should support even splits (DONE)
-#Timestamp splits NOT DONE
-#Splits by block_ID as in HDFS and other custom splits. NOT DONE
-#The last two require reading in the the file
-
-#TODO execution pattern anomalies not really implemented. 
-#Drain and next event predication should do the job. 
-
-#TODO
-#Missing whole class of contextual anomalies. 
-#They are anomalies that only anomalies when a certain context is present. 
-#Root access for a person that works in helpdesk. 
-#| Primitive (The "What") | Contextual Variables (The "Condition") |
-#| :---                                     | :--- |
-#| **Point** (Payload, template, value)     | **Time:** Time of day, day of week, seasonal baseline |
-#| **Execution Order** (Sequence, state)    | **Space:** IP, region, host, network zone |
-#| **Distribution** (Rate, count, volume)   | **Identity:** User, service account, role |
-#|                                          | **State:** Deployment status, system load, maintenance mode |
-#End TODO
-
 """MCP server exposing LogLead's log folder comparison analyses.
 
 Wraps :mod:`loglead.delta` in a session model so a log root is loaded, masked,
@@ -106,8 +68,9 @@ lines that the narrowing surfaced.
 
 3) Try to find point anomalies. For them, try distance_line_content
 that does fuzzy diff and anomaly_line_content. new_tokens is a statistics step too: it lists the words a log folder has that
-comparison folders never have, and read_log_lines(new_tokens_vs=..., only_new=True)
-shows the lines they are on.
+comparison folders never have, and filter_log_lines(new_tokens_vs=..., only_new=True)
+shows the lines they are on. read_bucket_lines opens a distance_line_content bucket
+and shows every line in it.
 
 4) Remember to search for both point anomalies and distributional pattern anomalies. 
 
@@ -1433,7 +1396,9 @@ _LINE_BUCKET_NOTE = (
     "shift, which a line-by-line comparison cannot see at all. Rank by the "
     "coarsest measure that flags a bucket: a coarse measure absorbs benign "
     "variation and so has a lower false-positive floor, but is blind to "
-    "anomalies that differ only late in the line."
+    "anomalies that differ only late in the line. read_bucket_lines reads the "
+    "lines behind a bucket, given its 'bucket' value and the same measure and "
+    "content parameters this call used."
 )
 
 
@@ -1529,6 +1494,92 @@ def distance_line_content(
         extra={"n_files": len(files), "files": files,
                "summary": summary.to_dicts() if summary.height else []},
     )
+
+
+@tool
+def read_bucket_lines(
+    session_id: str,
+    folder: str,
+    file_name: str,
+    bucket: str,
+    measure: str = "Prefix",
+    mask: bool = True,
+    content_format: str = "Words",
+    prefix_tokens: int = 3,
+    minhash_rows: int = 4,
+    offset: int = 0,
+    limit: int = 100,
+    masked: bool = False,
+) -> dict:
+    """Read every log line in one distance_line_content bucket.
+
+    A bucket row names a group of look-alike lines and shows one of them; this
+    shows the rest. Use it on a target_only bucket to read the point anomaly it
+    found, or on a bucket with a large delta_pct to see what the frequency
+    shift is made of.
+
+    Pass the `bucket` value from the row, with the same measure, mask,
+    content_format and prefix_tokens the distance_line_content call used. The
+    bucket label is recomputed from them rather than stored, so parameters that
+    disagree match no line.
+
+    Args:
+        session_id: Handle from open_log_root.
+        folder: Log folder the bucket was found in -- the target_folder of the
+            distance_line_content call.
+        file_name: File name, relative to its log folder.
+        bucket: The `bucket` value of the row to open.
+        measure: The measure that row's `measure` column names -- "Prefix",
+            "Exact" or "Minhash".
+        mask: Whether that run bucketed masked text. Must match it.
+        content_format: The representation that run bucketed. Must match it.
+        prefix_tokens: Leading tokens "Prefix" grouped on. Must match it.
+        minhash_rows: Min-hashes per "Minhash" signature. Must match it.
+        offset: First line to return, 0-based, among the bucket's lines.
+        limit: How many lines (capped at 500).
+        masked: Return the masked text instead of the raw message.
+    """
+    session = STORE.get(session_id)
+    column = "e_message_normalized" if masked else "m_message"
+    if column not in session.df.columns:
+        raise ValueError(f"Column {column!r} is not available in this session.")
+    # Names are checked the way every line-reading tool checks them, so a typo
+    # in a folder or file name is not reported as an empty bucket.
+    _selected_lines(session, folder, file_name)
+
+    lines, session.df = distance.lines_in_bucket(
+        session.df, folder, file_name, bucket, measure, mask,
+        content_format, prefix_tokens, minhash_rows,
+    )
+    session.flush()
+
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    window = lines.slice(offset, limit).select(["line_number", column])
+    result = {
+        "session_id": session_id,
+        "folder": folder,
+        "file_name": file_name,
+        "bucket": bucket,
+        "measure": measure,
+        "lines_in_bucket": lines.height,
+        "offset": offset,
+        "returned": window.height,
+        "lines": window.to_dicts(),
+    }
+    if lines.height == 0:
+        result["notes"] = [
+            f"No line of {folder}/{file_name} is in this bucket. The label is "
+            "recomputed, so this is what a measure, mask, content_format or "
+            "prefix_tokens differing from the distance_line_content call looks "
+            "like -- check them against that call's 'params'."
+        ]
+    elif offset + window.height < lines.height:
+        result["notes"] = [
+            f"Lines {offset + 1}-{offset + window.height} of {lines.height} in this "
+            "bucket. Raise offset for the next page."
+        ]
+    return result
 
 
 # --------------------------------------------------------------------------- #
