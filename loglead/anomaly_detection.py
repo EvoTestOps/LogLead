@@ -5,10 +5,7 @@ from inspect import isclass
 import polars as pl
 import numpy as np
 import pandas as pd
-#Faster sklearn enabled. See https://intel.github.io/scikit-learn-intelex/latest/
-# Causes problems in RandomForrest. We have to use older version due to tensorflow numpy combatibilities
-# from sklearnex import patch_sklearn
-#patch_sklearn()
+
 from scipy.sparse import hstack
 from xgboost import XGBClassifier
 from sklearn.linear_model import LogisticRegression

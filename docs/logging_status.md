@@ -19,7 +19,7 @@ Last full review: 2026-09-14. Print counts come from
 - `P1`: fixes a bug, or runs on most calls in the MCP server and the host programs (loading and
   reading log roots).
 - `P2`: called directly by LogDelta or VisualLogAnalyzer, or reached by the MCP server less often.
-- `P3`: research and benchmark code: dataset-specific loaders, parser implementations, explainer.
+- `P3`: research and benchmark code: dataset-specific loaders, parser implementations.
 
 **Keep print**: prints that stay because the caller asked for them (logging.md §4).
 
@@ -30,7 +30,7 @@ plan to what is left.
 
 | Status | Files |
 |---|---|
-| done | 32 |
+| done | 31 |
 | fix | 0 |
 | todo | 0 |
 | never | 25 |
@@ -47,7 +47,6 @@ All P1/P2/P3 files converted 2026-09-14. Remaining `never` rows are unchanged fr
 | `RarityModel.py` | never | | Same as `OOV_detector.py`. | |
 | `anomaly_detection.py` | done (2026-09-14) | P2 | `evaluate_all_ads` "Running X" → INFO. `bayesian_optimization` "F1 optimization time taken" → DEBUG. "Model type not supported for feature importance extraction" → `warnings.warn`. No-labels `warnings.warn` text unchanged (`delta/anomaly.py` still filters on it). | `print_scores`, `print_confusion_matrices`, `_print_evaluation_scores`, "Total time" under `print_scores`, `LogDistance.measure_all_distances(print_values=True)` |
 | `column_analyzer.py` | never | | All prints are in `print_predictor_report`. | `print_predictor_report` |
-| `explainer.py` | done (2026-09-14) | P3 | `calc_shapvalues`: print before the bare `raise ResourceWarning` moved into `raise ResourceWarning("...")`, no log record. | `print_log_content_from_nn_mapping`, `print_false_positive_content`, `print_false_negative_content`, feature list in `plot` |
 | `next_event_prediction.py` | never | | Pure model code. | |
 
 ## `loglead/delta/`

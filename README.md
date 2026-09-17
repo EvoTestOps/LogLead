@@ -271,8 +271,8 @@ line**. Three question types across four granularities:
 
 Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
 `set_folder_names`, `register_mask_pattern`, `list_mask_patterns`, `remask_log_root`, `read_log_lines`,
-`filter_log_lines`, `search_log_lines`, `new_tokens`, `query_result`, and `run_config` for executing an
-existing LogDelta YAML.
+`filter_log_lines`, `search_log_lines`, `new_tokens`, `read_bucket_lines`, `query_result`, and
+`run_config` for executing an existing LogDelta YAML.
 
 A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
 (`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to

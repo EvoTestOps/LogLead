@@ -188,7 +188,6 @@ explicitly asked for.
 |---|---|
 | `anomaly_detection.py` | `AnomalyDetector.print_scores`, `print_confusion_matrices`, `_print_evaluation_scores` (runs when `print_scores`, `auc_roc`, `f1optimize` or `f_importance` is set), the `Total time` line under `print_scores`, and `LogDistance.measure_all_distances(print_values=True)` |
 | `column_analyzer.py` | `print_predictor_report` |
-| `explainer.py` | `print_log_content_from_nn_mapping`, `print_false_positive_content`, `print_false_negative_content`, the feature list printed by `plot` |
 | `parsers/iplom/IPLoM.py` | `PrintPartitions`, `PrintEventStats` |
 | `parsers/pl_iplom/pl_iplom.py` | `print_cluster_info` and its helpers |
 | `parsers/pyspell/spell.py` | `dump` |
