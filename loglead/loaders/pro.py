@@ -48,5 +48,7 @@ class ProLoader(BaseLoader):
 
     def _parse_datetimes(self):
         parsed_times = self.df.select(pl.concat_str([pl.col("date"), pl.col("time")]).alias("m_timestamp"))
-        parsed_times = parsed_times.to_series().str.strptime(pl.Datetime, "%d.%m.%Y%H:%M:%S%.3f")
+        # %.f (any fractional precision) not %.3f: polars >=1.39 requires the digit count to
+        # match the format exactly, and this call is strict, so a differing precision raises.
+        parsed_times = parsed_times.to_series().str.strptime(pl.Datetime, "%d.%m.%Y%H:%M:%S%.f")
         self.df = self.df.with_columns(parsed_times)

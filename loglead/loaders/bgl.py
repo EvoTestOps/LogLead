@@ -17,4 +17,4 @@ class BGLLoader(BaseLoader):
                                 "noderepeat", "type", "component", "level", "m_message"])
         self.df = self.df.with_columns(normal=pl.col("label").str.starts_with("-"))  # Same format as Tb
         # Parse datatime
-        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp")))
+        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp").cast(pl.Int64)))

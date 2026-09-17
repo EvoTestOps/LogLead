@@ -408,7 +408,7 @@ class NezhaLoader(BaseLoader):
         #For some reason some metric datasets have incorrect unix time e.g. 1861140279 when it should be 1661140279.
         # https://github.com/IntelligentDDS/Nezha/issues/8
         self.df_metric_default = self.df_metric_default.with_columns(m_timestamp = pl.col("TimeStamp").str.replace(r"^18","16"))
-        self.df_metric_default = self.df_metric_default.with_columns(m_timestamp = pl.from_epoch(pl.col("m_timestamp")))
+        self.df_metric_default = self.df_metric_default.with_columns(m_timestamp = pl.from_epoch(pl.col("m_timestamp").cast(pl.Int64)))
         #Labels
         self.df_label = self.df_label.with_columns(m_timestamp = pl.from_epoch(pl.col("inject_timestamp"), time_unit="s"))
 
@@ -418,11 +418,14 @@ class NezhaLoader(BaseLoader):
         #Logs
         self.df = self.df.with_columns(
             pl.coalesce(
+                # %.f (any fractional precision) not %.9f: polars >=1.39 requires the
+                # digit count to match exactly, and with strict=False that silently
+                # nulls every timestamp whose precision differs.
                 # Handeling Not consistent format
                 # Most are formated  2023-01-29T09:33:09.036923751Z
-                pl.col('Timestamp').str.strptime(pl.Datetime, "%FT%H:%M:%S%.9fZ",strict=False),
+                pl.col('Timestamp').str.strptime(pl.Datetime, "%FT%H:%M:%S%.fZ",strict=False),
                 #While others are 2023-01-29T09:33:14.716
-                pl.col('Timestamp').str.strptime(pl.Datetime, "%FT%H:%M:%S%.3f",strict=False),
+                pl.col('Timestamp').str.strptime(pl.Datetime, "%FT%H:%M:%S%.f",strict=False),
             ).alias("m_timestamp")
         )
         #Traces. Only Epoch time available
@@ -433,7 +436,7 @@ class NezhaLoader(BaseLoader):
             m_timestamp =  pl.col('Time').str.split(" +0000").list[0]
             )   
         self.df_metric_default = self.df_metric_default.with_columns(
-            m_timestamp =  pl.col('m_timestamp').str.strptime(pl.Datetime, "%F %H:%M:%S%.9f") 
+            m_timestamp =  pl.col('m_timestamp').str.strptime(pl.Datetime, "%F %H:%M:%S%.f") 
             )                                                                 
         #Labels
         self.df_label = self.df_label.with_columns(m_timestamp =  pl.col('inject_time').str.strptime(pl.Datetime, "%F %H:%M:%S"))

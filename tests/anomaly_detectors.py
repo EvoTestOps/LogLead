@@ -46,6 +46,20 @@ unsupervised_methods = ["train_IsolationForest", "train_KMeans", "train_RarityMo
 _NEEDS_ITEM_LIST = {"train_RarityModel", "train_OOVDetector"}
 
 
+def _narrow(df, predictors):
+    """Select the columns a detector reads, plus the label columns, and drop the rest."""
+    # test_train_split() shuffles whatever frame it is handed, so passing the full frame drags
+    # every unused column through the permutation. ait_ads carries 157 columns, 37 of them nested
+    # List(Struct), to build a one-column term matrix - which peaks at ~15 GB and gets the process
+    # OOM-killed. run_structured_predictors() narrows for the same reason.
+    used = list(predictors.get("numeric_cols") or [])
+    if predictors.get("item_list_col"):
+        used.append(predictors["item_list_col"])
+    keep = [c for c in dict.fromkeys(used) if c in df.columns]
+    keep += [c for c in ("anomaly", "normal") if c in df.columns]
+    return df.select(keep) if keep else df
+
+
 def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
     """Unsupervised anomaly scoring for data that carries no labels.
 
@@ -67,7 +81,7 @@ def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
         col = predictors.get("item_list_col", "numeric columns")
         print(f"Running unsupervised anomaly scoring with {col}")
         sad = AnomalyDetector(print_scores=False, store_scores=False, auc_roc=True, **predictors)
-        sad.test_train_split(df, test_frac=test_frac)
+        sad.test_train_split(_narrow(df, predictors), test_frac=test_frac)
         expected_rows = len(sad.test_df)
         for method in unsupervised_methods:
             # RarityModel and OOVDetector need the sparse term matrix that only item_list_col builds.
@@ -192,7 +206,7 @@ def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
         if col in df.columns and "anomaly" in df.columns and normal_count > 9 and anomaly_count > 9:
             print(f"Running anomaly detectors with {col}")
             sad = AnomalyDetector(item_list_col=col, print_scores=False, store_scores=True)
-            sad.test_train_split(df, test_frac=test_frac)
+            sad.test_train_split(_narrow(df, {"item_list_col": col}), test_frac=test_frac)
             sad.evaluate_all_ads(disabled_methods=disabled_methods)
         else:
             print (f"Skipped column {col}. Missing, no anomaly label or too low number (<10) of normal ({normal_count}) or anomaly ({anomaly_count}) instances")
@@ -204,7 +218,7 @@ def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
         print(f"Running seqeuence anomaly detectors with numeric columns {numeric_cols}")
         disabled_methods = {"train_RarityModel", "train_OOVDetector"}
         sad = AnomalyDetector(numeric_cols=numeric_cols, print_scores=False, store_scores=True)
-        sad.test_train_split(df, test_frac=test_frac) 
+        sad.test_train_split(_narrow(df, {"numeric_cols": numeric_cols}), test_frac=test_frac) 
         sad.evaluate_all_ads(disabled_methods=disabled_methods)
 
 for dataset in datasets:

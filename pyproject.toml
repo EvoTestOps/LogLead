@@ -26,42 +26,44 @@ classifiers = [
     "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Logging"]
 
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.14"
 dependencies = [
-"polars[numpy,pandas,pyarrow]>=1.5.0,<1.39.0",
-"scipy>=1.10.1",
-'regex>=2023.10.3',
+# Lower bounds are the oldest releases actually verified against this Python floor, not
+# historical minimums: every unbounded dependency below used to resolve to a pre-wheel
+# sdist that cannot build on 3.10. Upper bounds guard the majors that have broken us or
+# have an unreleased next major - they are lifted deliberately, after a suite run.
+"polars[numpy,pandas,pyarrow]>=1.38.1,<2",
+"scipy>=1.11",
+'regex>=2024.5.15',
 'drain3>=0.9.11',
-'tipping>=0.1.3',
-"scikit-learn>=1.2.2",
-"xgboost>=1.7.3",
+'tipping>=0.2',
+"scikit-learn>=1.5,<2",
+"xgboost>=2.1,<4",
 "python-dotenv>=1.0.1",
-"pyyaml",
-"psutil",
-"matplotlib",
-"requests",#downloader
-"tqdm",#downloader
-"GitPython",#downloader
-"py7zr",#downloader
+"pyyaml>=6.0.1",
+"psutil>=5.9.8",
+"matplotlib>=3.8",
+"requests>=2.32",#downloader
+"tqdm>=4.66",#downloader
+"GitPython>=3.1.41",#downloader
+"py7zr>=0.21",#downloader
 "umap-learn>=0.5.6", #delta/visualize
-"plotly>=5.19.0", #delta/visualize
-"scikit-optimize>=0.10.1" #f1-score optimzer
+"plotly>=5.19,<7", #delta/visualize
+"scikit-optimize>=0.10.2" #f1-score optimzer; 0.10.1 hard-imports check_pandas_support, moved in sklearn 1.5
 ]
 
 [project.optional-dependencies]
 # MCP server: pip install loglead[mcp], then run loglead-mcp
-# The MCP SDK needs Python 3.10+, while LogLead itself still supports 3.9,
-# so the marker keeps `pip install loglead` resolvable on 3.9.
 mcp = [
-'mcp[cli]>=1.9; python_version >= "3.10"',
+'mcp>=1.9,<3',
 "XlsxWriter>=3.2" #xlsx result tables
 ]
 iplom_llm = [

@@ -24,7 +24,7 @@ class ThuSpiLibLoader(BaseLoader):
             self._split_and_unnest(["label", "timestamp", "date", "userid", "month", 
                                     "day", "time", "location", "m_message"])
         # parse datatime
-        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp")))
+        self.df = self.df.with_columns(m_timestamp=pl.from_epoch(pl.col("timestamp").cast(pl.Int64)))
         # Label contains multiple anomaly cases. Convert to binary
         self.df = self.df.with_columns(normal=pl.col("label").str.starts_with("-"))
 
