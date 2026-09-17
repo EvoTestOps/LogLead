@@ -100,7 +100,7 @@ for dataset_name, dataset_info in config['datasets'].items():
     
     enhancer = EventLogEnhancer(df)
     time_start = time.time()
-    df = enhancer.normalize()
+    df = enhancer.mask()
     df = enhancer.words(column="e_message_normalized")
     time_elapsed = time.time() - time_start
     print(f'Data normalized and split to words {time_elapsed:.2f} seconds')

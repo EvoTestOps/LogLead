@@ -46,7 +46,7 @@ row_index = 1
 
 print(f"Original log message: {df['m_message'][row_index]}")
 # Create some enhanced representations
-df = enhancer.normalize()
+df = enhancer.mask()
 print(f"as normalized:        {df['e_message_normalized'][row_index]}")
 df = enhancer.words()
 print(f"as words:             {format_as_list(df['e_words'][row_index])}")

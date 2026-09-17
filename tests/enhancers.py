@@ -75,7 +75,7 @@ for dataset in datasets:
     print("event lengths",  end=", ")
     df = enhancer.length()
     print("normalizing",   end=", ")
-    df = enhancer.normalize()
+    df = enhancer.mask()
     print("splitting to words",   end=", ")
     df = enhancer.words()
     print("splitting to alphanumerics",   end=", ")

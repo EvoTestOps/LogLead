@@ -82,7 +82,7 @@ the one place syslog carries a severity at all - the BSD format's message text h
         to sort by time.
     'raise' - treat a non-matching line as an error and fail.
   The two merges differ less than they look, and not where you would expect. Every parse_* method
-  reads e_message_normalized, and EventLogEnhancer.normalize() keeps only the first line of
+  reads e_message_normalized, and EventLogEnhancer.mask() keeps only the first line of
   m_message, so template mining sees the same thing either way: measured on Mac.log, both give 647
   Drain templates, against 901 when the fragments stay their own rows. What does differ is the
   token and length columns - words(), trigrams(), alphanumerics() and length() read m_message

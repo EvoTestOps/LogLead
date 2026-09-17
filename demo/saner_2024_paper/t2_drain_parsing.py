@@ -59,7 +59,7 @@ for dataset_name in datasets:
     for _ in range(10):
         enhancer_copy = EventLogEnhancer(df)  # Use a fresh copy for each iteration
         time_start = time.time()
-        df_temp = enhancer_copy.normalize()
+        df_temp = enhancer_copy.mask()
         df_temp = enhancer_copy.parse_drain(reparse=True)
         elapsed_time = time.time() - time_start
         dataset_info["without_masking"][dataset_name]['times'].append(elapsed_time)

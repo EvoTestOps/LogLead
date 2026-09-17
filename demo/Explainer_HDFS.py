@@ -45,7 +45,7 @@ def format_as_list(series):
 row_index = random.randint(0, len(df) - 1)
 
 #Create some enhanced representations
-df = enhancer.normalize()
+df = enhancer.mask()
 df = enhancer.words()
 
 

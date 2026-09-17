@@ -2,6 +2,7 @@ import functools
 import hashlib
 import logging
 import time
+import warnings
 
 import polars as pl
 
@@ -226,7 +227,7 @@ class EventLogEnhancer:
                         drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
             else:
                 #if "e_message_normalized" not in self.df.columns:
-                #    self.normalize()
+                #    self.mask()
                 if persistence:
                     from loglead.parsers import DrainPersistenceTemplateMinerNoMasking as tm
                     messages = self.df[field].to_list()
@@ -418,7 +419,7 @@ class EventLogEnhancer:
         if reparse or "e_event_spell_id" not in self.df.columns:
             from loglead.parsers import SpellParser
             #if "e_message_normalized" not in self.df.columns:
-            #    self.normalize()
+            #    self.mask()
             spell = SpellParser(r'\s+')
             self.df = self.df.with_columns(
                 spell_obj=pl.col(field)
@@ -487,7 +488,7 @@ class EventLogEnhancer:
                 self.df = self.df.drop("e_bert_emb")
             from loglead.parsers import BertEmbeddings
             #if "e_message_normalized" not in self.df.columns:
-            #    self.normalize()
+            #    self.mask()
             self.bert_emb_gen = BertEmbeddings(bertmodel="albert")
             message_trimmed_list = self.df[field].to_list()
             message_trimmed_emb_tensor = self.bert_emb_gen.create_bert_emb(message_trimmed_list)
@@ -511,7 +512,21 @@ class EventLogEnhancer:
             )
         return self.df
 
-    def normalize(self, regexs=masking_patterns_drain, to_lower=False, twice=True):
+    def normalize(self, *args, **kwargs):
+        """Deprecated alias for :meth:`mask`."""
+        warnings.warn(
+            "EventLogEnhancer.normalize() is deprecated, use mask() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.mask(*args, **kwargs)
+
+    def mask(self, regexs=masking_patterns_drain, to_lower=False, twice=True):
+        """Replace variable substrings in ``m_message`` with placeholder tokens, producing ``e_message_normalized``.
+
+        This is what is commonly called masking: each ``(placeholder, regex)`` pair in
+        ``regexs`` is applied as a Polars regex replace over the first line of ``m_message``.
+        """
         expr = pl.col("m_message").str.split("\n").list.first()
 
         if to_lower:

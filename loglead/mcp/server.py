@@ -5,17 +5,20 @@
 # but one can also use it new_tokens_vs and filter log lines with it
 # The logline filtering with new lines should be a separate tools
 # We could allow bucket based filtering if distance_line_content is run first and the buckets are saved
-#  
+#  DONE?
 
 # TODO: One should be able to supply own mask patterns also in openlog_root
 # We also want away to for MCP client to inspect a sample of log lines
 # max diversity of log lines to sample for mask pattern detection. 
+# Separate project already in works for mask pattern detection. 
+# Not here. 
 # Also saving a mask is needed as it can be expensive to figure out
 # a good mask and we do want to repeat
+#DONE
 
 #TODO file splitting should support even splits (DONE)
 #Timestamp splits NOT DONE
-#Splits by block_ID as in HDFS and other custom splits. NOT DONE.abs
+#Splits by block_ID as in HDFS and other custom splits. NOT DONE
 #The last two require reading in the the file
 
 #TODO execution pattern anomalies not really implemented. 

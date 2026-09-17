@@ -27,7 +27,7 @@ def run_experiment(n_parts=10):
         df_chunk = chunk.clone()
 
         enhancer = EventLogEnhancer(df_chunk)
-        df_chunk = enhancer.normalize()
+        df_chunk = enhancer.mask()
         df_chunk = enhancer.parse_drain(reparse=True, templates=True)
         templates_per_id = df_chunk.group_by("e_event_drain_id").agg(pl.col("e_event_drain_template"))
         templates_per_id_dict = templates_per_id.to_dict(as_series=False)
@@ -81,7 +81,7 @@ def run_experiment(n_parts=10):
         df_chunk = chunk.clone()
 
         enhancer = EventLogEnhancer(df_chunk)
-        df_chunk = enhancer.normalize()
+        df_chunk = enhancer.mask()
         df_chunk = enhancer.parse_drain(reparse=True, templates=True, persistence=True)
         templates_per_id = df_chunk.group_by("e_event_drain_id").agg(pl.col("e_event_drain_template"))
         templates_per_id_dict = templates_per_id.to_dict(as_series=False)

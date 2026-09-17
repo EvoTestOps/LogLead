@@ -153,7 +153,7 @@ def load_and_enhance (file: str, pattern = None):
     df = loader.execute()
     #Normalize data. 
     enhancer = EventLogEnhancer(df)
-    df = enhancer.normalize()
+    df = enhancer.mask()
     df = enhancer.words("e_message_normalized")
     return df
 

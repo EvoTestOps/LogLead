@@ -27,7 +27,7 @@ df = loader.df
 df_seq = loader.df_sequences
 
 enhancer = EventLogEnhancer(df)
-df = enhancer.normalize()
+df = enhancer.mask()
 df = enhancer.words(column="e_message_normalized")
 df = enhancer.parse_drain()
 df = enhancer.parse_spell()

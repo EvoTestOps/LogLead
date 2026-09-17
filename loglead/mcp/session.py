@@ -407,7 +407,7 @@ class SessionStore:
             same-named folders under different roots are never pooled
             together. Their directory names must be distinct. See
             :func:`log_root.read_log_roots`.
-        :param mask: run :meth:`EventLogEnhancer.normalize` at open time.
+        :param mask: run :meth:`EventLogEnhancer.mask` at open time.
             Required by every ``mask=True`` analysis and by all pre-parsing.
         :param mask_pattern: a built-in name from
             :data:`loglead.delta.masking.PATTERNS`, or a name registered via
@@ -494,7 +494,7 @@ class SessionStore:
                 df, read_info = log_root.read_log_roots(roots, filename_pattern, min_file_size,
                                                         format, max_detect_files)
             if mask:
-                df = EventLogEnhancer(df).normalize(regexs=resolved_mask)
+                df = EventLogEnhancer(df).mask(regexs=resolved_mask)
             df = log_root.normalize_file_names(df, file_name_normalizer)
             # Strictly after file-name normalization: strip_folder_id derives the
             # id to strip from the raw directory name, so renaming first would leave
@@ -592,7 +592,7 @@ class SessionStore:
                 for column in derived:
                     session.content_source.pop(column, None)
             df = session.df.drop(dropped) if dropped else session.df
-            session.df = EventLogEnhancer(df).normalize(regexs=resolved)
+            session.df = EventLogEnhancer(df).mask(regexs=resolved)
 
         session.masked = True
         session.mask_pattern = mask_pattern

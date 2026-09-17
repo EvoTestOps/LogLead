@@ -36,7 +36,7 @@ for data in datas:
         for _ in range(10):
             enricher = EventLogEnhancer(df)
             start_time = time.time()
-            df = enricher.normalize()
+            df = enricher.mask()
             if parser == "drain":
                 df_parsers = enricher.parse_drain()
             elif parser == "spell":

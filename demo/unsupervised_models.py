@@ -63,7 +63,7 @@ for filter_anos in filter_anos_l:
 
 
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")
@@ -127,7 +127,7 @@ for filter_anos in filter_anos_l:
         enhancer = EventLogEnhancer(df)
         stime = time.time()
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")
@@ -184,7 +184,7 @@ for filter_anos in filter_anos_l:
         enhancer = EventLogEnhancer(df)
         stime = time.time()
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")
@@ -241,7 +241,7 @@ for filter_anos in filter_anos_l:
         enhancer = EventLogEnhancer(df)
         stime = time.time()
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")
@@ -297,7 +297,7 @@ for filter_anos in filter_anos_l:
         enhancer = EventLogEnhancer(df)
         stime = time.time()
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")
@@ -353,7 +353,7 @@ for filter_anos in filter_anos_l:
         df = enhancer.length()
 
         regexs = [('0','\d'),('0','0+')]
-        df = enhancer.normalize(regexs, to_lower=True)
+        df = enhancer.mask(regexs, to_lower=True)
         print("time normalized", time.time()-stime)
         stime = time.time()
         df = enhancer.trigrams_unarranged("e_message_normalized")

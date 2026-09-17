@@ -150,7 +150,7 @@ for dataset_name, dataset_info in config['datasets'].items():
         parser_params = None
         # In parsing do we normalize the input with regular expression or no
         if data_normalize:
-            df = enhancer.normalize()
+            df = enhancer.mask()
             df = enhancer.words(column="e_message_normalized")
             params = {'field': 'e_message_normalized'}
         else:

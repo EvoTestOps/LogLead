@@ -1041,7 +1041,7 @@ def prepare_content(df, mask, content_format):
     """Ensure the column for ``content_format`` exists, computing it if needed.
 
     :param mask: read from ``e_message_normalized`` when True, ``m_message``
-        otherwise. Masked input requires ``normalize()`` to have run already.
+        otherwise. Masked input requires ``mask()`` to have run already.
     :returns: ``(df, field)`` — the frame *including* any newly added column,
         and the name of the column to analyze.
 

@@ -48,7 +48,7 @@ def format_as_list(series):
     return '[' + ', '.join(elements) + ']'
 
 #Create some enhanced representations
-df = enhancer.normalize()
+df = enhancer.mask()
 df = enhancer.words()
 
 

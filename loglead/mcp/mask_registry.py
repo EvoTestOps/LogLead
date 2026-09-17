@@ -1,11 +1,11 @@
 """Caller-defined named mask patterns, layered on top of :mod:`loglead.delta.masking`.
 
 ``masking.PATTERNS`` is a fixed allowlist: a name a caller cannot extend,
-because ``EventLogEnhancer.normalize()`` used to build its query by
-interpolating pattern text into a string and ``eval()``-ing it, so raw
-caller-supplied regex text was a code-injection vector (see the removed
-warning in :mod:`loglead.delta.masking`). ``normalize()`` now builds a Polars
-expression chain directly -- no eval -- so a caller-supplied ``(replacement,
+because ``EventLogEnhancer.mask()`` (formerly ``normalize()``) used to build
+its query by interpolating pattern text into a string and ``eval()``-ing it,
+so raw caller-supplied regex text was a code-injection vector (see the
+removed warning in :mod:`loglead.delta.masking`). ``mask()`` now builds a
+Polars expression chain directly -- no eval -- so a caller-supplied ``(replacement,
 regex)`` pair is just a Polars regex replace, the same risk as any other
 caller-supplied string handed to ``str.replace_all``.
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 #: Keeps one bad registration from writing an unbounded file or making
-#: `normalize()` chain thousands of `.str.replace_all()` calls.
+#: `mask()` chain thousands of `.str.replace_all()` calls.
 MAX_PATTERNS = 200
 MAX_REGEX_LENGTH = 500
 MAX_REPLACEMENT_LENGTH = 200
@@ -178,7 +178,7 @@ def _check_pattern_compiles(regex: str, replacement: str, index: int) -> None:
 
     Polars uses the Rust ``regex`` crate, not Python's ``re`` -- syntax
     accepted by one can be rejected by the other -- so this is the same call
-    :meth:`EventLogEnhancer.normalize` will make, run early enough that a bad
+    :meth:`EventLogEnhancer.mask` will make, run early enough that a bad
     pattern fails at registration instead of partway through masking a log root.
     """
     try:
