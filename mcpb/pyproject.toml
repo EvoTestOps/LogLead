@@ -2,9 +2,11 @@
 name = "loglead-mcp-bundle"
 version = "1.2.3"
 description = "MCPB launcher for LogLead's MCP server"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 dependencies = [
-    "loglead[mcp] @ git+https://github.com/EvoTestOps/LogLead.git@main",
+    # Pulls the published PyPI release, not a moving branch - bump the floor with each
+    # MCPB release so the bundle always installs a version this manifest was tested against.
+    "loglead[mcp]>=2.0,<3",
 ]
 
 [tool.uv]

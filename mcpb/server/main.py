@@ -1,7 +1,7 @@
 """Entry point for the LogLead MCPB bundle.
 
 The manifest launches this file with `uv run`, which resolves and installs
-LogLead (with its `mcp` extra) from GitHub's `main` branch per pyproject.toml
+LogLead (with its `mcp` extra) from the published PyPI release per pyproject.toml
 in this directory, then hands off to LogLead's own MCP server main().
 """
 

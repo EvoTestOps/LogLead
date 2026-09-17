@@ -20,7 +20,7 @@ keywords = [
     "anomaly detection",
     "log parsing"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Information Technology",
@@ -80,10 +80,10 @@ Homepage = "https://github.com/EvoTestOps/LogLead"
 include-package-data = true
 
 [tool.setuptools.package-data]
-# Format specs read at runtime by JsonLoader(format=...) and AccessLogLoader(format=...). Neither
-# directory has an __init__.py - they are data directories, not subpackages - so the patterns are
-# relative to their parent package.
-"loglead.loaders" = ["json_formats/*.yml", "access_log_formats/*.yml"]
+# Format specs read at runtime by JsonLoader(format=...), AccessLogLoader(format=...), and
+# DelimitedLoader(format=...). None of these directories has an __init__.py - they are data
+# directories, not subpackages - so the patterns are relative to their parent package.
+"loglead.loaders" = ["json_formats/*.yml", "access_log_formats/*.yml", "delimited_formats/*.yml"]
 
 [tool.setuptools.packages.find]
 include = ["loglead*"]
