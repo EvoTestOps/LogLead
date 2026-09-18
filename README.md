@@ -12,7 +12,6 @@ LogLead is designed to efficiently benchmark log anomaly detection algorithms an
   * [Loading](#loading)
   * [MCP server](#mcp-server)
     + [Registering it with an MCP client](#registering-it-with-an-mcp-client)
-    + [What it can do](#what-it-can-do)
   * [Testing](#testing)
   * [Example of Anomaly Detection results](#example-of-anomaly-detection-results)
   * [Functional overview](#functional-overview)
@@ -136,11 +135,9 @@ See [`loglead/loaders/README.md`](https://github.com/EvoTestOps/LogLead/blob/mai
 
 ## MCP server
 
-LogLead ships an [MCP](https://modelcontextprotocol.io) server so an AI agent can drive log
-analysis conversationally. It exposes the same comparison analyses as
-[LogDelta](https://github.com/EvoTestOps/LogDelta) — comparing a suspect set of logs against a
-baseline of others — but interactively: the logs are loaded, masked, and parsed **once**, and every
-later question reuses it.
+LogLead ships an MCP server so an AI agent can drive log
+analysis conversationally. For a full walkthrough of an MCP client session end-to-end, with screenshots, see the
+[Goose MCP client demo](MCP_client_demo_script.md).
 
 ### Registering it with an MCP client
 
@@ -232,58 +229,6 @@ mcpb validate manifest.json
 mcpb pack . ../loglead-mcp.mcpb
 ```
 
-### What it can do
-
-Your logs are organized under a **log root**: a directory whose subdirectories are *log folders*, matched
-against each other by file name. A log folder is any set of logs that belong together — one test run,
-one day, one deployment, "last release" — so the three levels read **log folder → log file → log
-line**. Three question types across four granularities:
-
-|                             | Distance (pair)             | Anomaly (one vs many)       | Visualize (set)          |
-|-----------------------------|-----------------------------|-----------------------------|--------------------------|
-| **L1** folder / file names  | `distance_folder_filename`  | `anomaly_folder_filename`   | `plot_folder_filename`   |
-| **L2** folder / log text    | `distance_folder_content`   | `anomaly_folder_content`    | `plot_folder_content`    |
-| **L3** file                 | `distance_file_content`     | `anomaly_file_content`      | `plot_file_content`      |
-| **L4** line                 | `distance_line_content`     | `anomaly_line_content`      | —                        |
-
-Plus session and drill-down tools: `open_log_root`, `list_log_roots`, `describe_log_root`, `close_log_root`,
-`set_folder_names`, `register_mask_pattern`, `list_mask_patterns`, `remask_log_root`, `read_log_lines`,
-`filter_log_lines`, `search_log_lines`, `new_tokens`, `read_bucket_lines`, `query_result`, and
-`run_config` for executing an existing LogDelta YAML.
-
-A typical investigation: score every log folder (`anomaly_folder_content`) → narrow to a file
-(`anomaly_file_content`) → score its lines (`anomaly_line_content`, which returns the log text next to
-each score) → confirm with `search_log_lines`. Results come back as numbers the assistant can reason
-about, with the full tables and interactive Plotly HTML written alongside.
-
-A result is a preview of a few rows, since the whole table would not fit in an assistant's context —
-but the table stays in the session, and `query_result` filters it: every log folder under five lines,
-the ones whose name contains `MachineDown`, everything past a `rank_sum` you choose. Nothing is
-recomputed, and the plot tools lean on it hardest — a scatter has no "top N", so they return the
-range of each axis, where the target sits in it, and let you ask for the points you actually want.
-
-`new_tokens` lists the words a log folder has that its comparison folders never have — an error
-message nobody else logged, or an id the mask missed. No model is trained, so it stays fast on
-millions of lines, and `filter_log_lines(new_tokens_vs=..., only_new=True)` shows the lines they are
-on. With `content_format="Parse-<Algorithm>"` the rows are new message types instead of new words.
-
-The logs are read through **any of the loaders**, not just plain text: `open_log_root(format=...)`
-defaults to `"auto"`, so `AutoLoader` samples each file and picks one, and the result reports what it
-chose per format. Pin it instead by naming a family — `"raw"`, `"json"`, `"syslog"`, `"logfmt"`,
-`"access_log"`, `"delimited"` — or a shipped spec after a slash, `"json/nginx_json"`,
-`"delimited/zeek"`, `"syslog/rfc5424"`.
-
-Directory names are often opaque ids, and that name labels every plot and result table, so
-`set_folder_names` (or `open_log_root(folder_names=...)`) gives them meaningful names such as
-`PageRank_MachineDown` or `FailingRunThu`. Nothing on disk is renamed.
-
-Masking replaces volatile tokens — ids, IPs, timestamps, hex — so two lines differing only in a
-request id count as the same event. `open_log_root(mask_pattern=...)` picks a built-in
-(`myllari_extended`, `myllari`, `drain_loglead`, `drain_orig`), and `register_mask_pattern` adds your
-own: replacement/regex pairs, optionally on top of a built-in via `base=`, saved under a name that
-`mask_pattern` accepts from then on. When a better mask turns up mid-investigation,
-`remask_log_root` applies it to the open session rather than re-reading the logs — each masking keeps
-its own cached frame, so switching back restores that one whole, parsing included.
 
 Try it against LogDelta's Hadoop demo data:
 
@@ -294,20 +239,6 @@ uv run demo/mcp_demo.py --log-root /path/to/Hadoop
 The underlying analyses are also importable directly, without MCP — see
 [`loglead/delta/`](loglead/delta/).
 
-### OpenStack Log Demo
-- **Script**: [OpenStack_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/OpenStack_samples.py)
-- **Log Snapshot**: View the log [here](https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH).
-- **Dataset**: 217,534 log events with 1,204 anomalies (0.55%). Unlike the HDFS and TB demos, there is
-  no bundled sample - the script reads `OpenStack_data_original.csv` from your own data folder, like
-  the RawLoader demos do. Set `LOG_DATA_PATH` in a `.env` file (see
-  [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample)) and download the data with:
-```
-uv run downloader/download_data.py --datasets openstack
-```
-  which fetches just that 82 MB CSV into `<LOG_DATA_PATH>/openstack/`. Then run:
-```
-uv run demo/OpenStack_samples.py
-```
 
 ## Testing
 Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
