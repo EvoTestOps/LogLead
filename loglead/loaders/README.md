@@ -144,8 +144,20 @@ constructor call. See each module's docstring for the full keyword-argument refe
 ### `JsonLoader` ([`json.py`](json.py))
 
 One loader for JSON/NDJSON logs; what differs between JSON datasets is only the *mapping* (which
-key is the timestamp, which is the message, which correlates records), so that mapping is the spec.
-Shipped specs live in [`json_formats/`](json_formats/):
+key is the timestamp, which is the message, which correlates records), so that mapping is
+configuration, and a format spec is nothing more than a serialized constructor call:
+
+```python
+JsonLoader(filename="access.json", timestamp_field="time", message_field="request").execute()
+JsonLoader(filename="access.json", format="nginx_json").execute()       # shipped spec
+JsonLoader(filename="access.json", format="./my_format.yml").execute()  # your own, no fork needed
+```
+
+It handles NDJSON, `[...]` arrays and wrapped `{"Records": [...]}` containers, keys that differ
+from record to record, nested objects addressed JSON-pointer style (`log/logger`), epoch or string
+timestamps, and whole directory trees. Numeric fields stay numeric, so they are ready for
+`numeric_cols` without a cast. Shipped specs live in [`json_formats/`](json_formats/);
+`JsonLoader.available_formats()` lists them:
 
 | Spec | Dataset | Landing page |
 |---|---|---|
@@ -200,6 +212,7 @@ Shipped specs live in [`delimited_formats/`](delimited_formats/):
 | [`iis.yml`](delimited_formats/iis.yml) | Microsoft IIS, W3C extended | IIS's default field set as the fallback for a file that lost its `#Fields:` line |
 | [`loghub.yml`](delimited_formats/loghub.yml) | loghub `*_structured.csv` | `Content` is the message; no timestamp, since each of the 16 systems splits it differently |
 | [`loghub_labeled.yml`](delimited_formats/loghub_labeled.yml) | loghub `*_structured.csv` for BGL and Thunderbird | the two that also carry `Label` and an epoch `Timestamp` |
+| [`openstack.yml`](delimited_formats/openstack.yml) | OpenStack `OpenStack_data_original.csv` | loghub's structured shape but its own dataset: carries a ground-truth `anom_label`, and a date split across `timestamp` (date) and `hour` (time) |
 
 Datasets exercised in the test suite (`tests/datasets_csv_tsv.yml`), one per header style:
 
