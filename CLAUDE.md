@@ -42,3 +42,4 @@ Datasets are **event-based** (every line independently labeled, no `df_seq`, e.g
 - Keep `loglead/loaders/README.md` in sync when adding/changing a loader.
 - Logging in `loglead/` follows `docs/logging.md`: stdlib `logging.getLogger(__name__)`, never configure logging (handlers/`basicConfig`/levels) or write to stdout — hosts and the stdio MCP transport depend on it. When you change a file's logging or prints, update its row in `docs/logging_status.md`.
 - Detector scores are not bit-reproducible (no `random_state`, threaded sklearn) — never assert exact score values in tests; use rank-based checks with margin.
+- Do not write comments to code when you make trivial changes
