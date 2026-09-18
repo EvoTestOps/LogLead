@@ -1,6 +1,6 @@
 [project]
 name = "loglead-mcp-bundle"
-version = "1.2.3"
+version = "2.0.0"
 description = "MCPB launcher for LogLead's MCP server"
 requires-python = ">=3.10,<3.14"
 dependencies = [
