@@ -3,7 +3,7 @@
 Notable changes to LogLead. Versions follow [semantic versioning](https://semver.org/): a major
 bump means something that worked before needs changing.
 
-## 2.0.0 - 2026-09-17
+## 2.0.0 - 2026-09-18
 
 The headline additions are format detection (`AutoLoader`), five spec-driven loaders for everyday
 log formats, the `loglead.delta` comparison pipeline, and an MCP server that exposes it to an AI
