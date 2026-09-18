@@ -21,8 +21,9 @@ class IPLoMLLMParser:
             from iplom_llm_parser import Config, LLMClient, load_config
         except ImportError as e:
             raise ImportError(
-                "IPLoMLLMParser requires the 'iplom_llm' extra and Python 3.11+. "
-                "Install with: pip install 'loglead[iplom_llm]'"
+                "IPLoMLLMParser requires iplom-llm-parser and Python 3.11+. It has no PyPI "
+                "release, so install it directly: pip install "
+                "'iplom-llm-parser @ git+https://github.com/EvoTestOps/iplom-llm-parser@v0.1.1'"
             ) from e
 
         if config is None:

@@ -66,6 +66,11 @@ mcp = [
 'mcp>=1.9,<3',
 "XlsxWriter>=3.2" #xlsx result tables
 ]
+
+[dependency-groups]
+# Not a published extra: iplom-llm-parser has no PyPI release, and PyPI rejects any uploaded
+# package whose metadata carries a direct git reference (even inside an extra). This group is
+# for local dev only - `uv run --group iplom_llm ...` - not something `pip install` can reach.
 iplom_llm = [
     "iplom-llm-parser @ git+https://github.com/EvoTestOps/iplom-llm-parser@v0.1.1 ; python_version >= '3.11'",
 ]

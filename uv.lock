@@ -1129,19 +1129,20 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-iplom-llm = [
-    { name = "iplom-llm-parser", marker = "python_full_version >= '3.11'" },
-]
 mcp = [
     { name = "mcp" },
     { name = "xlsxwriter" },
+]
+
+[package.dev-dependencies]
+iplom-llm = [
+    { name = "iplom-llm-parser", marker = "python_full_version >= '3.11'" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "drain3", specifier = ">=0.9.11" },
     { name = "gitpython", specifier = ">=3.1.41" },
-    { name = "iplom-llm-parser", marker = "python_full_version >= '3.11' and extra == 'iplom-llm'", git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.1" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.9,<3" },
     { name = "plotly", specifier = ">=5.19,<7" },
@@ -1161,7 +1162,10 @@ requires-dist = [
     { name = "xgboost", specifier = ">=2.1,<4" },
     { name = "xlsxwriter", marker = "extra == 'mcp'", specifier = ">=3.2" },
 ]
-provides-extras = ["mcp", "iplom-llm"]
+provides-extras = ["mcp"]
+
+[package.metadata.requires-dev]
+iplom-llm = [{ name = "iplom-llm-parser", marker = "python_full_version >= '3.11'", git = "https://github.com/EvoTestOps/iplom-llm-parser?rev=v0.1.1" }]
 
 [[package]]
 name = "matplotlib"

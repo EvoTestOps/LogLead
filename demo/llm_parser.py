@@ -1,8 +1,9 @@
 # This demo shows how to use IPLoM LLM Parser, a log parsing pipeline that combines fast
 # syntactic clustering (IPLoM) with LLM-based template extraction without labeled data.
 #
-# Requires Python 3.11+ and the optional `iplom_llm` extra:
-#   uv run --extra iplom_llm demo/llm_parser.py
+# Requires Python 3.11+ and the `iplom_llm` dependency group (not a published extra -
+# iplom-llm-parser has no PyPI release):
+#   uv run --group iplom_llm demo/llm_parser.py
 #
 # The parser requires either a locally hosted LLM, or an OpenRouter API key.
 # See https://github.com/EvoTestOps/iplom-llm-parser/blob/main/README.md for details about configuration.
