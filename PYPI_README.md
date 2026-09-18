@@ -10,7 +10,7 @@ If there's something you believe should be included, please submit a request for
 - **`AutoLoader`** — point it at a file or a directory and it detects the format and builds the right loader for you. No more picking a loader class by hand.
 - **New format-family loaders** — `JsonLoader`, `SyslogLoader`, `LogfmtLoader`, `AccessLogLoader`, and `DelimitedLoader` read a format from a YAML spec instead of a bespoke Python class. Specs for GELF, nginx, Windows events, Zeek, IIS, OpenStack, and loghub ship with the package.
 - **`loglead.delta`** — an unsupervised pipeline that compares many log *folders* against each other (distance, anomaly, and visualization, at folder-name, folder-content, file, and line granularity) rather than training on labels.
-- **MCP server** — `pip install "loglead[mcp]"` then run `loglead-mcp` to let an AI assistant drive log comparison conversationally. See the [MCP server section of the GitHub README](https://github.com/EvoTestOps/LogLead#mcp-server) for client setup.
+- **MCP server** — let an AI assistant drive log comparison conversationally. See [MCP server](#mcp-server) below.
 
 **Breaking changes from 1.x** are listed in the [changelog](https://github.com/EvoTestOps/LogLead/blob/main/CHANGELOG.md). In short: Python 3.9 is no longer supported (3.10–3.13 now), `GELFLoader` is replaced by `JsonLoader(format="gelf")`, `EventLogEnhancer.normalize()` is renamed to `mask()` (the old name still works but warns), and the SHAP-based explainer module was removed.
 
@@ -25,11 +25,6 @@ uv add loglead
 Or with `pip`:
 ```
 python -m pip install loglead
-```
-
-For the MCP server, install the `mcp` extra instead:
-```
-uv add "loglead[mcp]"          # or: python -m pip install "loglead[mcp]"
 ```
 
 Then clone the project, move to demo folder and run some demos
@@ -61,34 +56,16 @@ df = loader.execute()
 
 Run [AutoLoader_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/AutoLoader_samples.py) to see it on the bundled sample data. If detection gets it wrong, or you want the dataset-specific cleanup a custom loader does, pick a loader explicitly — [loglead/loaders/README.md](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/README.md) lists every loader, the formats it reads, and the shipped format specs. [`RawLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py) is the no-assumptions fallback: one row per line, one `m_message` column.
 
-To try [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py), you will need the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets. You will also need to edit the [RawLoaderDemo script](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py) or add a ".env" file to your LogLead root so that the demo knows where the data is located on your machine. See [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample) as an example of how the ".env" file should look. After that run the demo
+To try [RawLoaderDemo](https://github.com/EvoTestOps/LogLead/blob/main/demo/RawLoader_NoLabels.py), get the original [BGL](https://zenodo.org/records/8196385/files/BGL.zip?download=1) and [HDFS](https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1) datasets, then point the demo at them via a ".env" file in your LogLead root (see [.env.sample](https://github.com/EvoTestOps/LogLead/blob/main/.env.sample)) or by editing the script directly:
 ```
-uv run demo/RawLoader_NoLabels.py
+uv run demo/RawLoader_NoLabels.py    # or: python RawLoader_NoLabels.py
 ```
-Or with `pip`:
+Finally, you can download all public datasets with the [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script — or, if you've cloned the repo and want to run the test suite too, point it at one of the [tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead (e.g. [tests/datasets_mid_labels.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets_mid_labels.yml), the one `tests/main.py` uses by default):
 ```
-python RawLoader_NoLabels.py
+uv run downloader/download_data.py                                            # or: python downloader/download_data.py
+uv run downloader/download_data.py --config tests/datasets_mid_labels.yml     # or with pip, same --config flag
 ```
-Finally, you can try downloading all data. The [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script downloads the public datasets listed in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml):
-```
-uv run downloader/download_data.py
-```
-Or with `pip` (after cloning the repo):
-```
-python downloader/download_data.py
-```
-If you've cloned the repo and want to run the test suite too, point it at one of the
-[tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead — e.g.
-[tests/datasets_mid_labels.yml](https://github.com/EvoTestOps/LogLead/blob/main/tests/datasets_mid_labels.yml),
-the one `tests/main.py` uses by default — which also controls what gets loaded and how it's used in testing:
-```
-uv run downloader/download_data.py --config tests/datasets_mid_labels.yml
-```
-Or with `pip`:
-```
-python downloader/download_data.py --config tests/datasets_mid_labels.yml
-```
-**Disk space:** downloading everything in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) transfers roughly 7 GB and the datasets expand to about 104 GB once unzipped. Make sure you have **at least ~110 GB free** before running the full downloader. The three supercomputer logs — Liberty, Spirit, and Thunderbird — account for most of it, at 30-38 GB each once unzipped.
+**Disk space:** downloading everything transfers roughly 7 GB and expands to about 104 GB unzipped — check you have **~110 GB free**. Liberty, Spirit, and Thunderbird account for most of it, at 30-38 GB each.
 
 If you're short on space, edit the `datasets:` list in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml) (or the relevant `tests/datasets_*.yml` if you're using `--config tests/datasets_*.yml`) and set `download: false` for datasets you don't need.
 
@@ -111,9 +88,25 @@ If you're short on space, edit the `datasets:` list in [downloader/datasets.yml]
 - pip version does not have the `tensorflow` dependencies necessary for `BertEmbeddings`.
 Install them manually (preferably in a conda enviroment).
 
+## MCP server
+
+LogLead ships an [MCP](https://modelcontextprotocol.io) server so an AI agent (Claude, Goose, etc.) can drive
+log comparison and anomaly analysis conversationally. It loads, masks, and parses a log root once per session
+and reuses that for every later question, exposing the [`loglead.delta`](#functional-overview) comparison
+pipeline as tools.
+
+```
+uv add "loglead[mcp]"      # or: python -m pip install "loglead[mcp]"
+loglead-mcp
+```
+
+Point your MCP client (Claude Code, Goose, Claude Desktop) at the `loglead-mcp` command this installs. Full
+client setup is in the [GitHub README's MCP server section](https://github.com/EvoTestOps/LogLead#mcp-server),
+and a full example session with screenshots is in
+[MCP_client_demo_script.md](https://github.com/EvoTestOps/LogLead/blob/main/MCP_client_demo_script.md).
 
 ## Demos
-In the following demonstrations, you'll notice a significant aspect of LogLead's design efficiency: code reusability. Both demos, while analyzing different datasets, share a substantial amount of their underlying code. This not only showcases LogLead's versatility in handling various log formats but also its ability to streamline the analysis process through reusable code components.
+Both demos below analyze different datasets but share most of their underlying code, showing how the same enhancement and detection logic carries across log formats.
 
 ### Thunderbird Supercomputer Log Demo
 - **Script**: [TB_samples.py](https://github.com/EvoTestOps/LogLead/blob/main/demo/TB_samples.py)
@@ -130,40 +123,14 @@ In the following demonstrations, you'll notice a significant aspect of LogLead's
 - **Dataset**: The demo includes a parquet file containing a subset of 222,579 log events, forming 11,501 sequences with 350 anomalies.
 
 ## Testing
-Typically, our test procedure includes running the following. The demos can reveal obvious errors quickly, while the full test set takes a bit longer to run—up to 30minutes.
+The demos catch obvious errors quickly; the full test set takes longer (up to 30 minutes). With `pip`, `cd` into the script's directory and drop the `uv run` prefix.
 
-Basic demos
 ```
-uv run demo/HDFS_samples.py
+uv run demo/HDFS_samples.py                          # basic demos
 uv run demo/TB_samples.py
-```
-Or with `pip`:
-```
-cd demo
-python HDFS_samples.py
-python TB_samples.py
-```
-
-Parser benchmark
-```
-uv run demo/parser_benchmark/ano_detection.py
+uv run demo/parser_benchmark/ano_detection.py         # parser benchmark
 uv run demo/parser_benchmark/parsing_speed.py
-```
-Or with `pip`:
-```
-cd demo/parser_benchmark
-python ano_detection.py
-python parsing_speed.py
-```
-
-Run full tests
-```
-uv run tests/main.py
-```
-Or with `pip`:
-```
-cd tests
-python main.py
+uv run tests/main.py                                  # full test suite
 ```
 
 ## Example of Anomaly Detection results
@@ -183,24 +150,24 @@ The enhancement strategies are tested with 5 different machine learning algorith
 | Average | 0.9640 | 0.9503 | 0.9494 | 0.9593 | 0.8500 |         |
 
 ## Functional overview
-LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector. We use [Polars](https://www.pola.rs/) dataframes as its notably faster than Pandas.
+LogLead is composed of distinct modules: the Loader, Enhancer, and Anomaly Detector, all on [Polars](https://www.pola.rs/) dataframes.
 
-**Loader:** This module reads in the log files and deals with the specifics features of each log file. It produces a dataframe with certain semi-mandatory fields. These fields enable actions in the subsequent stages. Point [`AutoLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/auto.py) at a file or a directory and it detects the format and builds the right loader for you; [`RawLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py) is the no-assumptions fallback that can load any log file. It also has custom loaders to the following public datasets from 10 different systems. Custom loaders should result in more accurate anomaly detection: 
-* 3: [HDFS_v1](https://github.com/logpai/loghub/tree/master/HDFS#hdfs_v1), [Hadoop](https://github.com/logpai/loghub/tree/master/Hadoop), [BGL](https://github.com/logpai/loghub/tree/master/BGL) thanks to amazing [LogHub team](https://github.com/logpai/loghub). For full data see [Zenodo](https://zenodo.org/records/3227177).
-* 3: [Sprit, Thunderbird and Liberty](https://www.usenix.org/cfdr-data#hpc4) can be found from Usenix site.  
-* 2: [Nezha](https://github.com/IntelligentDDS/Nezha) has data from two systems [TrainTicket](https://github.com/FudanSELab/train-ticket) and [Google Cloud Webshop demo](https://github.com/GoogleCloudPlatform/microservices-demo). It is the first dataset of microservice-based systems. Like other traditional log datasets it has Log data but additionally there are Traces and Metrics.
-* 2: [ADFA](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) and [AWSCTD](https://github.com/DjPasco/AWSCTD) are two datasets designed for intrusion detection.  
+**Loader:** reads log files into a dataframe with the semi-mandatory fields later stages depend on. Point [`AutoLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/auto.py) at a file or directory and it detects the format and builds the right loader; [`RawLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/raw.py) is the no-assumptions fallback. Custom loaders (more accurate anomaly detection) exist for 10 systems:
+* 3: [HDFS_v1](https://github.com/logpai/loghub/tree/master/HDFS#hdfs_v1), [Hadoop](https://github.com/logpai/loghub/tree/master/Hadoop), [BGL](https://github.com/logpai/loghub/tree/master/BGL), courtesy of the [LogHub team](https://github.com/logpai/loghub) ([Zenodo](https://zenodo.org/records/3227177) for full data).
+* 3: [Spirit, Thunderbird and Liberty](https://www.usenix.org/cfdr-data#hpc4), from Usenix.
+* 2: [Nezha](https://github.com/IntelligentDDS/Nezha) — the first microservice-based dataset, spanning [TrainTicket](https://github.com/FudanSELab/train-ticket) and the [Google Cloud Webshop demo](https://github.com/GoogleCloudPlatform/microservices-demo), with logs, traces, and metrics.
+* 2: [ADFA](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) and [AWSCTD](https://github.com/DjPasco/AWSCTD), for intrusion detection.
 
-Beyond those, five *spec-driven* loaders read a whole format family from a YAML spec instead of a bespoke class -- [`JsonLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/json.py), [`SyslogLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/syslog.py), [`LogfmtLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/logfmt.py), [`AccessLogLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/access_log.py) and [`DelimitedLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/delimited.py) -- with shipped specs for GELF, nginx, Windows events, Zeek, IIS, OpenStack and loghub. Every loader, the formats it reads and its shipped specs are listed in [loglead/loaders/README.md](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/README.md).
+Beyond those, five *spec-driven* loaders read a whole format family from a YAML spec instead of a bespoke class — [`JsonLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/json.py), [`SyslogLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/syslog.py), [`LogfmtLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/logfmt.py), [`AccessLogLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/access_log.py) and [`DelimitedLoader`](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/delimited.py) — with shipped specs for GELF, nginx, Windows events, Zeek, IIS, OpenStack and loghub. Full list in [loglead/loaders/README.md](https://github.com/EvoTestOps/LogLead/blob/main/loglead/loaders/README.md).
 
-**Enhancer:** This module extracts additional data from logs. The enhancement takes place directly within the dataframes, where new columns are added as a result of the enhancement process. For example, log parsing, the creation of tokens from log messages, and measuring log sequence lengths are all considered forms of log enhancement. Enhancement can happen at the event level or be aggregated to the sequence level. Some of the enhancers available: Event Length (chracters, words, lines), Sequence Length, Sequence [Duration](https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Duration.html), following "NLP" enhancers: [Regex](https://crates.io/crates/regex), [Words](https://en.wikipedia.org/wiki/Bag-of-words_model), [Character n-grams](https://en.wikipedia.org/wiki/N-gram). Log parsers: [Drain](https://github.com/logpai/Drain3), [LenMa](https://github.com/keiichishima/templateminer), [Spell](https://github.com/bave/pyspell), [IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/iplom), [AEL](https://github.com/EvoTestOps/LogLead/tree/main/parsers/AEL), [Brain](https://github.com/EvoTestOps/LogLead/tree/main/parsers/Brain), [Fast-IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/fast_iplom),  [Tipping](https://pypi.org/project/tipping/), and [BERT](https://github.com/google-research/bert). [NextEventPrediction](https://arxiv.org/abs/2202.09214) including its probablities and perplexity. Next event prediction can be computed on top of any of the parser output. 
+**Enhancer:** adds columns to the dataframe — event- or sequence-level — such as message/sequence length, [Duration](https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Duration.html), [Regex](https://crates.io/crates/regex), [Words](https://en.wikipedia.org/wiki/Bag-of-words_model), and [character n-grams](https://en.wikipedia.org/wiki/N-gram). Log parsers: [Drain](https://github.com/logpai/Drain3), [LenMa](https://github.com/keiichishima/templateminer), [Spell](https://github.com/bave/pyspell), [IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/iplom), [AEL](https://github.com/EvoTestOps/LogLead/tree/main/parsers/AEL), [Brain](https://github.com/EvoTestOps/LogLead/tree/main/parsers/Brain), [Fast-IPLoM](https://github.com/EvoTestOps/LogLead/tree/main/parsers/fast_iplom), [Tipping](https://pypi.org/project/tipping/), and [BERT](https://github.com/google-research/bert). [NextEventPrediction](https://arxiv.org/abs/2202.09214) (with probabilities and perplexity) can run on top of any parser's output.
 
-**Anomaly Detector:** This module uses the enhanced log data to perform Anomaly Detection. It is mainly using SKlearn at the moment but there are few customer algorithms as well. LogLead has been integrated and tested with following models: 
-* Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [Support Vector Machine](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [eXtreme Gradient Boosting](https://en.wikipedia.org/wiki/XGBoost)
+**Anomaly Detector:** runs on the enhanced data, mainly via scikit-learn plus a couple of custom algorithms:
+* Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [SVM](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [XGBoost](https://en.wikipedia.org/wiki/XGBoost)
 * Unsupervised (4): [One-class SVM](https://en.wikipedia.org/wiki/Support_vector_machine#One-class_SVM), [Local Outlier Factor](https://en.wikipedia.org/wiki/Local_outlier_factor), [Isolation Forest](https://en.wikipedia.org/wiki/Isolation_forest), [K-Means](https://en.wikipedia.org/wiki/K-means_clustering)
-* Custom Unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) counts amount words or character n-grams that are novel in test set. [Rarity Model](https://github.com/EvoTestOps/LogLead/blob/main/loglead/RarityModel.py), scores seen words or character n-grams based on their rarity in training set. See our public [preprint](https://arxiv.org/abs/2312.01934) for more details
+* Custom unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) (novel words/n-grams vs. test set) and [Rarity Model](https://github.com/EvoTestOps/LogLead/blob/main/loglead/RarityModel.py) (rarity-based scoring) — see our [preprint](https://arxiv.org/abs/2312.01934).
 
-**Comparing log folders (`loglead.delta`):** a second, unsupervised pipeline for the case where there are no labels to train on, but there are many comparable runs. Given a log root -- a directory whose subdirectories are log folders (a test run, a day, a release) -- it judges one target against the others at four granularities: folder names, folder content, file content and line content, each answering a distance question ("how far apart are they?"), an anomaly question ("which one looks wrong?") or a visualization. It returns Polars DataFrames and plotly figures, holds no module-level state and writes no files. This is the layer the MCP server exposes.
+**Comparing log folders (`loglead.delta`):** a second, unsupervised pipeline for when there's no labels but many comparable runs. Given a log root — a directory of log folders (a test run, a day, a release) — it judges one target against the others at four granularities (folder name, folder content, file content, line content), each posing a distance, anomaly, or visualization question. Returns Polars DataFrames and plotly figures, no module-level state, no files written. This is the layer the MCP server exposes.
 
 ## Reference
 Mäntylä MV, Wang Y, Nyyssölä J. Loglead-fast and integrated log loader, enhancer, and anomaly detector. In2024 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER) 2024 Mar 12 (pp. 395-399). IEEE.  [PDF](https://ieeexplore.ieee.org/abstract/document/10589612), [preprint](https://arxiv.org/abs/2311.11809)
