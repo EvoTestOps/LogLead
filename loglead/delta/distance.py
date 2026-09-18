@@ -293,6 +293,20 @@ def comparable_files(df, target_folder, comparison_folders="ALL", target_files="
     return [name for name in file_names if name in shared]
 
 
+def require_bucket_mask(mask):
+    """Reject an unmasked bucket analysis, before any content is materialized.
+
+    Callers that cache a content column have to run this *before* preparing one,
+    so a rejected call cannot leave the column built from the wrong source.
+    """
+    if not mask:
+        raise ValueError(
+            "distance_line_content requires mask=True. On raw lines almost every "
+            "line is distinct, so nearly all of them fall into target-only "
+            "buckets and the histogram carries no signal."
+        )
+
+
 def _bucket_histogram(target_df, comparison_df, label, measure):
     """One row per bucket, with both sides' share of it."""
     target = (
@@ -376,12 +390,7 @@ def distance_line_content(
         ``js_divergence`` and ``total_variation``; ``df`` is the (possibly
         enhanced) input frame, to be kept so a session avoids re-parsing.
     """
-    if not mask:
-        raise ValueError(
-            "distance_line_content requires mask=True. On raw lines almost every "
-            "line is distinct, so nearly all of them fall into target-only "
-            "buckets and the histogram carries no signal."
-        )
+    require_bucket_mask(mask)
     measures = _resolve_bucket_measures(measures)
     if prefix_tokens < 1:
         raise ValueError(f"prefix_tokens must be >= 1, got {prefix_tokens}")

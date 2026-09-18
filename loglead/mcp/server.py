@@ -1454,6 +1454,11 @@ def distance_line_content(
             first within that.
     """
     session = STORE.get(session_id)
+    # Before ensure_content, not after: it rebuilds the content column whenever the
+    # source changes, so letting a call we are about to reject reach it would leave
+    # the session holding tokens built from m_message and silently mismatch every
+    # bucket a later mask=True call recomputes.
+    distance.require_bucket_mask(mask)
     # ensure_content materializes the content column over the whole log root, so
     # check there is something to compare before paying for it -- otherwise a log
     # root whose folders share no file name pays in full for an empty result.
@@ -1546,6 +1551,12 @@ def read_bucket_lines(
     # Names are checked the way every line-reading tool checks them, so a typo
     # in a folder or file name is not reported as an empty bucket.
     _selected_lines(session, folder, file_name)
+
+    # Through the session, not straight to prepare_content: EventLogEnhancer
+    # short-circuits on the output column without checking which input built it,
+    # so a session whose content column was last built from the other source
+    # would relabel every line here and report the bucket as empty.
+    session.ensure_content(mask, content_format)
 
     lines, session.df = distance.lines_in_bucket(
         session.df, folder, file_name, bucket, measure, mask,
