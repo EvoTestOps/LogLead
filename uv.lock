@@ -1100,7 +1100,7 @@ wheels = [
 
 [[package]]
 name = "loglead"
-version = "1.2.3"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "drain3" },
