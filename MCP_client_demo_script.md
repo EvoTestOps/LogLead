@@ -26,7 +26,7 @@ We ask Goose to find log data we have placed on disk. Once it locates it, we ope
 
 Once Goose has the file open, it shows what it found.
 
-For this demo we are working with LO2-Challenge, a log anomaly detection dataset given to students at one of the courses in the University of Helsinki. The data is from our paper ([LO2: Microservice API anomaly dataset of logs and metrics](https://dl.acm.org/doi/abs/10.1145/3727582.3728682)), and each run contains execution logs of 7 distinct microservices. LO2 data is huge but for the LO2-challenge each team gets only a small subset of the data with 7 labeled runs and 8 hidden runs that the team needs to label. 
+For this demo we are working with LO2-Challenge, a log anomaly detection dataset given to students at Software Evoluation and Reliablity course in the University of Helsinki, see Google Drive for the [data](https://drive.google.com/drive/folders/19UKLlZNHEn4CTK1rHiptHnu2C8Jy7CU5). The data is from our paper ([LO2: Microservice API anomaly dataset of logs and metrics](https://dl.acm.org/doi/abs/10.1145/3727582.3728682)), and each run contains execution logs of 7 distinct microservices. LO2 data is huge but for the LO2-challenge each team gets only a small subset of the data with 7 labeled runs and 8 hidden runs that the team needs to label. 
 
 Details of the data are in below as goose sees it. 
 
