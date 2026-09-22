@@ -179,7 +179,7 @@ class SequenceEnhancer:
         return self.df_seq
 
     def _perplexity(self, probab_col="nep_prob_nmax", min_prob=1e-6):
-        # Same formula as NEP_detector.py's "perplexity" score, kept separate because this one is
+        # Same formula as sequence_anomaly_detectors.py's "perplexity" score, kept separate because this one is
         # vectorized in Polars over the whole list-column instead of one sequence's list.
         # Unseen n-grams have probability 0; flooring keeps the log finite.
         self.df_seq = self.df_seq.with_columns(pl.col(probab_col).list.eval(pl.element().clip(lower_bound=min_prob).log()) #Log of probabilties in a list

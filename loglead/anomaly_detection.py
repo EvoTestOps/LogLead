@@ -31,8 +31,7 @@ import warnings
 
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
-from .NEP_detector import NEPDetector
-from .LAP_detector import LAPDetector
+from .sequence_anomaly_detectors import NEPDetector, LAPDetector
 
 logger = logging.getLogger(__name__)
 
