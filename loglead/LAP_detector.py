@@ -24,15 +24,14 @@ class LAPDetector:
     pairs were never seen in training.
     """
 
-    def __init__(self, item_list_col, train_df, test_df, window=10, offset=True, mode="set",
-                 score="max", threshold=1):
+    def __init__(self, item_list_col, train_df, test_df, window=10, mode="set", score="max",
+                 threshold=1):
         if score not in SCORES:
             raise ValueError(f"Unknown score {score!r}. Valid options: {list(SCORES)}")
         self.item_list_col = item_list_col
         self.train_df = train_df
         self.test_df = test_df
         self.window = window
-        self.offset = offset
         self.mode = mode
         self.score = score
         self.threshold = threshold
@@ -41,7 +40,7 @@ class LAPDetector:
         self.is_ano = None
 
     def fit(self, X_train=None, labels=None):
-        self.model = LookaheadPairs(window=self.window, offset=self.offset, mode=self.mode)
+        self.model = LookaheadPairs(window=self.window, mode=self.mode)
         self.model.create_model(self.train_df[self.item_list_col].to_list())
 
     def predict(self, X_test=None):

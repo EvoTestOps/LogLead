@@ -477,18 +477,17 @@ class AnomalyDetector:
                          train_df=train_df, test_df=self.test_df, ngrams=ngrams, score=score,
                          threshold=threshold)
 
-    def train_LAP(self, window=10, offset=True, mode="set", score="max", threshold=1,
-                  filter_anos=True):
+    def train_LAP(self, window=10, mode="set", score="max", threshold=1, filter_anos=True):
         """Lookahead pairs: which event may follow which within ``window``, from the train split.
 
         Needs ``item_list_col`` to be an ordered list of events per row, as train_NEP does. See
-        LookaheadPairs for ``window``, ``offset`` and ``mode``, and LAPDetector for ``score`` and
+        LookaheadPairs for ``window`` and ``mode``, and LAPDetector for ``score`` and
         ``threshold``.
         """
         train_df = self._sequence_train_df("train_LAP", filter_anos)
         self.train_model(LAPDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
-                         train_df=train_df, test_df=self.test_df, window=window, offset=offset,
-                         mode=mode, score=score, threshold=threshold)
+                         train_df=train_df, test_df=self.test_df, window=window, mode=mode,
+                         score=score, threshold=threshold)
 
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
