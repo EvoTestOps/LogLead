@@ -924,7 +924,8 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     check.section("6b. sequence_line_event_prediction")
 
     # Exact on a hand-built log root: every baseline file runs a..g, the target
-    # swaps b and c. With 3-grams only the n-grams through the swap are unseen.
+    # swaps b and c. With 3-grams only the n-grams through the swap are unseen;
+    # with a window of 2, only the pairs the swap breaks.
     lines = list("abcdefg")
     rows = [(folder, name, "x.log", f"/{folder}/x.log")
             for folder, seq in (("f1", lines), ("f2", lines), ("t", list("acbdefg")))
@@ -933,10 +934,23 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
                         orient="row")
     per_file, _ = sequence.sequence_line_event_prediction(
         tiny, "t", comparison_folders=["f1", "f2"], mask=False, content_format="Sklearn",
-        ngrams=3)
+        ngrams=3, window=2)
     scores = per_file[0][2]["NEP_pred_ano_proba"].to_list()
     check.eq("a swap scores 1 on the n-grams through it and 0 elsewhere",
              scores, [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0])
+    check.eq("LAP scores the share of each line's pairs the swap broke",
+             per_file[0][2]["LAP_pred_ano_proba"].to_list(), [0.0, 1.0, 1.0, 1.0, 0.5, 0.0, 0.0])
+    check.eq("...and lap_unseen counts them",
+             per_file[0][2]["lap_unseen"].to_list(), [0, 2, 2, 2, 1, 0, 0])
+    only_lap, _ = sequence.sequence_line_event_prediction(
+        tiny, "t", comparison_folders=["f1", "f2"], detectors=["LAP"], mask=False,
+        content_format="Sklearn")
+    check.ok("detectors=['LAP'] leaves NEP out",
+             "NEP_pred_ano_proba" not in only_lap[0][2].columns
+             and "LAP_pred_ano_proba" in only_lap[0][2].columns)
+    check.raises("an empty detector list is rejected", ValueError,
+                 sequence.sequence_line_event_prediction, tiny, "t", detectors=[], mask=False,
+                 content_format="Sklearn")
     check.eq("nep_expected names the line the baseline expected",
              per_file[0][2]["nep_expected"].to_list()[1], "b")
     check.raises("a list-per-line content_format is rejected", ValueError,
@@ -957,9 +971,10 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     check.ok("the score plot was written",
              entry["plot"].endswith(".html") and os.path.isfile(entry["plot"]))
     table = server.STORE.get(session_id).get_result(entry["result_id"])[1]
-    check.ok("moving averages are in the stashed table",
-             "moving_avg_100_NEP_pred_ano_proba" in table.columns)
-    original = table["NEP_pred_ano_proba"].mean()
+    check.ok("moving averages of both detectors are in the stashed table",
+             all(f"moving_avg_100_{col}" in table.columns for col in sequence.SEQUENCE_COLUMNS))
+    check.ok("rank_sum combines them", "rank_sum" in table.columns)
+    original = {col: table[col].mean() for col in sequence.SEQUENCE_COLUMNS}
 
     # Reversing the file keeps every line and so every bag-of-words score, and
     # breaks only the order -- which is all this tool is meant to see.
@@ -972,13 +987,21 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
         reversed_ = server.sequence_line_event_prediction(
             session_id, target, comparison_folders="ALL", target_files=[file_name],
             content_format="Parse-Tip")
-        shuffled = server.STORE.get(session_id).get_result(
-            reversed_["files"][0]["result_id"])[1]["NEP_pred_ano_proba"].mean()
+        reversed_table = server.STORE.get(session_id).get_result(
+            reversed_["files"][0]["result_id"])[1]
+        shuffled = {col: reversed_table[col].mean() for col in sequence.SEQUENCE_COLUMNS}
     finally:
         server.STORE._sessions[session_id].df = before
-    check.info(f"mean NEP score: in order {original:.3f}, reversed {shuffled:.3f}")
-    check.ok("reversing the file raises the NEP scores clearly",
-             shuffled > original + 0.2, f"{original:.3f} -> {shuffled:.3f}")
+    for col in sequence.SEQUENCE_COLUMNS:
+        check.info(f"mean {col}: in order {original[col]:.3f}, reversed {shuffled[col]:.3f}")
+        check.ok(f"reversing the file raises {col} clearly",
+                 shuffled[col] > original[col] + 0.2,
+                 f"{original[col]:.3f} -> {shuffled[col]:.3f}")
+    narrowed = server.sequence_line_event_prediction(
+        session_id, target, target_files=[file_name], detectors=["NEP"],
+        content_format="Parse-Tip", max_rows=1)
+    check.ok("narrowing the detectors warns and names the missing one",
+             any("Only NEP ran" in note and "LAP" in note for note in narrowed["notes"]))
     check.raises("Words is rejected at the tool too", ValueError,
                  server.sequence_line_event_prediction, session_id, target,
                  target_files=[file_name], content_format="Words")

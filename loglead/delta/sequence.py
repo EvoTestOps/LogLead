@@ -12,6 +12,14 @@ log folders, one training sequence per file.
   event is after the ``ngrams - 1`` events before it, relative to the most
   likely continuation. 0 means the line is the predicted one, 1 means the
   baseline never saw this n-gram.
+* ``LAP`` -- lookahead pairs (:class:`~loglead.lookahead_pairs.LookaheadPairs`).
+  ``LAP_pred_ano_proba`` is the share of the line's pairs with the ``window``
+  lines before it -- this event, that many lines after that one -- that the
+  baseline never had. It tolerates variation the n-gram does not: a line out of
+  place mismatches only the pairs it breaks, not every n-gram it takes part in.
+
+Their scores are on the same 0-1 scale but mean different things, so results
+also carry ``rank_sum`` and ``zscore_sum`` over both, as in :mod:`anomaly`.
 
 A line needs to be one event, so ``content_format`` must yield one string per
 line: ``Parse-<Algorithm>`` (template ids) or ``Sklearn`` (the masked message
@@ -22,6 +30,7 @@ import logging
 
 import polars as pl
 
+from ..lookahead_pairs import LookaheadPairs
 from ..next_event_prediction import NextEventPredictionNgram
 from . import log_root, scoring
 
@@ -30,6 +39,7 @@ logger = logging.getLogger(__name__)
 #: detector name -> output column
 DETECTORS = {
     "NEP": "NEP_pred_ano_proba",
+    "LAP": "LAP_pred_ano_proba",
 }
 
 DEFAULT_DETECTORS = list(DETECTORS)
@@ -56,25 +66,41 @@ def _nep_scores(model, events):
     }, schema={"NEP_pred_ano_proba": pl.Float64, "nep_abs": pl.Int64, "nep_predict": pl.Utf8})
 
 
+def _lap_scores(model, events):
+    """Per-line LAP columns for one file's events, in line order."""
+    mismatches, scores = model.predict_and_score(events)
+    # As for NEP, the last element judges the end-of-sequence marker.
+    n = len(events)
+    return pl.DataFrame({
+        "LAP_pred_ano_proba": scores[:n],
+        "lap_unseen": mismatches[:n],
+    }, schema={"LAP_pred_ano_proba": pl.Float64, "lap_unseen": pl.Int64})
+
+
 def sequence_line_event_prediction(
     df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
-    content_format="Parse-Drain", ngrams=5,
+    content_format="Parse-Drain", ngrams=5, window=10,
 ):
     """Score every line of a target file by how expected it is after the lines before it.
 
     :param content_format: ``Parse-<Algorithm>`` or ``Sklearn``; see the module docstring.
+    :param detectors: subset of :data:`DETECTORS`. ``None`` runs both.
     :param ngrams: n-gram length for NEP: the previous ``ngrams - 1`` events predict the next.
+    :param window: how many earlier lines each line is paired with for LAP.
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
         ``(target_folder, file_name, scored_df)``. Each ``scored_df`` carries
         ``line_number``, the original columns, one score column per detector,
         10/100-line moving averages of each, and for NEP ``nep_abs`` (how often
         the baseline saw the line's n-gram), ``nep_predict`` (the event it
-        expected) and ``nep_expected`` (a baseline line of that event).
+        expected) and ``nep_expected`` (a baseline line of that event), and for
+        LAP ``lap_unseen`` (how many of the line's pairs the baseline never had).
     """
     detectors = DEFAULT_DETECTORS if detectors is None else list(detectors)
     unknown = [d for d in detectors if d not in DETECTORS]
     if unknown:
         raise ValueError(f"Unknown detectors {unknown}. Valid options: {DEFAULT_DETECTORS}")
+    if not detectors:
+        raise ValueError(f"No detectors given. Valid options: {DEFAULT_DETECTORS}")
 
     df, field = log_root.prepare_content(df, mask, content_format)
     if df.schema[field] != pl.Utf8:
@@ -100,18 +126,27 @@ def sequence_line_event_prediction(
             # One training sequence per physical file, lines kept in file order.
             train = [_events(part, field) for part in
                      baseline_lines.partition_by("orig_file_name", maintain_order=True)]
-            model = NextEventPredictionNgram(ngrams=ngrams)
-            model.create_ngram_model(train)
-            examples = (baseline_lines.group_by(field, maintain_order=True)
-                        .agg(pl.col(text_field).first().alias("nep_expected"))
-                        .rename({field: "nep_predict"}))
+            scorers = []
+            if "NEP" in detectors:
+                nep = NextEventPredictionNgram(ngrams=ngrams)
+                nep.create_ngram_model(train)
+                scorers.append(lambda events, model=nep: _nep_scores(model, events))
+            if "LAP" in detectors:
+                lap = LookaheadPairs(window=window)
+                lap.create_model(train)
+                scorers.append(lambda events, model=lap: _lap_scores(model, events))
 
             parts = []
             for part in target_lines.partition_by("orig_file_name", maintain_order=True):
-                parts.append(pl.concat([part, _nep_scores(model, _events(part, field))],
+                events = _events(part, field)
+                parts.append(pl.concat([part, *(score(events) for score in scorers)],
                                        how="horizontal"))
             scored = pl.concat(parts)
-            scored = scored.join(examples, on="nep_predict", how="left", maintain_order="left")
+            if "NEP" in detectors:
+                examples = (baseline_lines.group_by(field, maintain_order=True)
+                            .agg(pl.col(text_field).first().alias("nep_expected"))
+                            .rename({field: "nep_predict"}))
+                scored = scored.join(examples, on="nep_predict", how="left", maintain_order="left")
 
             score_cols = [DETECTORS[name] for name in detectors]
             score_only = scored.select(score_cols)

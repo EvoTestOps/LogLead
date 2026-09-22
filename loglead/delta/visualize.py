@@ -443,7 +443,7 @@ def plot_line_scores(df, title, display_mode="markers"):
     """
     measure_groups = {
         prefix: [col for col in df.columns if prefix in col]
-        for prefix in ("kmeans", "IF", "RM", "OOVD", "NEP")
+        for prefix in ("kmeans", "IF", "RM", "OOVD", "NEP", "LAP")
     }
     line_numbers = df["line_number"].to_list()
     hover_text = df.select(

@@ -1926,12 +1926,29 @@ def anomaly_line_content(
 
 
 _SEQUENCE_NOTE = (
-    "Scores event (line) order, not content: NEP_pred_ano_proba is 0 when the line is the event "
+    "Scores event (line) order, not content. NEP_pred_ano_proba is 0 when the line is the event "
     "the baseline predicts after the previous lines and 1 when the baseline never saw that "
-    "n-gram. nep_predict/nep_expected show what was expected instead. One unexpected line "
-    "raises the next ngrams-1 lines too, so read the first high line of a run. No labels "
-    "here, so this is suspicion, not a verdict."
+    "n-gram; nep_predict/nep_expected show what was expected instead. LAP_pred_ano_proba is "
+    "the share of the line's pairs with earlier lines the baseline never had. One unexpected "
+    "line raises the lines after it too, so read the first high line of a run. rank_sum "
+    "combines both. No labels here, so this is suspicion, not a verdict."
 )
+
+_SEQUENCE_SUBSET_NOTE = (
+    "Only {names} ran, so rank_sum is simply its rank. Re-run with detectors unset to add "
+    "{missing} unless you have a specific reason to isolate one."
+)
+
+
+def _sequence_notes(detectors):
+    """Standing sequence guidance, plus a warning if the caller narrowed the detectors."""
+    notes = [_SEQUENCE_NOTE]
+    used = sequence.DEFAULT_DETECTORS if detectors is None else list(detectors)
+    missing = [name for name in sequence.DEFAULT_DETECTORS if name not in used]
+    if missing:
+        notes.append(_SEQUENCE_SUBSET_NOTE.format(names=", ".join(used),
+                                                  missing=", ".join(missing)))
+    return notes
 
 
 @tool
@@ -1944,6 +1961,7 @@ def sequence_line_event_prediction(
     mask: bool = True,
     content_format: str = "Parse-Drain",
     ngrams: int = 5,
+    window: int = 10,
     max_rows: int = 20,
     sort_by: str = "rank_sum",
 ) -> dict:
@@ -1957,7 +1975,8 @@ def sequence_line_event_prediction(
         comparison_folders: The training baseline.
         target_files: Which files to score. Narrow this -- one plot and one
             table are produced per file.
-        detectors: "NEP" (next event prediction, n-gram). Leave unset for all.
+        detectors: "NEP" (next event prediction, n-gram) and "LAP" (lookahead
+            pairs). Leave unset so both run -- rank_sum combines them.
         mask: Use masked text for events; the returned text is always raw.
         content_format: One event per line: "Parse-<Algorithm>" (e.g.
             "Parse-Drain", template ids) or "Sklearn" (the masked line itself
@@ -1965,6 +1984,7 @@ def sequence_line_event_prediction(
             "Words" and "3grams" are rejected.
         ngrams: n-gram length; the previous ngrams-1 events predict the next.
             Shorter tolerates more variation in the baseline, longer is stricter.
+        window: LAP pairs each line with this many lines before it.
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. "moving_avg_100_NEP_pred_ano_proba"
             finds sustained regions of unexpected order rather than single lines.
@@ -1973,13 +1993,13 @@ def sequence_line_event_prediction(
     session.ensure_content(mask, content_format)
     per_file, session.df = sequence.sequence_line_event_prediction(
         session.df, target_folder, comparison_folders, target_files, detectors, mask,
-        content_format, ngrams,
+        content_format, ngrams, window,
     )
     session.flush()
 
     files = _line_score_files(
         session, per_file, "sequence_line_event_prediction", "seq", sequence.SEQUENCE_COLUMNS,
-        f"Sequence scores - mask:{mask}, {content_format}, ngrams:{ngrams}",
+        f"Sequence scores - mask:{mask}, {content_format}, ngrams:{ngrams}, window:{window}",
         [sort_by, "rank_sum", *sequence.SEQUENCE_COLUMNS], max_rows, mask=mask,
         content_format=content_format,
     )
@@ -1990,10 +2010,10 @@ def sequence_line_event_prediction(
         "level": 4,
         "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
                    "target_files": target_files, "detectors": detectors, "mask": mask,
-                   "content_format": content_format, "ngrams": ngrams},
+                   "content_format": content_format, "ngrams": ngrams, "window": window},
         "n_files": len(files),
         "files": files,
-        "notes": [_SEQUENCE_NOTE],
+        "notes": _sequence_notes(detectors),
     }
 
 

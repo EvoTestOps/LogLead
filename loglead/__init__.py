@@ -25,6 +25,8 @@ _LAZY = {
     "RarityModel": ".RarityModel",
     "NextEventPredictionNgram": ".next_event_prediction",
     "NEPDetector": ".NEP_detector",
+    "LookaheadPairs": ".lookahead_pairs",
+    "LAPDetector": ".LAP_detector",
     "profile_columns": ".column_analyzer",
     "select_predictors": ".column_analyzer",
     "print_predictor_report": ".column_analyzer",

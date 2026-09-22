@@ -165,6 +165,10 @@ sad.item_list_col = "e_event_tip_id"
 sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)
 sad.train_NEP()
 df_seq = sad.predict()
+# Lookahead pairs also model order, but only ask which event may follow which within a window.
+print(f"Predicting with lookahead pairs over Tipping events")
+sad.train_LAP()
+df_seq = sad.predict()
 
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store score to Pandas table for easy storage

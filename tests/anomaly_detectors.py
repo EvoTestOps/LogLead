@@ -39,12 +39,12 @@ numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_
 # Detectors that never look at the labels, so they also run on unlabeled data. LOF and OneClassSVM
 # are unsupervised too, but too slow to keep in the test suite.
 unsupervised_methods = ["train_IsolationForest", "train_KMeans", "train_RarityModel", "train_OOVDetector",
-                        "train_NEP"]
+                        "train_NEP", "train_LAP"]
 
 # RarityModel scores how rare a row's terms are and OOVDetector counts terms missing from the
 # training vocabulary; both need the term matrix that only item_list_col builds, so neither means
 # anything over structured columns.
-_NEEDS_ITEM_LIST = {"train_RarityModel", "train_OOVDetector", "train_NEP"}
+_NEEDS_ITEM_LIST = {"train_RarityModel", "train_OOVDetector", "train_NEP", "train_LAP"}
 
 
 def _narrow(df, predictors):
@@ -90,8 +90,8 @@ def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
                 continue
             if col == "m_message" and method == "train_OOVDetector":
                 continue  # Skipped in the labeled path too
-            # NEP needs an ordered list of parsed events per row, i.e. a sequence-level event column.
-            if method == "train_NEP" and not ("event" in col and NEPDetector.supports(sad.train_df, col)):
+            # NEP and LAP need an ordered list of parsed events per row, i.e. a sequence-level event column.
+            if method in ("train_NEP", "train_LAP") and not ("event" in col and NEPDetector.supports(sad.train_df, col)):
                 continue
             getattr(sad, method)()
             scored = sad.predict()
