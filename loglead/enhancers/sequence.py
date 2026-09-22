@@ -178,7 +178,8 @@ class SequenceEnhancer:
         self._perplexity(probab_col="nep_prob_nmax")
         return self.df_seq
 
-    def _perplexity(self, probab_col="nep_prob_nmax"):
-        self.df_seq = self.df_seq.with_columns(pl.col(probab_col).list.eval(pl.element().log()) #Log of probabilties in a list
+    def _perplexity(self, probab_col="nep_prob_nmax", min_prob=1e-6):
+        # Unseen n-grams have probability 0; flooring keeps the log finite.
+        self.df_seq = self.df_seq.with_columns(pl.col(probab_col).list.eval(pl.element().clip(lower_bound=min_prob).log()) #Log of probabilties in a list
                                     .list.mean() #Average of probs
                                     .mul(-1).exp().alias(probab_col + "_perp")) #flip sign and exponent

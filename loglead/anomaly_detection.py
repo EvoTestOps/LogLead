@@ -31,6 +31,7 @@ import warnings
 
 from .RarityModel import RarityModel
 from .OOV_detector import OOV_detector
+from .NEP_detector import NEPDetector
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +377,7 @@ class AnomalyDetector:
                 calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
                 calibrated_model.fit(X_train_to_use, self.labels_train)
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
-            elif isinstance(self.model, (OOV_detector, RarityModel)):
+            elif isinstance(self.model, (OOV_detector, RarityModel, NEPDetector)):
                 predictions_proba = self.model.scores    
             else:
                 # Supervised models give probabilities using predict_proba method
@@ -453,9 +454,30 @@ class AnomalyDetector:
                 len_col = self.item_list_col+"_len"
         self.train_model(OOV_detector, filter_anos=filter_anos, len_col=len_col, item_list_col=self.item_list_col, test_df=self.test_df, threshold=threshold)
         
+    def train_NEP(self, ngrams=5, score="nmax_min", threshold=1, filter_anos=True):
+        """Next event prediction: an n-gram model of event order, trained on the train split.
+
+        Needs ``item_list_col`` to be an ordered list of events per row, e.g. the
+        ``e_event_drain_id`` list SequenceEnhancer.events() builds. See NEPDetector for
+        ``score`` and ``threshold``.
+        """
+        if not NEPDetector.supports(self.train_df, self.item_list_col):
+            raise ValueError(f"train_NEP needs item_list_col to be a List[Utf8] column of events, "
+                             f"got {self.item_list_col!r}")
+        train_df = self.train_df
+        if filter_anos and self.label_col in train_df.columns:
+            train_df = train_df.filter(pl.col(self.label_col).not_())
+        self.train_model(NEPDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
+                         train_df=train_df, test_df=self.test_df, ngrams=ngrams, score=score,
+                         threshold=threshold)
+
     def evaluate_all_ads(self, disabled_methods=None):
         if disabled_methods is None:
             disabled_methods = set()
+        # NEP runs only on parsed event lists: over words or trigrams it is slow and, with ids in
+        # the text, nearly every test sequence holds an unseen n-gram.
+        if not (NEPDetector.supports(self.train_df, self.item_list_col) and "event" in self.item_list_col):
+            disabled_methods = set(disabled_methods) | {"train_NEP"}
         train_methods = {getattr(self, m) for m in dir(self) if m.startswith('train_') and m not in disabled_methods
                          and callable(getattr(self, m))}
         train_methods.discard(self.train_model)
@@ -632,7 +654,7 @@ class _ModelResultsStorage:
             #model_name = type(result['model']).__name__
             model_name = result['model']
             if mark_model_supervision:
-                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "RarityModel"]
+                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "RarityModel", "NEPDetector"]
                 if model_name in unsupervised:
                     model_name = "us-"+model_name
                 else:

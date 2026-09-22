@@ -24,6 +24,7 @@ _LAZY = {
     "OOV_detector": ".OOV_detector",
     "RarityModel": ".RarityModel",
     "NextEventPredictionNgram": ".next_event_prediction",
+    "NEPDetector": ".NEP_detector",
     "profile_columns": ".column_analyzer",
     "select_predictors": ".column_analyzer",
     "print_predictor_report": ".column_analyzer",

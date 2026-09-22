@@ -9,7 +9,6 @@
 
 
 from collections import Counter
-from collections import defaultdict
 
 import numpy as np
 
@@ -30,7 +29,6 @@ class NextEventPredictionNgram:
         self.n_gram_window_len = ngrams  # Length of window. Default is 5 (4+1: use 4 to predict 1)
         self.n_gram_counter = Counter()  # Counter for sequences length n_gram_window_len
         self.n_gram_counter_1 = Counter()  # Counter for sequences length n_gram_window_len-1
-        self.n1_gram_dict = defaultdict()  # to keep mappings of possible following events e1 e2 -> e1 e2 e3, e1 e2 e4, 
         self.n1_gram_winner = dict()  # The event n following n-1 gram (the prediction)
 
     def create_ngram_model(self, train_data):
@@ -44,8 +42,6 @@ class NextEventPredictionNgram:
         self.n_gram_counter_1 += Counter(ngrams_minus_1)
 
         for idx, s in enumerate(ngrams):
-            #dictionary for faster access from n-1 grams to n-grams, e.g. from  [e1 e2 e3] -> [e1 e2 e3 e4]; [e1 e2 e3] -> [e1 e2 e3 e5] etc...
-            self.n1_gram_dict.setdefault(ngrams_minus_1[idx], []).append(s)
             #precompute the most likely sequence following n-1gram. Needed to keep prediction times fast
             if ngrams_minus_1[idx] in self.n1_gram_winner: #is there existing winner
                 n_gram = self.n1_gram_winner[ngrams_minus_1[idx]]
@@ -112,7 +108,7 @@ class NextEventPredictionNgram:
         for n, n_1 in zip(ngrams, ngrams_minus_1):
             # Predict_seq operations
             to_be_matched_s = n_1
-            if to_be_matched_s in self.n1_gram_dict:
+            if to_be_matched_s in self.n1_gram_winner:
                 winner = self.n1_gram_winner[to_be_matched_s]
                 prediction = winner.rpartition(' ')[2]
                 predictions.append(prediction)
@@ -126,7 +122,7 @@ class NextEventPredictionNgram:
             scores_abs.append(self.n_gram_counter [n])
             #how many times we see E1 E2
             scores_sum.append(self.n_gram_counter_1 [n_1]) #How many times is n_1 seen. This is the sum normalization
-            if to_be_matched_s in self.n1_gram_dict: 
+            if to_be_matched_s in self.n1_gram_winner: 
                 winner = self.n1_gram_winner[to_be_matched_s]
                 scores_max.append(self.n_gram_counter [winner]) #How many times is the winner (most likely ngram) seen. This is the max normalization
             else:

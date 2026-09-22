@@ -158,6 +158,14 @@ sad.train_DT()
 df_seq = sad.predict()
 sad.numeric_cols = None  # Reset so the runs below use only what they set themselves
 
+# Next event prediction models the order of events, which the bag-of-events models above ignore.
+# It is trained on the normal sequences of the train split and scores the test split.
+print(f"Predicting with next event prediction over Tipping events")
+sad.item_list_col = "e_event_tip_id"
+sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)
+sad.train_NEP()
+df_seq = sad.predict()
+
 # ____________________________________________________________
 # Part 6 run all anomaly detectors and store score to Pandas table for easy storage
 print(f"Running all anomaly detectors with Words and Trigrams and storing results")
