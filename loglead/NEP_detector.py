@@ -9,6 +9,8 @@ __all__ = ['NEPDetector']
 SCORES = {
     "nmax_min": lambda s_abs, s_nmax, min_prob: 1 - min(s_nmax),
     "nmax_avg": lambda s_abs, s_nmax, min_prob: 1 - float(np.mean(s_nmax)),
+    # Same formula as SequenceEnhancer._perplexity in enhancers/sequence.py, kept separate because
+    # that one is vectorized in Polars over a whole list-column instead of one sequence's list.
     "perplexity": lambda s_abs, s_nmax, min_prob: float(
         np.exp(-np.mean(np.log(np.clip(s_nmax, min_prob, None))))),
 }
