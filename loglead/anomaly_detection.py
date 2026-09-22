@@ -185,6 +185,10 @@ _MISSING_CATEGORY = "__missing__"
 
 
 class AnomalyDetector:
+    # Deprecated train_* aliases, excluded from evaluate_all_ads's auto-discovery since they just
+    # forward to their replacement and would otherwise run the same model twice under two names.
+    _DEPRECATED_METHODS = {"train_RarityModel"}
+
     # categorical_cols is last so that existing positional calls keep their meaning.
     def __init__(self, item_list_col=None, numeric_cols=None, emb_list_col=None, label_col="anomaly",
                  store_scores=False, print_scores=True, auc_roc=False, categorical_cols=None):
@@ -505,7 +509,7 @@ class AnomalyDetector:
         if not (NEPDetector.supports(self.train_df, self.item_list_col) and "event" in self.item_list_col):
             disabled_methods = set(disabled_methods) | {"train_NEP", "train_LAP"}
         train_methods = {getattr(self, m) for m in dir(self) if m.startswith('train_') and m not in disabled_methods
-                         and callable(getattr(self, m))}
+                         and m not in self._DEPRECATED_METHODS and callable(getattr(self, m))}
         train_methods.discard(self.train_model)
         for method in train_methods:
             if not self.print_scores:

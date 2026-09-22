@@ -118,6 +118,14 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.010 | 0.011 | 0.014 | 0.016 |
 | plot_file_content (scatter+umap) | bgl_split_10 | 0.024 | 0.030 | 0.103 | 0.215 |
 
+## Table A5 -- Sequence tools
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction | hadoop_renamed | 0.101 | 0.219 | 0.166 | 0.228 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.026 | 0.025 | 0.035 | 0.047 |
+| sequence_line_event_prediction | bgl_split_10 | 0.065 | 0.078 | 0.346 | 0.413 |
+
 # Part B -- warm (repeated call)
 
 ## Table B1 -- Auxiliary tools
@@ -218,9 +226,17 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.012 | 0.014 | 0.016 | 0.018 |
 | plot_file_content (scatter+umap) | bgl_split_10 | 0.025 | 0.037 | 0.102 | 0.212 |
 
+## Table B5 -- Sequence tools
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction | hadoop_renamed | 0.102 | 0.234 | 0.181 | 0.252 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.027 | 0.024 | 0.036 | 0.046 |
+| sequence_line_event_prediction | bgl_split_10 | 0.055 | 0.074 | 0.287 | 0.467 |
+
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
+The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with all four measures, and `sequence_line_event_prediction` with both order detectors, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
 
 # Part C -- cold (first call)
 
@@ -324,6 +340,17 @@ per-measure comparison is the warm numbers in Table D2, not the cold ones here. 
 this measurement-order artifact later (e.g. by resetting the content cache before each measure's
 cold cell).
 
+## Table C3 -- Sequence tools detailed
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.304 | 0.745 | 2.087 | 0.890 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.140 | 0.194 | 0.655 | 1.241 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 1.895 | 3.847 | 21.3 | 44.0 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.080 | 0.150 | 0.120 | 0.378 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.024 | 0.024 | 0.029 | 0.051 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.059 | 0.089 | 0.285 | 0.485 |
+
 # Part D -- warm (repeated call)
 
 ## Table D1 -- Anomaly tools detailed
@@ -416,3 +443,34 @@ cold cell).
 | distance_line_content (Minhash) | hadoop_renamed | 0.115 | 0.118 | 0.183 | 0.797 |
 | distance_line_content (Minhash) | hdfs_balanced_5k | 0.032 | 0.039 | 0.053 | 0.063 |
 | distance_line_content (Minhash) | bgl_split_10 | 0.069 | 0.082 | 0.226 | 0.420 |
+
+## Table D3 -- Sequence tools detailed
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.093 | 0.163 | 0.130 | 0.407 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.028 | 0.022 | 0.027 | 0.052 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.070 | 0.085 | 0.367 | 0.768 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.082 | 0.155 | 0.120 | 0.376 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.028 | 0.025 | 0.028 | 0.053 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.070 | 0.081 | 0.259 | 0.527 |
+
+# When this data was measured
+
+Taken from git history (`git blame`), not from re-running the grid -- so a group's date is when
+its numbers last *changed* in this file. A cell whose value happened to round the same across two
+runs still carries the older commit, so these dates are a lower bound on freshness, not an exact
+measurement date.
+
+- Log roots shape table: 2026-09-10, `e04752f` ("Performance test report") -- unchanged since.
+- Tables A1-B4 (base grid: aux/distance/anomaly/plot, combined calls): 2026-09-10, `6f0238f`
+  ("Memory measurements added") through `21235f9` ("Memory measurement improvements") -- except:
+  - `read_log_lines (new tokens)` / `new_tokens` rows (Table A1/B1): 2026-09-11, `f2a5c50`
+    ("Vocabulary analyzer added").
+  - `distance_line_content` rows (Table A2/B2): 2026-09-13, `475a7ff` ("Benchmark updates").
+- Tables C1-D2 (per-detector / per-measure detail, incl. OOVDetector): 2026-09-10, `0e072ec`
+  ("Distance measures options added") -- except:
+  - `distance_line_content (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
+    ("Benchmark updates").
+- Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP): 2026-09-22, not yet
+  committed -- added when the NEP/LAP sequence tool was wired into the benchmark grid.

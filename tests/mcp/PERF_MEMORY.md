@@ -138,6 +138,14 @@ the cell directory to re-measure the grid from scratch.
 | plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.748 | 0.800 | 1.14 | 1.49 |
 | plot_file_content (scatter+umap) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.29 |
 
+## Table A5 -- Sequence tools
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction | hadoop_renamed | 0.395 | 0.499 | 0.534 | 1.28 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.389 | 0.416 | 0.523 | 0.595 |
+| sequence_line_event_prediction | bgl_split_10 | 0.822 | 1.04 | 2.50 | 4.76 |
+
 # Part B -- warm (repeated call)
 
 ## Table B1 -- Auxiliary tools
@@ -238,9 +246,17 @@ the cell directory to re-measure the grid from scratch.
 | plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.748 | 0.801 | 1.14 | 1.49 |
 | plot_file_content (scatter+umap) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.30 |
 
+## Table B5 -- Sequence tools
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction | hadoop_renamed | 0.405 | 0.515 | 0.538 | 1.31 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.388 | 0.416 | 0.523 | 0.578 |
+| sequence_line_event_prediction | bgl_split_10 | 0.804 | 0.967 | 2.53 | 4.68 |
+
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, and `distance_folder_content`/`distance_file_content` with all four measures, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
+The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with all four measures, and `sequence_line_event_prediction` with both order detectors, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
 
 # Part C -- cold (first call)
 
@@ -335,6 +351,17 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_line_content (Minhash) | hdfs_balanced_5k | 0.335 | 0.349 | 0.432 | 0.448 |
 | distance_line_content (Minhash) | bgl_split_10 | 0.460 | 0.614 | 1.60 | 3.11 |
 
+## Table C3 -- Sequence tools detailed
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.371 | 0.505 | 0.715 | 1.42 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.390 | 0.419 | 0.530 | 0.603 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.886 | 1.33 | 3.91 | 7.34 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.403 | 0.500 | 0.636 | 1.49 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.390 | 0.419 | 0.522 | 0.595 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.873 | 1.34 | 2.57 | 4.68 |
+
 # Part D -- warm (repeated call)
 
 ## Table D1 -- Anomaly tools detailed
@@ -427,3 +454,36 @@ The tables above run every anomaly tool with all four detectors, and `distance_f
 | distance_line_content (Minhash) | hadoop_renamed | 0.361 | 0.402 | 0.589 | 4.30 |
 | distance_line_content (Minhash) | hdfs_balanced_5k | 0.337 | 0.352 | 0.433 | 0.451 |
 | distance_line_content (Minhash) | bgl_split_10 | 0.464 | 0.614 | 1.60 | 3.11 |
+
+## Table D3 -- Sequence tools detailed
+
+| tool | log root | 5% | 10% | 50% | 100% |
+|---|---|---|---|---|---|
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.402 | 0.484 | 0.705 | 1.63 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.390 | 0.419 | 0.534 | 0.608 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.886 | 1.36 | 2.58 | 4.68 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.404 | 0.499 | 0.579 | 1.49 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.390 | 0.419 | 0.523 | 0.602 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.869 | 1.29 | 2.54 | 4.75 |
+
+# When this data was measured
+
+Taken from git history (`git blame`), not from re-running the grid -- so a group's date is when
+its numbers last *changed* in this file. A cell whose value happened to round the same across two
+runs still carries the older commit, so these dates are a lower bound on freshness, not an exact
+measurement date. Same underlying grid as `PERFORMANCE.md` -- each recorded cell carries both its
+timing and its peak memory -- so the groupings below match that file's, except the shape table,
+which was first written here alongside memory tracking rather than in the original time-only file.
+
+- Log roots shape table: 2026-09-10, `6f0238f` ("Memory measurements added").
+- Tables A1-B4 (base grid: aux/distance/anomaly/plot, combined calls): 2026-09-10, `6f0238f`
+  ("Memory measurements added") through `21235f9` ("Memory measurement improvements") -- except:
+  - `read_log_lines (new tokens)` / `new_tokens` rows (Table A1/B1): 2026-09-11, `f2a5c50`
+    ("Vocabulary analyzer added").
+  - `distance_line_content` rows (Table A2/B2): 2026-09-13, `475a7ff` ("Benchmark updates").
+- Tables C1-D2 (per-detector / per-measure detail, incl. OOVDetector): 2026-09-10, `0e072ec`
+  ("Distance measures options added") -- except:
+  - `distance_line_content (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
+    ("Benchmark updates").
+- Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP): 2026-09-22, not yet
+  committed -- added when the NEP/LAP sequence tool was wired into the benchmark grid.

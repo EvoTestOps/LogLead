@@ -63,7 +63,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import make_test_data  # noqa: E402  (sits next to this file)
-from loglead.delta import anomaly, distance, split  # noqa: E402
+from loglead.delta import anomaly, distance, sequence, split  # noqa: E402
 
 try:
     from loglead.mcp import server  # noqa: E402
@@ -423,10 +423,12 @@ GRID_ROWS = (
     ("plot", "plot_folder_content (scatter+umap)"),
     ("plot", "plot_file_content (scatter)"),
     ("plot", "plot_file_content (scatter+umap)"),
+    ("sequence", "sequence_line_event_prediction"),
 )
 
 GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
-                     ("anomaly", "Anomaly tools"), ("plot", "Plot tools"))
+                     ("anomaly", "Anomaly tools"), ("plot", "Plot tools"),
+                     ("sequence", "Sequence tools"))
 
 #: The four anomaly tools and the two vectorized-distance content tools, each
 #: run with a single detector/measure instead of the default all-four -- Part
@@ -438,10 +440,13 @@ GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
 #: default pair. ``distance_line_content`` isolates its own bucket measures
 #: (``distance.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
 #: since the default call already runs Prefix+Exact together rather than one
-#: at a time.
+#: at a time. ``sequence_line_event_prediction`` isolates its two order-based
+#: detectors (``sequence.DEFAULT_DETECTORS``: NEP/LAP) the same way as the
+#: anomaly detectors below.
 DETAIL_ANOMALY_TOOLS = ("anomaly_folder_filename", "anomaly_folder_content",
                         "anomaly_file_content", "anomaly_line_content")
 DETAIL_DISTANCE_TOOLS = ("distance_folder_content", "distance_file_content")
+DETAIL_SEQUENCE_TOOLS = ("sequence_line_event_prediction",)
 
 DETAIL_GRID_ROWS = tuple(
     ("anomaly_detail", f"{tool} ({detector})")
@@ -452,10 +457,14 @@ DETAIL_GRID_ROWS = tuple(
 ) + tuple(
     ("distance_detail", f"distance_line_content ({measure})")
     for measure in distance.BUCKET_MEASURES
+) + tuple(
+    ("sequence_detail", f"{tool} ({detector})")
+    for tool in DETAIL_SEQUENCE_TOOLS for detector in sequence.DEFAULT_DETECTORS
 )
 
 DETAIL_TABLE_TITLES = (("anomaly_detail", "Anomaly tools detailed"),
-                       ("distance_detail", "Distance tools detailed"))
+                       ("distance_detail", "Distance tools detailed"),
+                       ("sequence_detail", "Sequence tools detailed"))
 
 
 def open_kwargs(kind, path, session_id):
@@ -672,6 +681,10 @@ def grid_cells(ctx):
          lambda: call(lambda: server.anomaly_line_content(
              sid, target, target_files=[file_name]))),
 
+        ("sequence", "sequence_line_event_prediction",
+         lambda: call(lambda: server.sequence_line_event_prediction(
+             sid, target, target_files=[file_name]))),
+
         ("plot", "plot_folder_filename",
          lambda: call(lambda: server.plot_folder_filename(sid, target))),
         ("plot", "plot_folder_content (scatter)",
@@ -740,6 +753,12 @@ def grid_detail_cells(ctx):
             "distance_detail", f"distance_line_content ({measure})",
             lambda measure=measure: call(lambda: server.distance_line_content(
                 sid, target, target_files=[file_name], measures=[measure]))))
+
+    for detector in sequence.DEFAULT_DETECTORS:
+        cells.append((
+            "sequence_detail", f"sequence_line_event_prediction ({detector})",
+            lambda detector=detector: call(lambda: server.sequence_line_event_prediction(
+                sid, target, target_files=[file_name], detectors=[detector]))))
     return cells
 
 
@@ -748,7 +767,17 @@ def cell_slug(kind, fraction, label):
     return f"{kind}-{fraction_tag(fraction)}-{keep}"
 
 
-def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
+def _row_selected(label, row_filter):
+    """Whether ``label`` should be measured -- every row when ``row_filter`` is
+    ``None``, else a glob match against it (``--rows`` on the CLI)."""
+    return row_filter is None or any(fnmatch.fnmatch(label, pattern) for pattern in row_filter)
+
+
+def _select_rows(cells, row_filter):
+    return cells if row_filter is None else [c for c in cells if _row_selected(c[1], row_filter)]
+
+
+def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape, row_filter=None):
     """Measure every cell of one (log root, fraction), one JSON file per cell.
 
     Written per cell rather than per block because the block can *die*: on bgl
@@ -756,6 +785,10 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
     and the OOM killer takes the whole process with no chance to record
     anything. The parent relaunches, this function skips what is already on
     disk, and the cell that was in flight is the one named in ``inflight.json``.
+
+    ``row_filter`` (``--rows`` on the CLI) narrows which labels get measured --
+    e.g. re-measuring one newly added tool without repeating the rest of a
+    grid that has no cell cache to skip via ``cell_pending``.
     """
     os.makedirs(cell_dir, exist_ok=True)
     inflight_path = os.path.join(cell_dir, "inflight.json")
@@ -766,7 +799,7 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
 
     # The tools that ask about files on disk, measured while nothing is open:
     # a floor of bare imports is the one they should be read against.
-    session_free = session_free_cells(ctx)
+    session_free = _select_rows(session_free_cells(ctx), row_filter)
     record_cells(session_free, kind, fraction, cell_dir, inflight_path)
 
     # Opening is the expensive thing in the block -- minutes and gigabytes on
@@ -774,7 +807,8 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
     # is not a rare case: it is every relaunch that only has session-free cells
     # left, and every targeted re-measure of one row.
     session_labels = {label for _, label, _ in session_free}
-    all_rows = GRID_ROWS + DETAIL_GRID_ROWS
+    all_rows = [(table, label) for table, label in GRID_ROWS + DETAIL_GRID_ROWS
+                if _row_selected(label, row_filter)]
     pending = [label for _, label in all_rows if label not in session_labels
                and cell_pending(os.path.join(cell_dir,
                                              cell_slug(kind, fraction, label) + ".json"))]
@@ -793,8 +827,10 @@ def run_grid_block(kind, fraction, path, workdir, repeat, cell_dir, shape):
     # Detail cells first: grid_cells' own list ends with set_folder_names and
     # close_log_root (session must go last), and detail cells need the same
     # still-open, still-original-names session grid_cells' other rows do.
-    record_cells(grid_detail_cells(ctx), kind, fraction, cell_dir, inflight_path)
-    record_cells(grid_cells(ctx), kind, fraction, cell_dir, inflight_path)
+    record_cells(_select_rows(grid_detail_cells(ctx), row_filter),
+                kind, fraction, cell_dir, inflight_path)
+    record_cells(_select_rows(grid_cells(ctx), row_filter),
+                kind, fraction, cell_dir, inflight_path)
 
     if ctx.session is not None:
         server.close_log_root(ctx.sid)
@@ -959,9 +995,10 @@ def _grid_parts(records, fractions, roots, keys, table_titles, grid_rows, fmt):
 _DETAIL_INTRO = [
     "# Detailed breakdowns (per detector / per measure)",
     "",
-    "The tables above run every anomaly tool with all four detectors, and "
+    "The tables above run every anomaly tool with all four detectors, "
     "`distance_folder_content`/`distance_file_content` with all four measures, "
-    "at once; `distance_line_content` defaults to its coarse pair (Prefix + "
+    "and `sequence_line_event_prediction` with both order detectors, at once; "
+    "`distance_line_content` defaults to its coarse pair (Prefix + "
     "Exact) in one pass. Part C/D below break the same figure down per "
     "detector / per measure run in isolation (`detectors=[\"<name>\"]` / "
     "`measures=[\"<name>\"]`), so the cost of narrowing either is visible on "
@@ -1103,6 +1140,8 @@ def grid_main(args, datasets_folder, paths, cache_dir, workdir):
                            "--cell-dir", cell_dir, "--datasets", datasets_folder,
                            "--cache-dir", cache_dir, "--repeat", str(args.repeat),
                            "--grid-block-shape", json.dumps(shape)]
+                if args.rows:
+                    command += ["--rows", *args.rows]
                 completed = subprocess.run(command)
                 if completed.returncode == 0:
                     break
@@ -1153,6 +1192,13 @@ def main():
     parser.add_argument("--fractions", type=float, nargs="+", default=None,
                         help=f"Fractions to measure at (default "
                              f"{' '.join(str(f) for f in FRACTIONS)}).")
+    parser.add_argument("--rows", nargs="+", default=None,
+                        help="Only measure rows whose label matches one of these glob "
+                             "patterns (e.g. 'sequence_line_event_prediction*'), instead "
+                             "of the whole grid. Skips session-free cells (peek_log_root, "
+                             "split_log_file) that don't match either. Useful for adding "
+                             "one new tool to an already-recorded grid without repeating "
+                             "the rest of it.")
     parser.add_argument("--performance", default=None,
                         help="Where the timing tables are written "
                              "(default tests/mcp/PERFORMANCE.md).")
@@ -1206,7 +1252,7 @@ def main():
             kind, fraction = args.grid_block.split(":")
             run_grid_block(kind, float(fraction), args.grid_block_path, workdir,
                            args.repeat, args.cell_dir,
-                           json.loads(args.grid_block_shape))
+                           json.loads(args.grid_block_shape), args.rows)
         else:
             grid_main(args, datasets_folder, paths, cache_dir, workdir)
     finally:
