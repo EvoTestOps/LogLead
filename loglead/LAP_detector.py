@@ -1,7 +1,7 @@
 import numpy as np
 import polars as pl
 
-from .lookahead_pairs import LookaheadPairs
+from .sequence_modelling import LookaheadPairs
 
 __all__ = ['LAPDetector']
 

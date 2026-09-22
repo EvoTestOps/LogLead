@@ -7,12 +7,12 @@ sequence of events, and the baseline is the same-named file in the comparison
 log folders, one training sequence per file.
 
 * ``NEP`` -- next event prediction with an n-gram model
-  (:class:`~loglead.next_event_prediction.NextEventPredictionNgram`).
+  (:class:`~loglead.sequence_modelling.NextEventPredictionNgram`).
   ``NEP_pred_ano_proba`` is ``1 - p``, where ``p`` is how likely the line's
   event is after the ``ngrams - 1`` events before it, relative to the most
   likely continuation. 0 means the line is the predicted one, 1 means the
   baseline never saw this n-gram.
-* ``LAP`` -- lookahead pairs (:class:`~loglead.lookahead_pairs.LookaheadPairs`).
+* ``LAP`` -- lookahead pairs (:class:`~loglead.sequence_modelling.LookaheadPairs`).
   ``LAP_pred_ano_proba`` is the share of the line's pairs with the ``window``
   lines before it -- this event, that many lines after that one -- that the
   baseline never had. It tolerates variation the n-gram does not: a line out of
@@ -30,8 +30,7 @@ import logging
 
 import polars as pl
 
-from ..lookahead_pairs import LookaheadPairs
-from ..next_event_prediction import NextEventPredictionNgram
+from ..sequence_modelling import LookaheadPairs, NextEventPredictionNgram
 from . import log_root, scoring
 
 logger = logging.getLogger(__name__)

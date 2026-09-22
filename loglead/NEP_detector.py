@@ -1,7 +1,7 @@
 import numpy as np
 import polars as pl
 
-from .next_event_prediction import NextEventPredictionNgram
+from .sequence_modelling import NextEventPredictionNgram
 
 __all__ = ['NEPDetector']
 
