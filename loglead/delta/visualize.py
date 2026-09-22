@@ -423,7 +423,8 @@ def plot_file_content(
 
 
 def plot_line_scores(df, title, display_mode="markers"):
-    """Chronological plot of anomaly_line_content's per-line anomaly scores.
+    """Chronological plot of anomaly_line_content's (or sequence_line_event_prediction's)
+    per-line anomaly scores.
 
     Each detector's raw score and its two moving averages are min-max
     normalized *as a family* so they share one 0-1 axis; across families the
@@ -442,7 +443,7 @@ def plot_line_scores(df, title, display_mode="markers"):
     """
     measure_groups = {
         prefix: [col for col in df.columns if prefix in col]
-        for prefix in ("kmeans", "IF", "RM", "OOVD")
+        for prefix in ("kmeans", "IF", "RM", "OOVD", "NEP")
     }
     line_numbers = df["line_number"].to_list()
     hover_text = df.select(

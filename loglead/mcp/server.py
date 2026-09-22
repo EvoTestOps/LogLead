@@ -31,8 +31,8 @@ try:  # MCP SDK 2.x
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
 
-from ..delta import (anomaly, distance, export, log_root, masking, scoring, split, visualize,
-                     vocabulary)
+from ..delta import (anomaly, distance, export, log_root, masking, scoring, sequence, split,
+                     visualize, vocabulary)
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import crash, formatting
 from .session import SessionStore
@@ -72,7 +72,9 @@ comparison folders never have, and filter_log_lines(new_tokens_vs=..., only_new=
 shows the lines they are on. read_bucket_lines opens a distance_line_content bucket
 and shows every line in it.
 
-4) Remember to search for both point anomalies and distributional pattern anomalies. 
+4) Remember to search for both point anomalies and distributional pattern anomalies.
+For order anomalies -- familiar lines skipped, repeated, or out of sequence -- use
+sequence_line_event_prediction, which learns event order from the comparison folders.
 
 5) Try relaxing the mask as well and remasking with it. Too tight mask can miss anomalies.
 
@@ -1791,6 +1793,60 @@ def anomaly_file_content(
     )
 
 
+def _line_score_files(session, per_file, analysis, short, score_columns, title, sort_by,
+                      max_rows, **name_parts):
+    """One result entry per scored file of a line-level tool: table, plot, and top lines.
+
+    :param per_file: ``(target_folder, file_name, scored_df)`` triples.
+    :param short: file-name prefix of the written table; the plot gets ``<short>_plot``.
+    :param title: plot title, completed with the log folder and file.
+    :param name_parts: forwarded to :func:`export.build_file_name`.
+    """
+    files = []
+    for folder_name, file_name, scored in per_file:
+        scored = scoring.add_combined_scores(scored, score_columns)
+        artifact = _write(
+            session, scored, short, 4, target_folder=folder_name, comparison_folder="Many",
+            file=file_name, **name_parts,
+        )
+        stem = export.build_file_name(
+            analysis=f"{short}_plot", level=4, target_folder=folder_name,
+            comparison_folder="Many", file=file_name, **name_parts,
+        )
+        plot = export.write_figure(
+            visualize.plot_line_scores(
+                scored, f"{title}<br>Target log folder: {folder_name}<br>Target file: {file_name}"),
+            str(session.output_dir), stem,
+        )
+        ranked, sorted_by = formatting.sort_for_preview(scored, sort_by)
+        top_lines = formatting.rows_to_records(ranked, max_rows)
+        # These tools build their own per-file entries rather than going through
+        # formatting.result, so they stash their own tables -- one per file, which
+        # is why Session bounds how many results it keeps.
+        result_id = session.stash_result(analysis, scored)
+        entry_notes = []
+        if scored.height > len(top_lines):
+            entry_notes.append(
+                f"Showing {len(top_lines)} of {scored.height} scored lines, sorted by "
+                f"{sorted_by} descending."
+            )
+            entry_notes.append(
+                formatting.query_hint(session.session_id, result_id, scored, sorted_by)
+            )
+        files.append({
+            "target_folder": folder_name,
+            "file_name": file_name,
+            "n_lines": scored.height,
+            "sorted_by": sorted_by,
+            "result_id": result_id,
+            "top_lines": top_lines,
+            "artifact": artifact,
+            "plot": plot,
+            "notes": entry_notes,
+        })
+    return files
+
+
 @tool
 def anomaly_line_content(
     session_id: str,
@@ -1812,6 +1868,10 @@ def anomaly_line_content(
     score, so you can read what actually made the log folder look wrong. Writes an
     interactive HTML plot of scores against line number per file.
 
+    This function scores each line as a bag of words and so cannot see a familiar 
+    line in an unfamiliar place: a step skipped, repeated, or out of sequence. To
+    score each line based on its order, use sequence_line_event_prediction instead.
+    
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
@@ -1840,52 +1900,12 @@ def anomaly_line_content(
     )
     session.flush()
 
-    files = []
-    for folder_name, file_name, scored in per_file:
-        scored = scoring.add_combined_scores(scored, scoring.ANOMALY_COLUMNS)
-        artifact = _write(
-            session, scored, "ano", 4, target_folder=folder_name, comparison_folder="Many",
-            mask=mask, content_format=content_format, vectorizer=vectorizer,
-            file=file_name,
-        )
-        title = (
-            f"Anomaly scores - mask:{mask}, {content_format}, {vectorizer}"
-            f"<br>Target log folder: {folder_name}<br>Target file: {file_name}"
-        )
-        stem = export.build_file_name(
-            analysis="ano_plot", level=4, target_folder=folder_name, comparison_folder="Many",
-            mask=mask, content_format=content_format, vectorizer=vectorizer,
-            file=file_name,
-        )
-        plot = export.write_figure(
-            visualize.plot_line_scores(scored, title), str(session.output_dir), stem
-        )
-        ranked, sorted_by = formatting.sort_for_preview(scored, [sort_by, "rank_sum"])
-        top_lines = formatting.rows_to_records(ranked, max_rows)
-        # This tool builds its own per-file entries rather than going through
-        # formatting.result, so it stashes its own tables -- one per file, which
-        # is why Session bounds how many results it keeps.
-        result_id = session.stash_result("anomaly_line_content", scored)
-        entry_notes = []
-        if scored.height > len(top_lines):
-            entry_notes.append(
-                f"Showing {len(top_lines)} of {scored.height} scored lines, sorted by "
-                f"{sorted_by} descending."
-            )
-            entry_notes.append(
-                formatting.query_hint(session_id, result_id, scored, sorted_by)
-            )
-        files.append({
-            "target_folder": folder_name,
-            "file_name": file_name,
-            "n_lines": scored.height,
-            "sorted_by": sorted_by,
-            "result_id": result_id,
-            "top_lines": top_lines,
-            "artifact": artifact,
-            "plot": plot,
-            "notes": entry_notes,
-        })
+    files = _line_score_files(
+        session, per_file, "anomaly_line_content", "ano", scoring.ANOMALY_COLUMNS,
+        f"Anomaly scores - mask:{mask}, {content_format}, {vectorizer}",
+        [sort_by, "rank_sum"], max_rows, mask=mask, content_format=content_format,
+        vectorizer=vectorizer,
+    )
 
     return {
         "session_id": session_id,
@@ -1902,6 +1922,78 @@ def anomaly_line_content(
             "A single high line is often noise; a sustained rise in "
             "moving_avg_100_* marks the region where it went wrong.",
         ),
+    }
+
+
+_SEQUENCE_NOTE = (
+    "Scores event (line) order, not content: NEP_pred_ano_proba is 0 when the line is the event "
+    "the baseline predicts after the previous lines and 1 when the baseline never saw that "
+    "n-gram. nep_predict/nep_expected show what was expected instead. One unexpected line "
+    "raises the next ngrams-1 lines too, so read the first high line of a run. No labels "
+    "here, so this is suspicion, not a verdict."
+)
+
+
+@tool
+def sequence_line_event_prediction(
+    session_id: str,
+    target_folder: FolderSelector,
+    comparison_folders: FolderSelector = "ALL",
+    target_files: FileSelector = "ALL",
+    detectors: Optional[Sequence[str]] = None,
+    mask: bool = True,
+    content_format: str = "Parse-Drain",
+    ngrams: int = 5,
+    max_rows: int = 20,
+    sort_by: str = "rank_sum",
+) -> dict:
+    """Learn the order of events, then
+    score every line of the target file by how expected it is after the lines
+    before it, returning the least expected with their text.
+
+    Args:
+        session_id: Handle from open_log_root.
+        target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
+        comparison_folders: The training baseline.
+        target_files: Which files to score. Narrow this -- one plot and one
+            table are produced per file.
+        detectors: "NEP" (next event prediction, n-gram). Leave unset for all.
+        mask: Use masked text for events; the returned text is always raw.
+        content_format: One event per line: "Parse-<Algorithm>" (e.g.
+            "Parse-Drain", template ids) or "Sklearn" (the masked line itself
+            is the event, so any unmasked variable part makes a new event).
+            "Words" and "3grams" are rejected.
+        ngrams: n-gram length; the previous ngrams-1 events predict the next.
+            Shorter tolerates more variation in the baseline, longer is stricter.
+        max_rows: Top-scoring lines returned per file.
+        sort_by: Score column to rank lines by. "moving_avg_100_NEP_pred_ano_proba"
+            finds sustained regions of unexpected order rather than single lines.
+    """
+    session = STORE.get(session_id)
+    session.ensure_content(mask, content_format)
+    per_file, session.df = sequence.sequence_line_event_prediction(
+        session.df, target_folder, comparison_folders, target_files, detectors, mask,
+        content_format, ngrams,
+    )
+    session.flush()
+
+    files = _line_score_files(
+        session, per_file, "sequence_line_event_prediction", "seq", sequence.SEQUENCE_COLUMNS,
+        f"Sequence scores - mask:{mask}, {content_format}, ngrams:{ngrams}",
+        [sort_by, "rank_sum", *sequence.SEQUENCE_COLUMNS], max_rows, mask=mask,
+        content_format=content_format,
+    )
+
+    return {
+        "session_id": session_id,
+        "analysis": "sequence_line_event_prediction",
+        "level": 4,
+        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
+                   "target_files": target_files, "detectors": detectors, "mask": mask,
+                   "content_format": content_format, "ngrams": ngrams},
+        "n_files": len(files),
+        "files": files,
+        "notes": [_SEQUENCE_NOTE],
     }
 
 

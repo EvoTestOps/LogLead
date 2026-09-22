@@ -30,6 +30,10 @@ file               ``distance_file_content``    ``anomaly_file_content``       `
 line               ``distance_line_content``    ``anomaly_line_content``       --
 =================  ===========================  =============================  ==========================
 
+:mod:`sequence` scores lines by their *order* rather than their content:
+``sequence_line_event_prediction`` asks how expected each line is after the
+lines before it, given the same file in the comparison folders.
+
 :mod:`vocabulary` answers a fourth question at folder or file granularity:
 which tokens a target has that its comparison folders never had.
 
@@ -60,13 +64,14 @@ import importlib
 #: had stat'ed a single file. The submodules are named here as strings so that
 #: only the one actually reached is imported; see ``_LAZY_MODULES``.
 _LAZY_MODULES = ("anomaly", "distance", "export", "log_root", "masking", "scoring",
-                 "split", "visualize", "vocabulary")
+                 "sequence", "split", "visualize", "vocabulary")
 
 _LAZY_NAMES = {
     "anomaly_file_content": "anomaly",
     "anomaly_line_content": "anomaly",
     "anomaly_folder": "anomaly",
     "run_anomaly_detection": "anomaly",
+    "sequence_line_event_prediction": "sequence",
     "available_formats": "log_root",
     "peek_log_root": "log_root",
     "prepare_content": "log_root",
@@ -109,6 +114,7 @@ __all__ = [
     "export",
     "masking",
     "scoring",
+    "sequence",
     "split",
     "visualize",
     "vocabulary",
@@ -129,6 +135,7 @@ __all__ = [
     "anomaly_file_content",
     "anomaly_line_content",
     "run_anomaly_detection",
+    "sequence_line_event_prediction",
     "plot_folder",
     "plot_file_content",
     "PLOTS",

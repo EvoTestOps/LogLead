@@ -63,7 +63,7 @@ import numpy  # noqa: E402
 import polars as pl  # noqa: E402
 import make_test_data  # noqa: E402  (sits next to this file)
 from loglead import loaders  # noqa: E402
-from loglead.delta import log_root, split, visualize, vocabulary  # noqa: E402
+from loglead.delta import log_root, sequence, split, visualize, vocabulary  # noqa: E402
 
 try:  # the MCP server is an optional extra, and its absence is not a test failure
     from loglead.mcp import server  # noqa: E402
@@ -116,7 +116,7 @@ TOOLS = (
     "plot_folder_content", "plot_file_content", "run_config",
     "peek_log_root", "split_log_file",
     "register_mask_pattern", "list_mask_patterns", "remask_log_root", "new_tokens",
-    "read_bucket_lines",
+    "read_bucket_lines", "sequence_line_event_prediction",
 )
 
 
@@ -917,6 +917,71 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     check.ok("the note points at them",
              any("moving_avg_100_" in note for note in l4["notes"]))
     return l2, entry
+
+
+def stage_hadoop_sequence(check, session_id, target, file_name):
+    """sequence_line_event_prediction -- scoring the order of lines, not their content."""
+    check.section("6b. sequence_line_event_prediction")
+
+    # Exact on a hand-built log root: every baseline file runs a..g, the target
+    # swaps b and c. With 3-grams only the n-grams through the swap are unseen.
+    lines = list("abcdefg")
+    rows = [(folder, name, "x.log", f"/{folder}/x.log")
+            for folder, seq in (("f1", lines), ("f2", lines), ("t", list("acbdefg")))
+            for name in seq]
+    tiny = pl.DataFrame(rows, schema=["folder", "m_message", "file_name", "orig_file_name"],
+                        orient="row")
+    per_file, _ = sequence.sequence_line_event_prediction(
+        tiny, "t", comparison_folders=["f1", "f2"], mask=False, content_format="Sklearn",
+        ngrams=3)
+    scores = per_file[0][2]["NEP_pred_ano_proba"].to_list()
+    check.eq("a swap scores 1 on the n-grams through it and 0 elsewhere",
+             scores, [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0])
+    check.eq("nep_expected names the line the baseline expected",
+             per_file[0][2]["nep_expected"].to_list()[1], "b")
+    check.raises("a list-per-line content_format is rejected", ValueError,
+                 sequence.sequence_line_event_prediction, tiny, "t", mask=False,
+                 content_format="Words")
+
+    # Parse-Tip, not the default Parse-Drain: a parse lands in the log root's parquet cache,
+    # and stage_hadoop_config later asserts that only its own pre_parse parser (Tip) is there.
+    result = timed("sequence_line_event_prediction", server.sequence_line_event_prediction,
+                   session_id, target, comparison_folders="ALL", target_files=[file_name],
+                   content_format="Parse-Tip", max_rows=5)
+    check.eq("one entry for the file asked for", result["n_files"], 1)
+    entry = result["files"][0]
+    check.eq("sorted by rank_sum", entry["sorted_by"], "rank_sum")
+    check.ok("every returned line carries its text, line number and the expected event",
+             all(all(key in line for key in ("m_message", "line_number", "nep_expected"))
+                 for line in entry["top_lines"]))
+    check.ok("the score plot was written",
+             entry["plot"].endswith(".html") and os.path.isfile(entry["plot"]))
+    table = server.STORE.get(session_id).get_result(entry["result_id"])[1]
+    check.ok("moving averages are in the stashed table",
+             "moving_avg_100_NEP_pred_ano_proba" in table.columns)
+    original = table["NEP_pred_ano_proba"].mean()
+
+    # Reversing the file keeps every line and so every bag-of-words score, and
+    # breaks only the order -- which is all this tool is meant to see.
+    session = server.STORE.get(session_id)
+    before = session.df
+    is_target = (pl.col("folder") == target) & (pl.col("file_name") == file_name)
+    server.STORE._sessions[session_id].df = pl.concat(
+        [before.filter(~is_target), before.filter(is_target).reverse()])
+    try:
+        reversed_ = server.sequence_line_event_prediction(
+            session_id, target, comparison_folders="ALL", target_files=[file_name],
+            content_format="Parse-Tip")
+        shuffled = server.STORE.get(session_id).get_result(
+            reversed_["files"][0]["result_id"])[1]["NEP_pred_ano_proba"].mean()
+    finally:
+        server.STORE._sessions[session_id].df = before
+    check.info(f"mean NEP score: in order {original:.3f}, reversed {shuffled:.3f}")
+    check.ok("reversing the file raises the NEP scores clearly",
+             shuffled > original + 0.2, f"{original:.3f} -> {shuffled:.3f}")
+    check.raises("Words is rejected at the tool too", ValueError,
+                 server.sequence_line_event_prediction, session_id, target,
+                 target_files=[file_name], content_format="Words")
 
 
 def stage_hadoop_query(check, session_id, previous, line_entry):
@@ -1955,6 +2020,8 @@ def run_dataset_stages(check, stages, hadoop, hdfs, workdir):
                           check, session_id, target, file_name)
                 scored = run_stage(check, stage_hadoop_anomaly,
                                    check, session_id, target, file_name)
+                run_stage(check, stage_hadoop_sequence,
+                          check, session_id, target, file_name)
                 if scored:
                     run_stage(check, stage_hadoop_query, check, session_id, *scored)
                 run_stage(check, stage_hadoop_plots,
