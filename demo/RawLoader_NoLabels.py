@@ -177,9 +177,9 @@ def train_line_models(df):
     joblib.dump(sad.model, 'kmeans_model.joblib')
     sad.train_IsolationForest()
     joblib.dump(sad.model, 'IF_model.joblib')
-    sad.train_RarityModel(filter_anos=False)
+    sad.train_RarityDetector(filter_anos=False)
     joblib.dump(sad.model, 'RM_model.joblib')
-    print (f"Log line anomaly detectors created. Isolation Forrest in: IF_model.joblib, KMeans in: kmeans.joblib, RarityModel in RM_model.joblib")
+    print (f"Log line anomaly detectors created. Isolation Forrest in: IF_model.joblib, KMeans in: kmeans.joblib, RarityDetector in RM_model.joblib")
     #sad.train_OOVDetector() #OOV detector does not need training. Vectorizer is enough
     #joblib.dump(sad.model, 'OOV_model.joblib')
 

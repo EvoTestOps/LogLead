@@ -815,7 +815,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     # Narrowing the detectors is the documented failure mode, so the result has
     # to say so at the call site, and name what is missing.
     narrowed = server.anomaly_folder_filename(session_id, target_folder=3,
-                                              detectors=["KMeans", "RarityModel"])
+                                              detectors=["KMeans", "RarityDetector"])
     check.ok("narrowing the detectors warns",
              any("Only 2 of the 4 detectors ran" in note for note in narrowed["notes"]))
     check.ok("...and names the missing ones",
@@ -855,8 +855,8 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
 
     params = server.anomaly_folder_content(
         session_id, target_folder=2, comparison_folders=5,
-        detectors=["KMeans", "RarityModel"],
-        detector_params={"KMeans": {"n_clusters": 3}, "RarityModel": {"threshold": 100}})
+        detectors=["KMeans", "RarityDetector"],
+        detector_params={"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}})
     check.ok("detector_params reach the detectors",
              "kmeans_pred_ano_proba" in params["rows"][0]
              and "RM_pred_ano_proba" in params["rows"][0])

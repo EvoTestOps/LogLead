@@ -100,8 +100,8 @@ algos:
     call: train_KMeans
   - name: IsolationForrest
     call: train_IsolationForest
-  - name: RarityModel
-    call: train_RarityModel
+  - name: RarityDetector
+    call: train_RarityDetector
   # - name: OOVDModel
   #   call: train_OOVDetector  
 

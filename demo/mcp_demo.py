@@ -337,8 +337,8 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     banner("detector subset + hyperparameters (LogDelta hardcoded these)")
     res = server.anomaly_folder_content(
         "demo", target_folder=2, comparison_folders=5,
-        detectors=["KMeans", "RarityModel"],
-        detector_params={"KMeans": {"n_clusters": 3}, "RarityModel": {"threshold": 100}},
+        detectors=["KMeans", "RarityDetector"],
+        detector_params={"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}},
     )
     show(res, ["folder", "kmeans_pred_ano_proba", "RM_pred_ano_proba", "rank_sum"])
 

@@ -38,13 +38,13 @@ numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_
 
 # Detectors that never look at the labels, so they also run on unlabeled data. LOF and OneClassSVM
 # are unsupervised too, but too slow to keep in the test suite.
-unsupervised_methods = ["train_IsolationForest", "train_KMeans", "train_RarityModel", "train_OOVDetector",
+unsupervised_methods = ["train_IsolationForest", "train_KMeans", "train_RarityDetector", "train_OOVDetector",
                         "train_NEP", "train_LAP"]
 
-# RarityModel scores how rare a row's terms are and OOVDetector counts terms missing from the
+# RarityDetector scores how rare a row's terms are and OOVDetector counts terms missing from the
 # training vocabulary; both need the term matrix that only item_list_col builds, so neither means
 # anything over structured columns.
-_NEEDS_ITEM_LIST = {"train_RarityModel", "train_OOVDetector", "train_NEP", "train_LAP"}
+_NEEDS_ITEM_LIST = {"train_RarityDetector", "train_OOVDetector", "train_NEP", "train_LAP"}
 
 
 def _narrow(df, predictors):
@@ -85,8 +85,8 @@ def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
         sad.test_train_split(_narrow(df, predictors), test_frac=test_frac)
         expected_rows = len(sad.test_df)
         for method in unsupervised_methods:
-            # RarityModel and OOVDetector need the sparse term matrix that only item_list_col builds.
-            if "numeric_cols" in predictors and method in ("train_RarityModel", "train_OOVDetector"):
+            # RarityDetector and OOVDetector need the sparse term matrix that only item_list_col builds.
+            if "numeric_cols" in predictors and method in ("train_RarityDetector", "train_OOVDetector"):
                 continue
             if col == "m_message" and method == "train_OOVDetector":
                 continue  # Skipped in the labeled path too
@@ -220,7 +220,7 @@ def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
     all_columns_exist = all(column in df.columns for column in numeric_cols)
     if "anomaly" in df.columns and df["normal"].sum() > 9 and df["anomaly"].sum() > 9 and all_columns_exist:
         print(f"Running seqeuence anomaly detectors with numeric columns {numeric_cols}")
-        disabled_methods = {"train_RarityModel", "train_OOVDetector"}
+        disabled_methods = {"train_RarityDetector", "train_OOVDetector"}
         sad = AnomalyDetector(numeric_cols=numeric_cols, print_scores=False, store_scores=True)
         sad.test_train_split(_narrow(df, {"numeric_cols": numeric_cols}), test_frac=test_frac) 
         sad.evaluate_all_ads(disabled_methods=disabled_methods)

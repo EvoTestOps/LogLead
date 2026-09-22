@@ -2,7 +2,7 @@
 
 The four distance measures and the four anomaly detectors all live on wildly
 different scales (KMeans returns a cluster distance, IsolationForest a shifted
-decision function, RarityModel and OOVDetector raw counts). Summing them raw is
+decision function, RarityDetector and OOVDetector raw counts). Summing them raw is
 meaningless, so results get combined two ways:
 
 * ``zscore_sum`` -- per-column z-score, then summed. Sensitive to outliers.

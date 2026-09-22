@@ -22,7 +22,8 @@ _LAZY = {
     "AnomalyDetector": ".anomaly_detection",
     "LogDistance": ".anomaly_detection",
     "OOV_detector": ".OOV_detector",
-    "RarityModel": ".RarityModel",
+    "rarity_detector": ".rarity_detector",
+    "RarityModel": ".RarityModel",  # deprecated alias for rarity_detector
     "NextEventPredictionNgram": ".sequence_modelling",
     "NEPDetector": ".sequence_anomaly_detectors",
     "LookaheadPairs": ".sequence_modelling",

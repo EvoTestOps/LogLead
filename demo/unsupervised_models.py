@@ -88,7 +88,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")
@@ -147,7 +147,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")
@@ -204,7 +204,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")
@@ -261,7 +261,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")
@@ -317,7 +317,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")
@@ -377,7 +377,7 @@ for filter_anos in filter_anos_l:
             models_dict = {
                 "IsolationForest": {"filter_anos":filter_anos},
                 "KMeans": {"filter_anos":filter_anos},
-                "RarityModel": {"filter_anos":filter_anos},
+                "RarityDetector": {"filter_anos":filter_anos},
                 #"OOVDetector": {"filter_anos":filter_anos}, # Done later with CountVectorizer
             }
             print("-----", item, "-----")

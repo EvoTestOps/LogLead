@@ -35,8 +35,13 @@ logger = logging.getLogger(__name__)
 DETECTORS = {
     "KMeans": ("train_KMeans", "kmeans_pred_ano_proba"),
     "IsolationForest": ("train_IsolationForest", "IF_pred_ano_proba"),
-    "RarityModel": ("train_RarityModel", "RM_pred_ano_proba"),
+    "RarityDetector": ("train_RarityDetector", "RM_pred_ano_proba"),
     "OOVDetector": ("train_OOVDetector", "OOVD_pred_ano_proba"),
+}
+
+#: deprecated detector-name alias -> current name in DETECTORS
+_DEPRECATED_DETECTOR_ALIASES = {
+    "RarityModel": "RarityDetector",
 }
 
 DEFAULT_DETECTORS = list(DETECTORS)
@@ -52,12 +57,12 @@ def run_anomaly_detection(
     :param field: column holding the content, ``Utf8`` or ``List[Utf8]``.
     :param detectors: subset of :data:`DETECTORS`. ``None`` runs all four.
     :param detector_params: per-detector kwargs, e.g.
-        ``{"KMeans": {"n_clusters": 3}, "RarityModel": {"threshold": 100}}``.
+        ``{"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}}``.
         Forwarded to the ``train_*`` method; LogDelta hardcoded these.
     :returns: ``test_df`` with one score column per detector appended.
     """
     detectors = DEFAULT_DETECTORS if detectors is None else list(detectors)
-    unknown = [d for d in detectors if d not in DETECTORS]
+    unknown = [d for d in detectors if d not in DETECTORS and d not in _DEPRECATED_DETECTOR_ALIASES]
     if unknown:
         raise ValueError(
             f"Unknown detectors {unknown}. Valid options: {DEFAULT_DETECTORS}"
@@ -79,7 +84,15 @@ def run_anomaly_detection(
         # not KMeans.
         result = test_df
         for name in detectors:
-            method_name, out_col = DETECTORS[name]
+            lookup_name = name
+            if name in _DEPRECATED_DETECTOR_ALIASES:
+                lookup_name = _DEPRECATED_DETECTOR_ALIASES[name]
+                warnings.warn(
+                    f"Detector name {name!r} is deprecated, use {lookup_name!r} instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            method_name, out_col = DETECTORS[lookup_name]
             getattr(sad, method_name)(**detector_params.get(name, {}))
             scores = sad.predict().select(pl.col("pred_ano_proba").alias(out_col))
             result = result.with_columns(scores)

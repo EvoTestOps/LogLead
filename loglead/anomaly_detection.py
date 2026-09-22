@@ -29,7 +29,7 @@ import zlib
 import difflib
 import warnings
 
-from .RarityModel import RarityModel
+from .rarity_detector import rarity_detector
 from .OOV_detector import OOV_detector
 from .sequence_anomaly_detectors import NEPDetector, LAPDetector
 
@@ -377,7 +377,7 @@ class AnomalyDetector:
                 calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
                 calibrated_model.fit(X_train_to_use, self.labels_train)
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
-            elif isinstance(self.model, (OOV_detector, RarityModel, NEPDetector, LAPDetector)):
+            elif isinstance(self.model, (OOV_detector, rarity_detector, NEPDetector, LAPDetector)):
                 predictions_proba = self.model.scores    
             else:
                 # Supervised models give probabilities using predict_proba method
@@ -443,9 +443,18 @@ class AnomalyDetector:
 
     # stop
 
+    def train_RarityDetector(self, filter_anos=True, threshold=250):
+        self.train_model(rarity_detector, filter_anos=filter_anos, threshold=threshold)
+
     def train_RarityModel(self, filter_anos=True, threshold=250):
-        self.train_model(RarityModel, filter_anos=filter_anos, threshold=threshold)
-        
+        """Deprecated alias for :meth:`train_RarityDetector`."""
+        warnings.warn(
+            "train_RarityModel is deprecated, use train_RarityDetector instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.train_RarityDetector(filter_anos=filter_anos, threshold=threshold)
+
     def train_OOVDetector(self, len_col=None, filter_anos=True, threshold=1):
         if len_col == None: 
             if "event" in self.item_list_col:
@@ -596,7 +605,7 @@ class AnomalyDetector:
                 y_pred = self._kmeans_distance(X_test_to_use) #Shortest distance from the cluster to be used as ano score
                 if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, y_pred, titlestr):.4f}")
                 if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, y_pred)[1]:.4f}")
-            if isinstance(self.model, (RarityModel, OOV_detector)):
+            if isinstance(self.model, (rarity_detector, OOV_detector)):
                 if auc_roc: print(f"AUCROC: {self._auc_roc_analysis(y_test, model.scores, titlestr):.4f}")
                 if f1optimize: print(f"Optimal F1: {bayesian_optimization(y_test, model.scores)[1]:.4f}")
 
@@ -671,7 +680,7 @@ class _ModelResultsStorage:
             #model_name = type(result['model']).__name__
             model_name = result['model']
             if mark_model_supervision:
-                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "RarityModel", "NEPDetector", "LAPDetector"]
+                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "rarity_detector", "RarityModel", "NEPDetector", "LAPDetector"]
                 if model_name in unsupervised:
                     model_name = "us-"+model_name
                 else:

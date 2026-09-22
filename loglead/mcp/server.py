@@ -1660,11 +1660,11 @@ def anomaly_folder_filename(
             Each target is scored against its own baseline of comparison folders.
         comparison_folders: The baseline. "ALL", a list, an int N, or "Prefix*".
         detectors: Leave unset. All four of ["KMeans", "IsolationForest",
-            "RarityModel", "OOVDetector"] then run and rank_sum combines them,
+            "RarityDetector", "OOVDetector"] then run and rank_sum combines them,
             which is what makes the ranking trustworthy. Narrowing this weakens
             rank_sum; do it only to answer a question about one detector.
         detector_params: Per-detector overrides, e.g.
-            {"KMeans": {"n_clusters": 3}, "RarityModel": {"threshold": 100}}.
+            {"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}}.
         max_rows: Rows returned inline.
     """
     session = STORE.get(session_id)
