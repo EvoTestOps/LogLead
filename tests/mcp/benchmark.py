@@ -399,6 +399,9 @@ def measure_adaptive(call, repeat=3, heavy_seconds=HEAVY_SECONDS):
 GRID_ROWS = (
     ("aux", "peek_log_root"),
     ("aux", "open_log_root"),
+    ("aux", "open_log_root (no parsers)"),
+    ("aux", "open_log_root (parse tip)"),
+    ("aux", "open_log_root (parse drain)"),
     ("aux", "list_log_roots"),
     ("aux", "describe_log_root"),
     ("aux", "set_folder_names"),
@@ -467,6 +470,29 @@ DETAIL_TABLE_TITLES = (("anomaly_detail", "Anomaly tools detailed"),
                        ("sequence_detail", "Sequence tools detailed"))
 
 
+#: ``sequence_line_event_prediction``'s default ``content_format``. The grid
+#: opens with ``parsers=["tip"]``, so this one is *not* pre-parsed, and the
+#: first cell to ask for it would otherwise pay for parsing the whole log root
+#: inside its own timing. Must match the tool's default.
+SEQUENCE_CONTENT_FORMAT = "Parse-Drain"
+
+
+def with_parsed_content(ctx, call, fn, content_format=SEQUENCE_CONTENT_FORMAT):
+    """Measure ``fn`` with ``content_format`` already materialized.
+
+    Without this the first sequence cell to run charges the whole log root's
+    Drain parse to itself -- 41.5s of a 44.0s cell on bgl at 100% -- and every
+    sequence cell after it reads artificially cheap by comparison, because the
+    column it needed was built by whoever went first. Building it up front
+    makes all of them measure the detector rather than the parse, and the
+    parse keeps its own row (``open_log_root (parse drain)``).
+    """
+    def run():
+        ctx.session.ensure_content(True, content_format)
+        return call(fn)
+    return run
+
+
 def open_kwargs(kind, path, session_id):
     """The open call every cell of one log root sits on.
 
@@ -533,6 +559,33 @@ class GridContext:
         gc.collect()
         cached = time_and_mem(
             lambda: server.open_log_root(**open_kwargs(self.kind, self.path, sid)))
+        server.close_log_root(sid)
+        gc.collect()
+        return cold, cached
+
+    def measured_open_parsers(self, parsers):
+        """The same open, holding everything still but which parsers run.
+
+        There is no tool that parses a log root on its own: parsing arrives
+        either through ``open_log_root(parsers=[...])`` or lazily, inside
+        whichever analysis first asks for a ``Parse-<Algorithm>`` content
+        format. So the only way to price a parser through the tool surface is
+        to open twice and difference the two -- ``(parse drain) - (no
+        parsers)`` is what Drain itself costs on this log root.
+
+        The cold call passes ``refresh=True`` because ``parsers`` is *not* part
+        of the parquet cache key (see ``SessionStore._cache_key``): every
+        variant shares one cache file, and ``flush`` writes the columns it
+        parsed into it, so a cached re-attach can be handed a frame an earlier
+        open already parsed. Cold is therefore the column to read here; the
+        cached one is a re-attach whose contents depend on what ran before it.
+        """
+        sid = f"{self.sid}-parse-{'-'.join(parsers) if parsers else 'none'}"
+        kwargs = {**open_kwargs(self.kind, self.path, sid), "parsers": list(parsers)}
+        cold = time_and_mem(lambda: server.open_log_root(**kwargs, refresh=True))
+        server.close_log_root(sid)
+        gc.collect()
+        cached = time_and_mem(lambda: server.open_log_root(**kwargs))
         server.close_log_root(sid)
         gc.collect()
         return cold, cached
@@ -649,6 +702,9 @@ def grid_cells(ctx):
 
     cells = [
         ("aux", "open_log_root", ctx.measured_open),
+        ("aux", "open_log_root (no parsers)", lambda: ctx.measured_open_parsers([])),
+        ("aux", "open_log_root (parse tip)", lambda: ctx.measured_open_parsers(["tip"])),
+        ("aux", "open_log_root (parse drain)", lambda: ctx.measured_open_parsers(["drain"])),
         ("aux", "list_log_roots", lambda: call(lambda: server.list_log_roots())),
         ("aux", "describe_log_root", lambda: call(lambda: server.describe_log_root(sid))),
         ("aux", "read_log_lines",
@@ -682,7 +738,7 @@ def grid_cells(ctx):
              sid, target, target_files=[file_name]))),
 
         ("sequence", "sequence_line_event_prediction",
-         lambda: call(lambda: server.sequence_line_event_prediction(
+         with_parsed_content(ctx, call, lambda: server.sequence_line_event_prediction(
              sid, target, target_files=[file_name]))),
 
         ("plot", "plot_folder_filename",
@@ -757,8 +813,10 @@ def grid_detail_cells(ctx):
     for detector in sequence.DEFAULT_DETECTORS:
         cells.append((
             "sequence_detail", f"sequence_line_event_prediction ({detector})",
-            lambda detector=detector: call(lambda: server.sequence_line_event_prediction(
-                sid, target, target_files=[file_name], detectors=[detector]))))
+            with_parsed_content(ctx, call, lambda detector=detector:
+                                server.sequence_line_event_prediction(
+                                    sid, target, target_files=[file_name],
+                                    detectors=[detector]))))
     return cells
 
 

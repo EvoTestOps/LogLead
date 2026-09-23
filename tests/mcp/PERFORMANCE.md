@@ -30,6 +30,15 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | open_log_root | hadoop_renamed | 1.176 | 1.403 | 3.481 | 5.490 |
 | open_log_root | hdfs_balanced_5k | 1.358 | 1.605 | 2.926 | 5.219 |
 | open_log_root | bgl_split_10 | 1.291 | 2.387 | 12.1 | 26.5 |
+| open_log_root (no parsers) | hadoop_renamed | 1.049 | 1.217 | 2.708 | 4.708 |
+| open_log_root (no parsers) | hdfs_balanced_5k | 1.704 | 1.635 | 2.873 | 4.574 |
+| open_log_root (no parsers) | bgl_split_10 | 1.084 | 1.729 | 8.304 | 21.9 |
+| open_log_root (parse tip) | hadoop_renamed | 0.968 | 1.195 | 2.804 | 4.724 |
+| open_log_root (parse tip) | hdfs_balanced_5k | 1.367 | 1.467 | 2.818 | 4.611 |
+| open_log_root (parse tip) | bgl_split_10 | 1.173 | 2.038 | 9.481 | 25.2 |
+| open_log_root (parse drain) | hadoop_renamed | 1.230 | 1.418 | 3.593 | 7.079 |
+| open_log_root (parse drain) | hdfs_balanced_5k | 1.361 | 1.738 | 3.268 | 5.111 |
+| open_log_root (parse drain) | bgl_split_10 | 2.358 | 4.684 | 26.2 | 54.9 |
 | list_log_roots | hadoop_renamed | 0.016 | 0.011 | 0.018 | 0.021 |
 | list_log_roots | hdfs_balanced_5k | 0.009 | 0.015 | 0.016 | 0.024 |
 | list_log_roots | bgl_split_10 | 0.023 | 0.037 | 0.149 | 0.256 |
@@ -120,13 +129,14 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 ## Table A5 -- Sequence tools
 
-These cold numbers understate a genuinely first call -- see the `**` note after Table C3.
+Measured with `Parse-Drain` already built; the parse is priced on its own in Table A1/B1. See the
+`**` note after Table C3.
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction | hadoop_renamed | 0.101 | 0.219 | 0.166 | 0.228 |
-| sequence_line_event_prediction | hdfs_balanced_5k | 0.026 | 0.025 | 0.035 | 0.047 |
-| sequence_line_event_prediction | bgl_split_10 | 0.065 | 0.078 | 0.346 | 0.413 |
+| sequence_line_event_prediction | hadoop_renamed | 0.115 | 0.084 | 0.118 | 0.482 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.015 | 0.019 | 0.031 | 0.042 |
+| sequence_line_event_prediction | bgl_split_10 | 0.037 | 0.042 | 0.118 | 0.244 |
 
 # Part B -- warm (repeated call)
 
@@ -140,6 +150,15 @@ These cold numbers understate a genuinely first call -- see the `**` note after 
 | open_log_root | hadoop_renamed | 0.031 | 0.029 | 0.043 | 0.063 |
 | open_log_root | hdfs_balanced_5k | 0.019 | 0.027 | 0.064 | 0.094 |
 | open_log_root | bgl_split_10 | 0.074 | 0.104 | 0.444 | 1.075 |
+| open_log_root (no parsers) | hadoop_renamed | 0.017 | 0.022 | 0.039 | 0.049 |
+| open_log_root (no parsers) | hdfs_balanced_5k | 0.024 | 0.017 | 0.033 | 0.053 |
+| open_log_root (no parsers) | bgl_split_10 | 0.057 | 0.085 | 0.483 | 0.915 |
+| open_log_root (parse tip) | hadoop_renamed | 0.020 | 0.035 | 0.048 | 0.054 |
+| open_log_root (parse tip) | hdfs_balanced_5k | 0.021 | 0.021 | 0.047 | 0.072 |
+| open_log_root (parse tip) | bgl_split_10 | 0.071 | 0.092 | 0.492 | 1.397 |
+| open_log_root (parse drain) | hadoop_renamed | 0.020 | 0.021 | 0.040 | 0.059 |
+| open_log_root (parse drain) | hdfs_balanced_5k | 0.017 | 0.024 | 0.041 | 0.056 |
+| open_log_root (parse drain) | bgl_split_10 | 0.057 | 0.085 | 0.355 | 0.690 |
 | list_log_roots | hadoop_renamed | 0.016 | 0.010 | 0.013 | 0.020 |
 | list_log_roots | hdfs_balanced_5k | 0.007 | 0.011 | 0.013 | 0.018 |
 | list_log_roots | bgl_split_10 | 0.022 | 0.034 | 0.139 | 0.227 |
@@ -232,9 +251,9 @@ These cold numbers understate a genuinely first call -- see the `**` note after 
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction | hadoop_renamed | 0.102 | 0.234 | 0.181 | 0.252 |
-| sequence_line_event_prediction | hdfs_balanced_5k | 0.027 | 0.024 | 0.036 | 0.046 |
-| sequence_line_event_prediction | bgl_split_10 | 0.055 | 0.074 | 0.287 | 0.467 |
+| sequence_line_event_prediction | hadoop_renamed | 0.103 | 0.104 | 0.125 | 0.233 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.015 | 0.018 | 0.025 | 0.030 |
+| sequence_line_event_prediction | bgl_split_10 | 0.033 | 0.047 | 0.139 | 0.252 |
 
 # Detailed breakdowns (per detector / per measure)
 
@@ -346,22 +365,38 @@ cold cell).
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.304 | 0.745 | 2.087 | 0.890 |
-| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.140 | 0.194 | 0.655 | 1.241 |
-| sequence_line_event_prediction (NEP) | bgl_split_10 | 1.895 | 3.847 | 21.3 | 44.0 |
-| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.080 | 0.150 | 0.120 | 0.378 |
-| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.024 | 0.024 | 0.029 | 0.051 |
-| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.059 | 0.089 | 0.285 | 0.485 |
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.343 | 0.247 | 0.292 | 0.661 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.018 | 0.020 | 0.021 | 0.044 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.031 | 0.045 | 0.142 | 0.272 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.088 | 0.077 | 0.111 | 0.165 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.019 | 0.022 | 0.021 | 0.039 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.033 | 0.053 | 0.164 | 0.280 |
 
-\*\* `sequence_line_event_prediction (NEP)`'s cold column is the same measurement-order artifact
-as `distance_line_content (Exact)` above, not what a genuinely first call costs. `Parse-Drain` is
-this tool's default `content_format`, and NEP's detail cell is the first call in this grid to ask
-for it, so its cold call also pays for Drain3-parsing and template-mining the whole log root into
-`e_event_drain_id` -- 41.5s of NEP's 44.0s cold cell on `bgl_split_10` at 100% (PERF_MEMORY.md
-shows the same shape: 7.34GB while parsing vs. 4.68GB once the column is cached). `LAP`'s detail
-cell and the combined call in Table A5/B5 both run after NEP here, so they reuse the already-built
-column and read far cheaper than a first call would be -- Table A5/B5's "cold" numbers are what
-NEP+LAP cost with `Parse-Drain` already built, not what the tool costs from nothing.
+\*\* **Parsing is priced on its own, and the sequence rows no longer absorb it.**
+`sequence_line_event_prediction` defaults to `content_format="Parse-Drain"`, which this grid does
+not pre-parse -- it opens with `parsers=["tip"]`. Until this was fixed, whichever sequence cell ran
+first charged the entire log root's Drain parse to itself: NEP read **44.0s** on `bgl_split_10` at
+100%, of which ~41.5s was parsing, while LAP and the combined call looked cheap only because the
+column was already built by then. All three sequence cells now materialize `Parse-Drain` *before*
+the timed call, so each measures its detector rather than the parse. NEP at that same cell is now
+0.272s against LAP's 0.280s -- they cost about the same, which the old numbers hid completely.
+
+The parse itself has no tool of its own: parsing arrives either through
+`open_log_root(parsers=[...])` or lazily, inside whichever analysis first asks for a
+`Parse-<Algorithm>` format. So a parser's cost is a **difference between two cold opens** in Table
+A1. On `bgl_split_10` at 100% that is 25.2 - 21.9 ~= **3.3s for tip** and 54.9 - 21.9 ~= **33s for
+Drain**; on `hadoop_renamed` and `hdfs_balanced_5k` both stay under ~2.4s at every fraction.
+
+Read the **cold** column of those three rows only. `parsers` is not part of the parquet cache key
+(`SessionStore._cache_key`), so every variant shares one cache file and `flush` writes whatever it
+parsed into it -- a cached re-attach can be handed a frame an earlier open already parsed. That is
+why all three cold calls pass `refresh=True`, and why their warm column is a re-attach rather than
+a parse. The plain `open_log_root` row is the `parsers=["tip"]` case measured independently, so it
+and `open_log_root (parse tip)` should agree.
+
+Rows measured against an already-built representation, and so *not* paying for it: all of Table
+A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `distance_line_content`'s `Prefix` and
+`Minhash` cold cells (`Words`, as a side effect of `Exact` running first -- see the `*` note).
 
 # Part D -- warm (repeated call)
 
@@ -460,12 +495,12 @@ NEP+LAP cost with `Parse-Drain` already built, not what the tool costs from noth
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.093 | 0.163 | 0.130 | 0.407 |
-| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.028 | 0.022 | 0.027 | 0.052 |
-| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.070 | 0.085 | 0.367 | 0.768 |
-| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.082 | 0.155 | 0.120 | 0.376 |
-| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.028 | 0.025 | 0.028 | 0.053 |
-| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.070 | 0.081 | 0.259 | 0.527 |
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.083 | 0.083 | 0.112 | 0.200 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.019 | 0.023 | 0.022 | 0.045 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.033 | 0.044 | 0.155 | 0.255 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.082 | 0.076 | 0.097 | 0.249 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.019 | 0.020 | 0.022 | 0.035 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.035 | 0.051 | 0.153 | 0.259 |
 
 # When this data was measured
 
@@ -484,5 +519,8 @@ measurement date.
   ("Distance measures options added") -- except:
   - `distance_line_content (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
     ("Benchmark updates").
-- Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP): 2026-09-22, not yet
-  committed -- added when the NEP/LAP sequence tool was wired into the benchmark grid.
+- Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP) and the three
+  `open_log_root (no parsers|parse tip|parse drain)` rows in Table A1/B1: 2026-09-23, not yet
+  committed -- the sequence rows re-measured with `Parse-Drain` pre-built, and the parse itself
+  broken out into its own rows, so no analysis row is charged for it. Supersedes the first
+  sequence measurement of 2026-09-22, where NEP absorbed the parse (see the `**` note).
