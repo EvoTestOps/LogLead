@@ -31,7 +31,7 @@ import warnings
 
 from .rarity_detector import rarity_detector
 from .OOV_detector import OOV_detector
-from .sequence_anomaly_detectors import NEPDetector, LAPDetector
+from .sequence_anomaly_detectors import NextEventPredictionNgramDetector, LookaheadPairsDetector
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +381,7 @@ class AnomalyDetector:
                 calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
                 calibrated_model.fit(X_train_to_use, self.labels_train)
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
-            elif isinstance(self.model, (OOV_detector, rarity_detector, NEPDetector, LAPDetector)):
+            elif isinstance(self.model, (OOV_detector, rarity_detector, NextEventPredictionNgramDetector, LookaheadPairsDetector)):
                 predictions_proba = self.model.scores    
             else:
                 # Supervised models give probabilities using predict_proba method
@@ -469,7 +469,7 @@ class AnomalyDetector:
         
     def _sequence_train_df(self, method_name, filter_anos):
         """The train split for an order-aware detector, checked and optionally without anomalies."""
-        if not NEPDetector.supports(self.train_df, self.item_list_col):
+        if not NextEventPredictionNgramDetector.supports(self.train_df, self.item_list_col):
             raise ValueError(f"{method_name} needs item_list_col to be a List[Utf8] column of "
                              f"events, got {self.item_list_col!r}")
         train_df = self.train_df
@@ -477,27 +477,27 @@ class AnomalyDetector:
             train_df = train_df.filter(pl.col(self.label_col).not_())
         return train_df
 
-    def train_NEP(self, ngrams=5, score="nmax_min", threshold=1, filter_anos=True):
+    def train_next_event_prediction(self, ngrams=5, score="nmax_min", threshold=1, filter_anos=True):
         """Next event prediction: an n-gram model of event order, trained on the train split.
 
         Needs ``item_list_col`` to be an ordered list of events per row, e.g. the
-        ``e_event_drain_id`` list SequenceEnhancer.events() builds. See NEPDetector for
-        ``score`` and ``threshold``.
+        ``e_event_drain_id`` list SequenceEnhancer.events() builds. See
+        NextEventPredictionNgramDetector for ``score`` and ``threshold``.
         """
-        train_df = self._sequence_train_df("train_NEP", filter_anos)
-        self.train_model(NEPDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
+        train_df = self._sequence_train_df("train_next_event_prediction", filter_anos)
+        self.train_model(NextEventPredictionNgramDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
                          train_df=train_df, test_df=self.test_df, ngrams=ngrams, score=score,
                          threshold=threshold)
 
-    def train_LAP(self, window=10, mode="set", score="max", threshold=1, filter_anos=True):
+    def train_lookahead_pairs(self, window=10, mode="set", score="max", threshold=1, filter_anos=True):
         """Lookahead pairs: which event may follow which within ``window``, from the train split.
 
-        Needs ``item_list_col`` to be an ordered list of events per row, as train_NEP does. See
-        LookaheadPairs for ``window`` and ``mode``, and LAPDetector for ``score`` and
-        ``threshold``.
+        Needs ``item_list_col`` to be an ordered list of events per row, as
+        train_next_event_prediction does. See LookaheadPairs for ``window`` and ``mode``, and
+        LookaheadPairsDetector for ``score`` and ``threshold``.
         """
-        train_df = self._sequence_train_df("train_LAP", filter_anos)
-        self.train_model(LAPDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
+        train_df = self._sequence_train_df("train_lookahead_pairs", filter_anos)
+        self.train_model(LookaheadPairsDetector, filter_anos=filter_anos, item_list_col=self.item_list_col,
                          train_df=train_df, test_df=self.test_df, window=window, mode=mode,
                          score=score, threshold=threshold)
 
@@ -506,8 +506,8 @@ class AnomalyDetector:
             disabled_methods = set()
         # The order-aware detectors run only on parsed event lists: over words or trigrams they
         # are slow and, with ids in the text, nearly every test sequence holds an unseen n-gram.
-        if not (NEPDetector.supports(self.train_df, self.item_list_col) and "event" in self.item_list_col):
-            disabled_methods = set(disabled_methods) | {"train_NEP", "train_LAP"}
+        if not (NextEventPredictionNgramDetector.supports(self.train_df, self.item_list_col) and "event" in self.item_list_col):
+            disabled_methods = set(disabled_methods) | {"train_next_event_prediction", "train_lookahead_pairs"}
         train_methods = {getattr(self, m) for m in dir(self) if m.startswith('train_') and m not in disabled_methods
                          and m not in self._DEPRECATED_METHODS and callable(getattr(self, m))}
         train_methods.discard(self.train_model)
@@ -684,7 +684,7 @@ class _ModelResultsStorage:
             #model_name = type(result['model']).__name__
             model_name = result['model']
             if mark_model_supervision:
-                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "rarity_detector", "RarityModel", "NEPDetector", "LAPDetector"]
+                unsupervised = ["KMeans", "IsolationForest", "OneClassSVM", "LocalOutlierFactor", "OOV_detector", "rarity_detector", "RarityModel", "NextEventPredictionNgramDetector", "LookaheadPairsDetector"]
                 if model_name in unsupervised:
                     model_name = "us-"+model_name
                 else:

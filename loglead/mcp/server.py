@@ -1984,7 +1984,7 @@ def sequence_line_event_prediction(
             "Words" and "3grams" are rejected.
         ngrams: n-gram length; the previous ngrams-1 events predict the next.
             Shorter tolerates more variation in the baseline, longer is stricter.
-        window: LAP pairs each line with this many lines before it.
+        window: lookahead pairs matches each line against this many lines before it.
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. "moving_avg_100_NEP_pred_ano_proba"
             finds sustained regions of unexpected order rather than single lines.

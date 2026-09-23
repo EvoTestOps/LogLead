@@ -4,7 +4,7 @@ import yaml
 import polars as pl
 import argparse
 
-from loglead import AnomalyDetector, NEPDetector, select_predictors, print_predictor_report
+from loglead import AnomalyDetector, NextEventPredictionNgramDetector, select_predictors, print_predictor_report
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -39,12 +39,12 @@ numeric_cols = ["seq_len", "eve_len_max", "duration_sec", "eve_len_over1", "nep_
 # Detectors that never look at the labels, so they also run on unlabeled data. LOF and OneClassSVM
 # are unsupervised too, but too slow to keep in the test suite.
 unsupervised_methods = ["train_IsolationForest", "train_KMeans", "train_RarityDetector", "train_OOVDetector",
-                        "train_NEP", "train_LAP"]
+                        "train_next_event_prediction", "train_lookahead_pairs"]
 
 # RarityDetector scores how rare a row's terms are and OOVDetector counts terms missing from the
 # training vocabulary; both need the term matrix that only item_list_col builds, so neither means
 # anything over structured columns.
-_NEEDS_ITEM_LIST = {"train_RarityDetector", "train_OOVDetector", "train_NEP", "train_LAP"}
+_NEEDS_ITEM_LIST = {"train_RarityDetector", "train_OOVDetector", "train_next_event_prediction", "train_lookahead_pairs"}
 
 
 def _narrow(df, predictors):
@@ -90,8 +90,8 @@ def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
                 continue
             if col == "m_message" and method == "train_OOVDetector":
                 continue  # Skipped in the labeled path too
-            # NEP and LAP need an ordered list of parsed events per row, i.e. a sequence-level event column.
-            if method in ("train_NEP", "train_LAP") and not ("event" in col and NEPDetector.supports(sad.train_df, col)):
+            # Next event prediction and lookahead pairs need an ordered list of parsed events per row, i.e. a sequence-level event column.
+            if method in ("train_next_event_prediction", "train_lookahead_pairs") and not ("event" in col and NextEventPredictionNgramDetector.supports(sad.train_df, col)):
                 continue
             getattr(sad, method)()
             scored = sad.predict()

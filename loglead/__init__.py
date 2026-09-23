@@ -25,9 +25,9 @@ _LAZY = {
     "rarity_detector": ".rarity_detector",
     "RarityModel": ".RarityModel",  # deprecated alias for rarity_detector
     "NextEventPredictionNgram": ".sequence_modelling",
-    "NEPDetector": ".sequence_anomaly_detectors",
+    "NextEventPredictionNgramDetector": ".sequence_anomaly_detectors",
     "LookaheadPairs": ".sequence_modelling",
-    "LAPDetector": ".sequence_anomaly_detectors",
+    "LookaheadPairsDetector": ".sequence_anomaly_detectors",
     "profile_columns": ".column_analyzer",
     "select_predictors": ".column_analyzer",
     "print_predictor_report": ".column_analyzer",

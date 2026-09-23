@@ -163,11 +163,11 @@ sad.numeric_cols = None  # Reset so the runs below use only what they set themse
 print(f"Predicting with next event prediction over Tipping events")
 sad.item_list_col = "e_event_tip_id"
 sad.test_train_split(seq_enhancer.df_seq, test_frac=0.90)
-sad.train_NEP()
+sad.train_next_event_prediction()
 df_seq = sad.predict()
 # Lookahead pairs also model order, but only ask which event may follow which within a window.
 print(f"Predicting with lookahead pairs over Tipping events")
-sad.train_LAP()
+sad.train_lookahead_pairs()
 df_seq = sad.predict()
 
 # ____________________________________________________________

@@ -54,7 +54,7 @@ def _events(df, field):
 
 
 def _nep_scores(model, events):
-    """Per-line NEP columns for one file's events, in line order."""
+    """Per-line next event prediction columns for one file's events, in line order."""
     preds, _, scores_abs, _, scores_nmax = model.predict_and_score(events)
     # The last n-gram predicts the end-of-sequence marker, which is no line of the file.
     n = len(events)
@@ -66,9 +66,9 @@ def _nep_scores(model, events):
 
 
 def _lap_scores(model, events):
-    """Per-line LAP columns for one file's events, in line order."""
+    """Per-line lookahead pairs columns for one file's events, in line order."""
     mismatches, scores = model.predict_and_score(events)
-    # As for NEP, the last element judges the end-of-sequence marker.
+    # As for next event prediction, the last element judges the end-of-sequence marker.
     n = len(events)
     return pl.DataFrame({
         "LAP_pred_ano_proba": scores[:n],
@@ -84,15 +84,16 @@ def sequence_line_event_prediction(
 
     :param content_format: ``Parse-<Algorithm>`` or ``Sklearn``; see the module docstring.
     :param detectors: subset of :data:`DETECTORS`. ``None`` runs both.
-    :param ngrams: n-gram length for NEP: the previous ``ngrams - 1`` events predict the next.
-    :param window: how many earlier lines each line is paired with for LAP.
+    :param ngrams: n-gram length for next event prediction: the previous ``ngrams - 1`` events
+        predict the next.
+    :param window: how many earlier lines each line is paired with for lookahead pairs.
     :returns: ``(per_file, df)`` where ``per_file`` is a list of
         ``(target_folder, file_name, scored_df)``. Each ``scored_df`` carries
         ``line_number``, the original columns, one score column per detector,
-        10/100-line moving averages of each, and for NEP ``nep_abs`` (how often
+        10/100-line moving averages of each, and for next event prediction ``nep_abs`` (how often
         the baseline saw the line's n-gram), ``nep_predict`` (the event it
         expected) and ``nep_expected`` (a baseline line of that event), and for
-        LAP ``lap_unseen`` (how many of the line's pairs the baseline never had).
+        lookahead pairs ``lap_unseen`` (how many of the line's pairs the baseline never had).
     """
     detectors = DEFAULT_DETECTORS if detectors is None else list(detectors)
     unknown = [d for d in detectors if d not in DETECTORS]
