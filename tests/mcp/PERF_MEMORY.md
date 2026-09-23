@@ -140,6 +140,8 @@ the cell directory to re-measure the grid from scratch.
 
 ## Table A5 -- Sequence tools
 
+These cold numbers understate a genuinely first call -- see the `**` note after Table C3.
+
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
 | sequence_line_event_prediction | hadoop_renamed | 0.395 | 0.499 | 0.534 | 1.28 |
@@ -361,6 +363,17 @@ The tables above run every anomaly tool with all four detectors, `distance_folde
 | sequence_line_event_prediction (LAP) | hadoop_renamed | 0.403 | 0.500 | 0.636 | 1.49 |
 | sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.390 | 0.419 | 0.522 | 0.595 |
 | sequence_line_event_prediction (LAP) | bgl_split_10 | 0.873 | 1.34 | 2.57 | 4.68 |
+
+\*\* `sequence_line_event_prediction (NEP)`'s cold column is the same measurement-order artifact
+as `distance_line_content (Exact)` above, not what a genuinely first call costs. `Parse-Drain` is
+this tool's default `content_format`, and NEP's detail cell is the first call in this grid to ask
+for it, so its cold call also pays for Drain3-parsing and template-mining the whole log root into
+`e_event_drain_id`. On `bgl_split_10` at 100% that shows up as 7.34GB here (mostly Drain3's own
+transient parsing/template-tree state, per PERFORMANCE.md: 41.5s of NEP's 44.0s cold cell) against
+4.68GB once the column is just sitting in the session. `LAP`'s detail cell and the combined call
+in Table A5/B5 both run after NEP here, so they reuse the already-built column and never see that
+parsing spike -- Table A5/B5's "cold" numbers are what NEP+LAP cost with `Parse-Drain` already
+built, not what the tool costs from nothing.
 
 # Part D -- warm (repeated call)
 

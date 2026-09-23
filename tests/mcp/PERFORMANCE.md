@@ -120,6 +120,8 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 ## Table A5 -- Sequence tools
 
+These cold numbers understate a genuinely first call -- see the `**` note after Table C3.
+
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
 | sequence_line_event_prediction | hadoop_renamed | 0.101 | 0.219 | 0.166 | 0.228 |
@@ -350,6 +352,16 @@ cold cell).
 | sequence_line_event_prediction (LAP) | hadoop_renamed | 0.080 | 0.150 | 0.120 | 0.378 |
 | sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.024 | 0.024 | 0.029 | 0.051 |
 | sequence_line_event_prediction (LAP) | bgl_split_10 | 0.059 | 0.089 | 0.285 | 0.485 |
+
+\*\* `sequence_line_event_prediction (NEP)`'s cold column is the same measurement-order artifact
+as `distance_line_content (Exact)` above, not what a genuinely first call costs. `Parse-Drain` is
+this tool's default `content_format`, and NEP's detail cell is the first call in this grid to ask
+for it, so its cold call also pays for Drain3-parsing and template-mining the whole log root into
+`e_event_drain_id` -- 41.5s of NEP's 44.0s cold cell on `bgl_split_10` at 100% (PERF_MEMORY.md
+shows the same shape: 7.34GB while parsing vs. 4.68GB once the column is cached). `LAP`'s detail
+cell and the combined call in Table A5/B5 both run after NEP here, so they reuse the already-built
+column and read far cheaper than a first call would be -- Table A5/B5's "cold" numbers are what
+NEP+LAP cost with `Parse-Drain` already built, not what the tool costs from nothing.
 
 # Part D -- warm (repeated call)
 
