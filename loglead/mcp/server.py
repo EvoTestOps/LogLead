@@ -28,8 +28,10 @@ import yaml
 
 try:  # MCP SDK 2.x
     from mcp.server.mcpserver import MCPServer as _Server
+    from mcp.server.mcpserver.exceptions import ToolError as _ToolError
 except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.server.fastmcp.exceptions import ToolError as _ToolError
 
 from ..delta import (anomaly, distance, export, log_root, masking, scoring, sequence, split,
                      visualize, vocabulary)
@@ -170,7 +172,17 @@ def tool(fn):
             _add_warning_notes(result, collector.messages)
         return result
 
-    mcp.tool()(wrapper)
+    @functools.wraps(wrapper)
+    def reported(*args, **kwargs):
+        try:
+            return wrapper(*args, **kwargs)
+        except _ToolError:
+            raise
+        except Exception as exc:
+            logger.info("Tool %s failed", fn.__name__, exc_info=True)
+            raise _ToolError(f"{type(exc).__name__}: {exc}") from exc
+
+    mcp.tool()(reported)
     return wrapper
 
 

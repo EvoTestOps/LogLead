@@ -46,6 +46,7 @@ asserted.
 """
 
 import argparse
+import asyncio
 import json
 import os
 import re
@@ -244,6 +245,17 @@ def stage_tools(check):
     described = [tool.name for tool in manager.list_tools() if not tool.description]
     check.ok("every tool has a description, which is all a client gets",
              not described, str(described) if described else "")
+
+    # SDK 2.x hides the text of any exception that is not a ToolError, which
+    # leaves the model unable to correct its call.
+    try:
+        asyncio.run(server.mcp.call_tool("open_log_root",
+                                         {"path": "/nonexistent/log/root"}))
+        message = "no exception raised"
+    except Exception as exc:
+        message = str(exc)
+    check.ok("a failing tool's message reaches the MCP client",
+             "FileNotFoundError: Log root not found" in message, message[:100])
 
 
 # --------------------------------------------------------------------------- #
