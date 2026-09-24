@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "loglead-mcp",
   "display_name": "LogLead",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Conversational log analysis: compare log folders/files for anomalies, distance, and structure using LogLead.",
   "long_description": "Wraps LogLead's log-folder comparison analyses (LogDelta-style distance, anomaly, and visualization checks) as MCP tools. A log root is loaded, masked, and parsed once per session, and every later question reuses that parsed state across four levels: folder/file names, folder content, file content, and line content.\n\nThis bundle installs LogLead's published PyPI release at launch. Third-party dependencies (polars, scikit-learn, xgboost, umap-learn, and others) are resolved as normal platform wheels via uv alongside it.",
   "author": {

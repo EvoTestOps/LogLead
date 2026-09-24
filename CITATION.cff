@@ -10,8 +10,8 @@ authors:
   given-names: Alexander
 message: "If you use this software, please cite it as below."
 title: "LogLead"
-version: "2.0.0" # Update this version as necessary
-date-released: 2026-09-18 # Update the date together with version
+version: "2.1.0" # Update this version as necessary
+date-released: 2026-09-22 # Update the date together with version
 url: "https://github.com/EvoTestOps/LogLead"
 
 preferred-citation:

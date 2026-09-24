@@ -3,6 +3,40 @@
 Notable changes to LogLead. Versions follow [semantic versioning](https://semver.org/): a major
 bump means something that worked before needs changing.
 
+## 2.1.0 - 2026-09-22
+
+The headline addition is order-aware anomaly detection: two detectors that score a sequence by the
+order of its events rather than by which events it contains.
+
+### Added
+
+- **`NextEventPredictionNgramDetector`** (next event prediction, an n-gram model of event order)
+  and **`LookaheadPairsDetector`** (lookahead pairs: which event may follow which within a
+  window), trained with `AnomalyDetector.train_next_event_prediction()` and
+  `train_lookahead_pairs()`. They need an ordered list of parsed events per row;
+  `evaluate_all_ads()` skips them otherwise.
+- **`LookaheadPairs`**, alongside `NextEventPredictionNgram` in the new `loglead.sequence_modelling`
+  module. It runs in O(n) per sequence.
+- **`loglead.delta.sequence_line_event_prediction`** scores every line of a target file by how
+  expected it is after the lines before it, learning event order from the same file in the
+  comparison folders. The MCP server exposes it as a tool of the same name.
+
+### Changed
+
+- `RarityModel` is renamed to `rarity_detector` and `AnomalyDetector.train_RarityModel()` to
+  `train_RarityDetector()`. The old names still work but raise a `DeprecationWarning`; they will be
+  removed in 3.0.
+- `loglead/next_event_prediction.py` is merged into `loglead/sequence_modelling.py`, and
+  `loglead/log.py` is renamed to `loglead/logging.py`. Neither old module name is kept; update any
+  direct import.
+
+### Fixed
+
+- With MCP SDK 2.x, a failing MCP tool reached the client as a bare "Error executing tool
+  <name>", so an AI agent could not see why its call was rejected. The server now passes the
+  exception type and message through on both SDK 1.x and 2.x. Direct Python callers still get
+  the original exception.
+
 ## 2.0.0 - 2026-09-18
 
 The headline additions are format detection (`AutoLoader`), five spec-driven loaders for everyday

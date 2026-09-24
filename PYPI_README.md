@@ -1,9 +1,15 @@
 # LogLead
 LogLead is designed to efficiently benchmark log anomaly detection algorithms and log representations. LogLead is also used as a backend for projects such as [LogDelta](https://github.com/EvoTestOps/LogDelta) and [VisualLogAnalyzer](https://github.com/EvoTestOps/VisualLogAnalyzer), which offer a more user-friendly approach to log analysis and log anomaly detection.
 
-LogLead combines three independently swappable stages — **Loader → Enhancer → Anomaly Detector** — so the same enhancement and detection code applies to any log once it is loaded. It ships loaders for a dozen public datasets, format-detecting and spec-driven loaders for everyday log formats (JSON, syslog, logfmt, access logs, CSV/TSV), a dozen log representations (enhancers), and 11 classifiers. Everything runs on [Polars](https://www.pola.rs/) dataframes rather than Pandas.
+LogLead combines three independently swappable stages — **Loader → Enhancer → Anomaly Detector** — so the same enhancement and detection code applies to any log once it is loaded. It ships loaders for a dozen public datasets, format-detecting and spec-driven loaders for everyday log formats (JSON, syslog, logfmt, access logs, CSV/TSV), a dozen log representations (enhancers), and 13 classifiers. Everything runs on [Polars](https://www.pola.rs/) dataframes rather than Pandas.
 
 If there's something you believe should be included, please submit a request for a dataset, enhancer, or classifier in the [issue tracker](https://github.com/EvoTestOps/LogLead/issues).
+
+## What's new in 2.1
+
+- **Order-aware anomaly detection** — `NextEventPredictionNgramDetector` (next event prediction) and `LookaheadPairsDetector` (lookahead pairs) score a sequence by the order of its events, via `AnomalyDetector.train_next_event_prediction()` / `train_lookahead_pairs()`.
+- **`loglead.delta.sequence_line_event_prediction`** — scores each line of a log file by how expected it is after the lines before it; also available as an MCP tool.
+- `RarityModel` is renamed to `rarity_detector` (the old name still works but warns). See the [changelog](https://github.com/EvoTestOps/LogLead/blob/main/CHANGELOG.md).
 
 ## What's new in 2.0
 
@@ -165,7 +171,7 @@ Beyond those, five *spec-driven* loaders read a whole format family from a YAML 
 **Anomaly Detector:** runs on the enhanced data, mainly via scikit-learn plus a couple of custom algorithms:
 * Supervised (5): [Decision Tree](https://en.wikipedia.org/wiki/Decision_tree), [SVM](https://en.wikipedia.org/wiki/Support_vector_machine), [Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression), [Random Forest](https://en.wikipedia.org/wiki/Random_forest), [XGBoost](https://en.wikipedia.org/wiki/XGBoost)
 * Unsupervised (4): [One-class SVM](https://en.wikipedia.org/wiki/Support_vector_machine#One-class_SVM), [Local Outlier Factor](https://en.wikipedia.org/wiki/Local_outlier_factor), [Isolation Forest](https://en.wikipedia.org/wiki/Isolation_forest), [K-Means](https://en.wikipedia.org/wiki/K-means_clustering)
-* Custom unsupervised (2): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) (novel words/n-grams vs. test set) and [Rarity Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/rarity_detector.py) (rarity-based scoring) — see our [preprint](https://arxiv.org/abs/2312.01934).
+* Custom unsupervised (4): [Out-of-Vocabulary Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/OOV_detector.py) (novel words/n-grams vs. test set) and [Rarity Detector](https://github.com/EvoTestOps/LogLead/blob/main/loglead/rarity_detector.py) (rarity-based scoring) — see our [preprint](https://arxiv.org/abs/2312.01934); order-aware [Next Event Prediction](https://github.com/EvoTestOps/LogLead/blob/main/loglead/sequence_anomaly_detectors.py) (n-gram model of event order) and [Lookahead Pairs](https://github.com/EvoTestOps/LogLead/blob/main/loglead/sequence_anomaly_detectors.py) (which event may follow which within a window).
 
 **Comparing log folders (`loglead.delta`):** a second, unsupervised pipeline for when there's no labels but many comparable runs. Given a log root — a directory of log folders (a test run, a day, a release) — it judges one target against the others at four granularities (folder name, folder content, file content, line content), each posing a distance, anomaly, or visualization question. Returns Polars DataFrames and plotly figures, no module-level state, no files written. This is the layer the MCP server exposes.
 
