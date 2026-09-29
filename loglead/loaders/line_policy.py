@@ -116,6 +116,14 @@ def starts_event(lines):
     return ~(lines.str.contains(_INDENTED) | (lines.str.strip_chars() == ""))
 
 
+def stray_lines_error(strays, lines, example):
+    """The 'raise' policy's error. RawLoader.sink() builds it from counts over the whole file."""
+    return ValueError(
+        f"{strays} of {lines} lines do not start an event. This is normal for "
+        f"multi-line messages - use policy 'merge-message', 'merge-add-column', 'keep', "
+        f"'drop' or 'fill-lastseen' to tolerate them. First one: {str(example)[:200]}")
+
+
 def to_events(df, starts, policy="merge-message", text_column="m_message", text=None,
               timestamp_column="m_timestamp", partition_by="file_name", trace_column="trace"):
     """Turn a frame of lines into a frame of events, by the given policy.
@@ -132,21 +140,27 @@ def to_events(df, starts, policy="merge-message", text_column="m_message", text=
     caller asks for when it wants every line countable.
     """
     policy = normalize_policy(policy)
-    if policy == "keep" or df.is_empty():
+    # Every policy also takes a LazyFrame, which is what RawLoader.scan() passes.
+    if policy == "keep" or (isinstance(df, pl.DataFrame) and df.is_empty()):
         return df
 
-    partition = [partition_by] if partition_by and partition_by in df.columns else []
+    names = df.collect_schema().names()
+    partition = [partition_by] if partition_by and partition_by in names else []
     is_start = starts.cast(pl.Boolean).fill_null(False)
 
     if policy == "raise":
-        stray = df.filter(~is_start)
-        if stray.is_empty():
-            return df
-        example = str(stray.select(text_column).item(0, 0))[:200]
-        raise ValueError(
-            f"{len(stray)} of {len(df)} lines do not start an event. This is normal for "
-            f"multi-line messages - use policy 'merge-message', 'merge-add-column', 'keep', "
-            f"'drop' or 'fill-lastseen' to tolerate them. First one: {example}")
+        if isinstance(df, pl.LazyFrame):
+            # A LazyFrame can't raise later when it is collected, so the log is read now, streaming.
+            lines, strays, example = df.select(
+                pl.len(), (~is_start).sum(), pl.col(text_column).filter(~is_start).first()
+            ).collect(engine="streaming").row(0)
+        else:
+            stray = df.filter(~is_start)
+            lines, strays = len(df), len(stray)
+            example = stray.select(text_column).item(0, 0) if strays else None
+        if strays:
+            raise stray_lines_error(strays, lines, example)
+        return df
 
     if policy == "drop":
         return df.filter(is_start)
@@ -166,7 +180,7 @@ def to_events(df, starts, policy="merge-message", text_column="m_message", text=
     frame = df.with_columns(
         source.alias(_TEXT), (event.over(partition) if partition else event).alias(_GROUP))
 
-    carried = [c for c in df.columns if c not in partition and c != text_column]
+    carried = [c for c in names if c not in partition and c != text_column]
     aggregations = [pl.col(c).first().alias(c) for c in carried]
     if into_message:
         # The event's text does not end until the next event begins, so all of it is the message.
@@ -186,7 +200,7 @@ def to_events(df, starts, policy="merge-message", text_column="m_message", text=
 
     # Every column the caller came in with, in the order it had them - a merge changes how many
     # rows there are, not what the frame is.
-    columns = list(df.columns)
+    columns = list(names)
     if text_column not in columns:
         columns.append(text_column)
     return merged.select(columns + ([] if into_message else [trace_column]))

@@ -344,8 +344,77 @@ class AnomalyDetector:
         return np.min(self.model.transform(X), axis=1)
 
     def predict(self, custom_plot=False):
-        #Binary scores
         X_test_to_use = self.X_test_no_anos if self.filter_anos else self.X_test
+        predictions, predictions_proba = self._score(X_test_to_use)
+        df_seq = self.test_df.with_columns(pl.Series(name="pred_ano", values=predictions.tolist()))
+        if predictions_proba is not None:
+            df_seq = df_seq.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))
+
+        if self.print_scores:
+            self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
+        if custom_plot:
+            self.model.custom_plot(self.labels_test)
+        if self.store_scores:
+            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, type(self.model).__name__,
+                                            self.item_list_col, self.numeric_cols, self.emb_list_col,
+                                            self.categorical_cols)
+        return df_seq
+
+    def predict_batches(self, source, batch_size=None, where=None):
+        """Score a data set too big for memory, one batch at a time.
+
+        Train on a sample first (loglead.streaming.sample), then pass the whole file's path.
+        Each batch is featurized with the vectorizer fitted in training, so a row gets the same
+        prediction as predict() would give it. Unlike predict(), nothing is printed or stored.
+        Yields each batch with pred_ano added, and pred_ano_proba when auc_roc is set.
+
+        Use where to skip rows the model can't score, e.g. pl.col("e_words").is_not_null()
+        for lines without a message.
+        """
+        from loglead.streaming import DEFAULT_BATCH_SIZE, iter_batches
+        vectorizer = self.vectorizer_no_anos if self.filter_anos else self.vectorizer
+        encoder = self.encoder_no_anos if self.filter_anos else self.encoder
+        calibrated = {}
+        # OOVDetector and the sequence detectors score the rows of the test_df they were built
+        # with rather than X, so each batch stands in for it while the batch is scored.
+        holds_rows = hasattr(self.model, "test_df")
+        original_rows = self.model.test_df if holds_rows else None
+        batches = iter_batches(source, batch_size or DEFAULT_BATCH_SIZE)
+        try:
+            for batch in batches:
+                if where is not None:
+                    batch = batch.filter(where)
+                with warnings.catch_warnings():
+                    # Unlabeled data warns once per batch otherwise; the caller already knows.
+                    warnings.filterwarnings("ignore", message="WARNING! data has no labels")
+                    X, _, _ = self._prepare_data(batch, vectorizer, encoder)
+                if holds_rows:
+                    self.model.test_df = batch
+                predictions, predictions_proba = self._score(X, calibrated)
+                batch = batch.with_columns(pl.Series(name="pred_ano", values=predictions.tolist()))
+                if predictions_proba is not None:
+                    batch = batch.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))
+                yield batch
+        finally:
+            if holds_rows:
+                self.model.test_df = original_rows
+
+    def predict_to_parquet(self, source, path, batch_size=None, where=None):
+        """Score a data set too big for memory and save the predictions to a parquet file.
+
+        Same as predict_batches(), but writes to path and returns the number of rows written.
+        """
+        from loglead.streaming import write_batches
+        return write_batches(self.predict_batches(source, batch_size, where), path)
+
+    def _score(self, X_test_to_use, calibrated=None):
+        """Predict for a feature matrix; shared by predict() and predict_batches().
+
+        LinearSVC's probabilities need a calibrated copy of the model fitted on the training
+        data. predict() refits it on every call; predict_batches() passes calibrated so it is
+        fitted once, not once per batch.
+        """
+        #Binary scores
         predictions = self.model.predict(X_test_to_use)
         #Unsupervised modeles give predictions between -1 and 1. Convert to 0 and 1
         if isinstance(self.model, (IsolationForest, LocalOutlierFactor, OneClassSVM)):
@@ -355,8 +424,7 @@ class AnomalyDetector:
             # "< 0" rule above would mark every row normal. Threshold its distance score instead.
             predictions = (self._kmeans_distance(X_test_to_use)
                            > self.model.distance_threshold_).astype(int)
-        df_seq = self.test_df.with_columns(pl.Series(name="pred_ano", values=predictions.tolist()))
-        
+
         #Continuous scores
         predictions_proba = None
         if self.auc_roc:
@@ -375,31 +443,22 @@ class AnomalyDetector:
                 # Create a new model instance and let CalibratedClassifierCV handle fitting
                 # Determine appropriate number of CV folds based on training data size
                 # Need at least 2 folds, but can't have more folds than the smallest class
-                min_class_count = min(np.bincount(self.labels_train))
-                n_folds = min(5, max(2, min_class_count))
-                new_model = LinearSVC(max_iter=self.model.max_iter, random_state=getattr(self.model, 'random_state', None))
-                calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
-                calibrated_model.fit(X_train_to_use, self.labels_train)
+                calibrated_model = calibrated.get(id(self.model)) if calibrated is not None else None
+                if calibrated_model is None:
+                    min_class_count = min(np.bincount(self.labels_train))
+                    n_folds = min(5, max(2, min_class_count))
+                    new_model = LinearSVC(max_iter=self.model.max_iter, random_state=getattr(self.model, 'random_state', None))
+                    calibrated_model = CalibratedClassifierCV(new_model, cv=n_folds)
+                    calibrated_model.fit(X_train_to_use, self.labels_train)
+                    if calibrated is not None:
+                        calibrated[id(self.model)] = calibrated_model
                 predictions_proba = calibrated_model.predict_proba(X_test_to_use)[:, 1]
             elif isinstance(self.model, (OOV_detector, rarity_detector, NextEventPredictionNgramDetector, LookaheadPairsDetector)):
                 predictions_proba = self.model.scores    
             else:
                 # Supervised models give probabilities using predict_proba method
                 predictions_proba = self.model.predict_proba(X_test_to_use)[:, 1]
-            # Build on df_seq, not self.test_df: starting over from test_df would drop the
-            # "pred_ano" column added above, so with auc_roc=True the caller got the continuous
-            # score but lost the binary prediction.
-            df_seq = df_seq.with_columns(pl.Series(name="pred_ano_proba", values=predictions_proba.tolist()))
-
-        if self.print_scores:
-            self._print_evaluation_scores(self.labels_test, predictions,predictions_proba, self.model)
-        if custom_plot:
-            self.model.custom_plot(self.labels_test)
-        if self.store_scores:
-            self.storage.store_test_results(self.labels_test, predictions,predictions_proba, type(self.model).__name__,
-                                            self.item_list_col, self.numeric_cols, self.emb_list_col,
-                                            self.categorical_cols)
-        return df_seq 
+        return predictions, predictions_proba
        
     def train_LR(self, max_iter=4000, tol=0.0003):
         self.train_model(LogisticRegression, max_iter=max_iter, tol=tol)

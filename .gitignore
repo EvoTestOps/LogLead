@@ -18,3 +18,4 @@ LogLead.egg-info
 *.log
 *.joblib
 *.xlsx
+tests/result/runs/

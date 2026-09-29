@@ -123,7 +123,8 @@ sections need no download.
 Not a loader for any dataset — the template-method base class every loader below subclasses.
 Defines the `load → preprocess → check_for_nulls_and_non_utf8 → check_mandatory_columns →
 add_ano_col` pipeline, the `_split_and_unnest()` helper used by the positional-text loaders, and the
-`\a`-separator CSV-reader trick used to read a log file one whole line at a time.
+`\a`-separator CSV-reader trick used to read a log file one whole line at a time. Also defines
+`scan()`/`sink()`, see [Larger than memory](#larger-than-memory).
 
 ### `RawLoader` ([`raw.py`](raw.py))
 
@@ -407,6 +408,52 @@ implementations. It splits a question that used to be asked as one:
 Everything groups **per file**: a running count over a whole multi-file frame lets a file whose
 first line is a continuation attach it to the last event of the previous, unrelated file, and makes
 a forward-filled timestamp cross the same boundary. Do not reimplement any of this in a new loader.
+
+## Larger than memory
+
+`execute()` holds the whole log in memory, at roughly four times the file size. Loaders with
+`supports_streaming = True` — `ThuSpiLibLoader`, `BGLLoader`, `HDFSLoader`, and `RawLoader` on a single
+file, with any `missing_timestamp_action` — can instead write it
+to parquet with memory that stays flat whatever the file size, and the rest of the pipeline can work
+from that file batch by batch:
+
+```python
+from loglead.streaming import sample
+
+ThuSpiLibLoader("tbird2.log").sink("tb.parquet")      # same rows as execute(), same null/non-UTF-8 report
+
+enhancer = EventLogEnhancer.from_parquet("tb.parquet")  # calls are recorded ...
+enhancer.mask(); enhancer.words(); enhancer.parse_drain()
+enhancer.sink("tb_enh.parquet")                         # ... and replayed on one batch at a time
+
+sad = AnomalyDetector(item_list_col="e_words", auc_roc=True)
+train = sample("tb_enh.parquet", n=1_000_000).filter(pl.col("e_words").is_not_null())
+sad.test_train_split(train, test_frac=0.2)
+sad.train_LR()
+sad.predict_to_parquet("tb_enh.parquet", "tb_scores.parquet",
+                       where=pl.col("e_words").is_not_null())   # lines without a message cannot be scored
+```
+
+`sink()` reads the log in chunks of whole lines (`sink_chunk_bytes`, 64 MB), parses and preprocesses
+each as `execute()` would, and appends it to the file; the output equals `execute()` (checked by
+`tests/streaming.py`). For a sequence loader it also builds `df_seq` from the written file and keeps
+it in memory (pass `seq_path` to write it too). `scan()` returns the same rows as a LazyFrame, but a
+LazyFrame is batched by Polars' streaming engine, whose memory grows with the file when it reads
+parquet; pass file paths when memory matters. A loader with `supports_streaming = False` still accepts
+`scan()`/`sink()` but loads everything with `execute()` first. With the line policies that tie a line
+to the event above it (`merge-message`, `merge-add-column`, `fill-lastseen`), RawLoader ends each chunk
+before the last event starts and carries that event into the next chunk, so memory is a chunk plus one
+event. With `raise`, `sink()` counts unmatched lines over the whole file and then raises the same error
+as `execute()`, removing the partial file; `scan()` reads the log once to check. Parsers that need all rows at once
+(Tipping, Brain, AEL, IPLoM, Spell, LenMa) raise `NotImplementedError` on a LazyFrame; run them on a
+sample.
+
+The full Thunderbird log (211M lines, 30 GB) goes through `sink()`, the enhancer above and
+`predict_to_parquet()` with about 1-3 GB of heap (`tests/memory.py --real thunderbird`).
+
+To make another loader stream: implement `csv_options()` (the `read_csv` arguments `load()` uses) and
+write `preprocess()` with expressions only, so it builds the same frame from any run of whole lines of
+the file; then add it to `loader_cases()` in `tests/streaming.py`.
 
 ## Known gaps
 

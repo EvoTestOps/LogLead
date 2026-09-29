@@ -1,12 +1,68 @@
 import functools
 import hashlib
+import inspect
 import logging
 import time
 import warnings
 
 import polars as pl
 
+from loglead.streaming import DEFAULT_BATCH_SIZE, iter_batches, write_batches
+
 logger = logging.getLogger(__name__)
+
+
+def _batched(kind):
+    """Mark how a method runs on a log too big for memory (when the enhancer holds a LazyFrame).
+
+    "row": each row's result depends only on that row, so it stays a lazy Polars expression.
+    If a stage is queued before it, it is queued too, so it still runs after that stage.
+    "stage": keeps state across rows or runs Python per row (Drain, minhash). It is queued and
+    run later by sink(), batch by batch, in row order.
+    "all_rows": each row's result depends on all rows (Tipping, Brain, IPLoM...), so it can't
+    stream and raises NotImplementedError.
+    "ordered": sorts and sums over all rows. Polars can run it lazily, but not after a queued
+    stage, whose output doesn't exist yet.
+    """
+
+    def decorate(fn):
+        signature = inspect.signature(fn)
+        inner = getattr(fn, "__wrapped__", fn)
+
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            if not isinstance(self.df, pl.LazyFrame):
+                return fn(self, *args, **kwargs)
+            if kind == "all_rows":
+                raise NotImplementedError(
+                    f"{fn.__name__} needs every row in memory at once, so it cannot run on a LazyFrame. "
+                    f"Collect the frame first (or a sample of it), or use parse_drain, which streams.")
+            if kind == "ordered":
+                if self._stages:
+                    raise NotImplementedError(
+                        f"{fn.__name__} cannot follow a batched step ({', '.join(self._stage_names)}); "
+                        f"call sink() first and continue on the frame it returns.")
+                self._replayable = False
+                return fn(self, *args, **kwargs)
+            bound = signature.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            call = dict(bound.arguments)
+            call.pop("self")
+            self._calls.append((inner, call))
+            if kind == "stage" or self._stages:
+                def stage(batch):
+                    enhancer = EventLogEnhancer(batch)
+                    inner(enhancer, **call)
+                    return enhancer.df
+
+                self._stages.append(stage)
+                self._stage_names.append(fn.__name__)
+                return self.df
+            return fn(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorate
 
 
 def _log_parse(fn):
@@ -53,12 +109,115 @@ __all__ = ['EventLogEnhancer']
 
 
 class EventLogEnhancer:
+    """Adds event-level representations (e_* columns) to a log DataFrame.
+
+    For a log too big for memory, use from_parquet(): the calls are recorded, and sink()
+    replays them one batch of the file at a time and saves the result. A LazyFrame works too,
+    but then Polars' streaming engine reads the data, and its memory grows with the file.
+    Either way the result is the same as running the calls on the whole DataFrame.
+    """
+
     def __init__(self, df):
         self.df = df
+        self._stages = []
+        self._stage_names = []
+        self._calls = []
+        self._source = None
+        self._replayable = True
+
+    @classmethod
+    def from_parquet(cls, path):
+        """Enhance a parquet file too big for memory, one batch at a time.
+
+        Nothing is computed until sink(). self.df is a lazy scan of the file, so column checks
+        still work before that.
+        """
+        enhancer = cls(pl.scan_parquet(path))
+        enhancer._source = path
+        return enhancer
+
+    def _columns(self):
+        if isinstance(self.df, pl.LazyFrame):
+            return self.df.collect_schema().names()
+        return self.df.columns
+
+    def _schema(self):
+        if isinstance(self.df, pl.LazyFrame):
+            return self.df.collect_schema()
+        return self.df.schema
+
+    def sink(self, path, batch_size=DEFAULT_BATCH_SIZE):
+        """Save the enhanced log to a parquet file, for logs too big to hold in memory.
+
+        After from_parquet(), the source is read batch_size rows at a time, in order, and the
+        recorded calls are replayed on each batch, so memory holds one batch. Afterwards the
+        enhancer reads from the new file, so you can keep enhancing and sink again.
+        """
+        started = time.perf_counter()
+        if not isinstance(self.df, pl.LazyFrame):
+            self.df.write_parquet(path)
+            rows = self.df.height
+        elif self._source is not None and self._replayable:
+            calls = list(self._calls)
+
+            def replay(batch):
+                enhancer = EventLogEnhancer(batch)
+                for inner, call in calls:
+                    inner(enhancer, **call)
+                return enhancer.df
+
+            rows = write_batches((replay(batch) for batch in iter_batches(self._source, batch_size)), path)
+            if rows == 0:
+                replay(pl.scan_parquet(self._source).head(0).collect()).write_parquet(path)
+        elif not self._stages:
+            self.df.sink_parquet(path, engine="streaming")
+            rows = None
+        else:
+            stages = list(self._stages)
+
+            def batches():
+                for batch in iter_batches(self.df, batch_size):
+                    for stage in stages:
+                        batch = stage(batch)
+                    yield batch
+
+            rows = write_batches(batches(), path)
+            if rows == 0:
+                empty = self.df.head(0).collect()
+                for stage in stages:
+                    empty = stage(empty)
+                empty.write_parquet(path)
+        logger.info("sink: wrote %s row(s) to %s in %.2fs%s.", "?" if rows is None else rows, path,
+                    time.perf_counter() - started,
+                    f" through {', '.join(self._stage_names)}" if self._stage_names else "")
+        self._stages, self._stage_names, self._calls = [], [], []
+        self._source, self._replayable = path, True
+        self.df = pl.scan_parquet(path)
+        return self.df
+
+    def _map_in_row_order(self, expr, function, return_dtype):
+        """Run a parser over the log lines strictly in order, so it gives the same ids every run.
+
+        Drain, Spell and LenMa learn templates as they go, so order matters, but Polars maps a
+        multi-chunk column's chunks in parallel. Only this column is merged into one chunk, and
+        the result is split back to the frame's chunk lengths, because adding a single-chunk
+        column to a multi-chunk frame copies the whole frame.
+        """
+        values = self.df.select(expr).to_series()
+        lengths = values.chunk_lengths()
+        result = values.rechunk().map_elements(function, return_dtype=return_dtype)
+        if len(lengths) > 1:
+            offsets = [0]
+            for length in lengths[:-1]:
+                offsets.append(offsets[-1] + length)
+            result = pl.concat([result.slice(offset, length) for offset, length in zip(offsets, lengths)],
+                               rechunk=False)
+        return result
 
     # Helper function to check if all prerequisites exist
     def _prerequisites_exist(self, prerequisites):
-        return all([col in self.df.columns for col in prerequisites])
+        columns = self._columns()
+        return all([col in columns for col in prerequisites])
 
     # Helper function to handle prerequisite check and raise exception if missing
     def _handle_prerequisites(self, prerequisites):
@@ -66,6 +225,7 @@ class EventLogEnhancer:
             raise ValueError(f"Missing prerequisites for enrichment: {', '.join(prerequisites)}")
 
     # Function-based enricher to split messages into words
+    @_batched("row")
     def words(self, column="m_message", reparse=False):
         """Split messages into words as ``e_words``.
 
@@ -74,7 +234,7 @@ class EventLogEnhancer:
             naming a different ``column`` silently returns the first result.
         """
         self._handle_prerequisites([column])
-        if reparse or "e_words" not in self.df.columns:
+        if reparse or "e_words" not in self._columns():
             split = pl.col(column).str.split(by=" ")
             self.df = self.df.with_columns(
                 split.alias("e_words"), split.list.len().alias("e_words_len")
@@ -82,9 +242,10 @@ class EventLogEnhancer:
         return self.df
 
     # Function-based enricher to extract alphanumeric tokens from messages
+    @_batched("row")
     def alphanumerics(self, column="m_message", reparse=False):
         self._handle_prerequisites([column])
-        if reparse or "e_alphanumerics" not in self.df.columns:
+        if reparse or "e_alphanumerics" not in self._columns():
             self.df = self.df.with_columns(
                 pl.col(column).str.extract_all(r"[a-zA-Z\d]+").alias("e_alphanumerics")
             )
@@ -94,6 +255,7 @@ class EventLogEnhancer:
         return self.df
 
     # Function-based enricher to create character trigrams from messages
+    @_batched("row")
     def trigrams(self, column="m_message", reparse=False):
         """Character trigrams of ``column``, as ``e_trigrams``.
 
@@ -112,7 +274,7 @@ class EventLogEnhancer:
                 .str.extract_all(r'.{3}')
             )
         self._handle_prerequisites([column])
-        if reparse or "e_trigrams" not in self.df.columns:
+        if reparse or "e_trigrams" not in self._columns():
             trigrams_pos0 = extract_trigrams(column, 0)
             trigrams_pos1 = extract_trigrams(column, 1)
             trigrams_pos2 = extract_trigrams(column, 2)
@@ -127,6 +289,7 @@ class EventLogEnhancer:
         return self.df
 
     # Function-based enricher to bucket look-alike lines by a minhash signature
+    @_batched("stage")
     def minhash(self, token_column="e_trigrams", rows=4, seed=0, reparse=False):
         """Minhash signature of a token column, as ``e_minhash_<tokens>``.
 
@@ -178,6 +341,7 @@ class EventLogEnhancer:
         return self.df
 
     # Enrich with drain parsing results
+    @_batched("stage")
     @_log_parse
     def parse_drain(self, field = "e_message_normalized", drain_masking=False, reparse=False, templates=False, persistence=False):
         self._handle_prerequisites([field])
@@ -223,8 +387,8 @@ class EventLogEnhancer:
                     )
                 else:
                     from loglead.parsers import DrainTemplateMiner as tm
-                    self.df = self.df.with_columns(
-                        drain=pl.col("message_trimmed").map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
+                    self.df = self.df.with_columns(self._map_in_row_order(
+                        pl.col("message_trimmed"), lambda x: tm.add_log_message(x), return_dtype).alias("drain"))
             else:
                 #if "e_message_normalized" not in self.df.columns:
                 #    self.mask()
@@ -248,8 +412,8 @@ class EventLogEnhancer:
                     )
                 else:
                     from loglead.parsers import DrainTemplateMinerNoMasking as tm
-                    self.df = self.df.with_columns(
-                        drain=pl.col(field).map_elements(lambda x: tm.add_log_message(x), return_dtype=return_dtype))
+                    self.df = self.df.with_columns(self._map_in_row_order(
+                        pl.col(field), lambda x: tm.add_log_message(x), return_dtype).alias("drain"))
 
             if templates:
                 self.df = self.df.with_columns(
@@ -264,6 +428,7 @@ class EventLogEnhancer:
             # tm.drain.print_tree()
         return self.df 
     
+    @_batched("all_rows")
     @_log_parse
     def parse_brain(self, field = "e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
@@ -278,6 +443,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
+    @_batched("all_rows")
     @_log_parse
     def parse_ael(self,field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
@@ -294,6 +460,7 @@ class EventLogEnhancer:
 
     #See https://pypi.org/project/tipping/
     #and https://arxiv.org/abs/2408.00645 
+    @_batched("all_rows")
     @_log_parse
     def parse_tip(self, field = "e_message_normalized", reparse=False, templates=False):
         self._handle_prerequisites([field])
@@ -333,6 +500,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
     
+    @_batched("all_rows")
     @_log_parse
     def parse_iplom(self, field = "e_message_normalized", reparse=False, CT=0.35, PST=0, lower_bound=0.1):
         self._handle_prerequisites([field])
@@ -361,6 +529,7 @@ class EventLogEnhancer:
         return self.df
 
     #Faster version of IPLoM coming in 2024
+    @_batched("all_rows")
     @_log_parse
     def parse_pliplom(self, field = "e_message_normalized",  reparse=False, CT=0.35, FST=0, PST=0,lower_bound=0.1, single_outlier_event=True):
         self._handle_prerequisites(["e_words"]) #Check word split method https://github.com/logpai/logparser/blob/main/logparser/IPLoM/IPLoM.py#L154
@@ -382,6 +551,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/keiichishima/templateminer
+    @_batched("all_rows")
     @_log_parse
     def parse_lenma(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites(["e_words"])
@@ -393,8 +563,9 @@ class EventLogEnhancer:
                 self.df = self.df.drop("row_nr")
             self.df = self.df.with_row_index("row_nr", )
             self.df = self.df.with_columns(
-                lenma_obj=pl.struct(["e_words", "row_nr"])
-                .map_elements(lambda x:lenma_tm.infer_template(x["e_words"], x["row_nr"]), return_dtype=pl.Object))
+                self._map_in_row_order(pl.struct(["e_words", "row_nr"]),
+                                       lambda x:lenma_tm.infer_template(x["e_words"], x["row_nr"]), pl.Object)
+                .alias("lenma_obj"))
             def extract_id(obj):
                 template_str = " ".join(obj.words)
                 eid = hashlib.md5(template_str.encode("utf-8")).hexdigest()[0:8]   
@@ -413,6 +584,7 @@ class EventLogEnhancer:
         return self.df
 
     #https://github.com/bave/pyspell/
+    @_batched("all_rows")
     @_log_parse
     def parse_spell(self, field = "e_message_normalized",  reparse=False):
         self._handle_prerequisites([field])
@@ -422,8 +594,7 @@ class EventLogEnhancer:
             #    self.mask()
             spell = SpellParser(r'\s+')
             self.df = self.df.with_columns(
-                spell_obj=pl.col(field)
-                    .map_elements(lambda x: spell.insert(x), return_dtype=pl.Object))
+                self._map_in_row_order(pl.col(field), lambda x: spell.insert(x), pl.Object).alias("spell_obj"))
 
             def extract_id(obj):
                 template_str = " ".join(obj._lcsseq)
@@ -444,6 +615,7 @@ class EventLogEnhancer:
         return self.df
 
     # https://github.com/EvoTestOps/iplom-llm-parser
+    @_batched("all_rows")
     @_log_parse
     def parse_iplom_llm(
         self,
@@ -480,6 +652,7 @@ class EventLogEnhancer:
             self.df = pl.concat([self.df, df_new], how="horizontal")
         return self.df
 
+    @_batched("all_rows")
     def create_neural_emb(self, field="e_message_normalized", reparse=False):
         self._handle_prerequisites([field])
         if reparse or "e_bert_emb" not in self.df.columns:
@@ -501,9 +674,10 @@ class EventLogEnhancer:
             self.df = self.df.hstack(bert_emb_col_df)
         return self.df
 
+    @_batched("row")
     def length(self, column="m_message", reparse=False):
         self._handle_prerequisites([column])
-        if reparse or "e_chars_len" not in self.df.columns:
+        if reparse or "e_chars_len" not in self._columns():
             self.df = self.df.with_columns(
                 e_chars_len=pl.col(column).str.len_chars(),
                 e_lines_len=pl.col(column).str.count_matches(r"(\n|\r|\r\n)"),
@@ -521,6 +695,7 @@ class EventLogEnhancer:
         )
         return self.mask(*args, **kwargs)
 
+    @_batched("row")
     def mask(self, regexs=masking_patterns_drain, to_lower=False, twice=True):
         """Replace variable substrings in ``m_message`` with placeholder tokens, producing ``e_message_normalized``.
 
@@ -549,6 +724,7 @@ class EventLogEnhancer:
         self.df = self.df.with_columns(e_message_normalized=expr)
         return self.df
 
+    @_batched("ordered")
     def item_cumsum2(self, column="e_message_normalized", chronological_order=1, ano_only=True, unique_only=True, out_column=None):
         if out_column is None:
             out_column = column + "_cumsum"
@@ -578,6 +754,7 @@ class EventLogEnhancer:
 
         return self.df
 
+    @_batched("ordered")
     def item_cumsum(self, column="e_message_normalized", chronological_order=True, ano_only=True, unique_only=True):
         self._handle_prerequisites([column, 'm_timestamp'])
         if ano_only:

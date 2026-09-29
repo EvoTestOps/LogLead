@@ -4,7 +4,7 @@ import logging
 import os
 import warnings
 from . import line_policy
-from .base import BaseLoader
+from .base import BaseLoader, _names
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,44 @@ class RawLoader(BaseLoader):
         self.timestamp_date_from_files = date_from_files
         self.strict = strict  # Whether an unparseable extracted timestamp raises or becomes null
         super().__init__(filename)
-           
+
+    @property
+    def supports_streaming(self):
+        # sink() reads one file; file dates come from the per-file names of the many-file load.
+        return not self.filename_pattern and not self.timestamp_date_from_files
+
+    def _event_cut(self, lines):
+        # These policies tie a line to the event above it, so chunks end before the last event
+        # starts. An event with no start in a whole chunk waits for the next one.
+        if not self.timestamp_pattern or self.missing_timestamp_action not in (
+                "merge-message", "merge-add-column", "fill-lastseen"):
+            return lines.height
+        starts = lines.select(self._timestamp(pl.col("column_1")).is_not_null()).to_series().arg_true()
+        return starts[-1] if len(starts) else 0
+
+    def _preprocessed_chunks(self, chunk_bytes):
+        if not (self.timestamp_pattern and self.missing_timestamp_action == "raise"):
+            yield from super()._preprocessed_chunks(chunk_bytes)
+            return
+        # The chunks keep their unmatched lines, which are counted here over the whole file,
+        # so the error says what execute() would.
+        lines = strays = 0
+        example = None
+        for part in super()._preprocessed_chunks(chunk_bytes):
+            missing = part.filter(pl.col("m_timestamp").is_null())
+            if example is None and missing.height:
+                example = missing.item(0, "m_message")
+            lines += part.height
+            strays += missing.height
+            yield part
+        if strays:
+            raise line_policy.stray_lines_error(strays, lines, example)
+
+    def csv_options(self):
+        # The schema is needed as well as infer_schema=False, or Polars still guesses a type.
+        return dict(has_header=False, schema={'column_1': pl.String}, infer_schema=False, quote_char=None,
+                    separator=self._csv_separator, encoding="utf8-lossy", truncate_ragged_lines=True)
+
     def load(self):
         force_schema = {'column_1': pl.String} # We should not need this infer_schem = False should be enough. However, it is not.
         n_files = 1
@@ -113,16 +150,16 @@ class RawLoader(BaseLoader):
             self.df = pl.concat(dataframes)
 
         else:
-            self.df = pl.read_csv(self.filename, has_header=False, schema = force_schema, infer_schema=False, quote_char=None,
-                                separator=self._csv_separator, encoding="utf8-lossy",  truncate_ragged_lines=True)
+            super().load()
 
-        self.df = self.df.rename({"column_1": "m_message"})
         logger.info("RawLoader: read %d row(s) from %d file(s).", len(self.df), n_files)
 
 
     #Time stamp preprocessing support if pattern given. 
     def preprocess(self):
-
+        # Renamed here rather than in load() so the chunks sink() reads get the same name.
+        if "column_1" in _names(self.df):
+            self.df = self.df.rename({"column_1": "m_message"})
         if self.timestamp_pattern and self.timestamp_format:
             self._parse_timestamp()
         # Check if only one of the two is specified
@@ -174,20 +211,20 @@ class RawLoader(BaseLoader):
             ])
             self.df = self.df.drop("orig_file_name")
 
+    def _timestamp(self, line):
+        # Shared with _event_cut(), so sink() cuts chunks where preprocess() sees events start.
+        return (line.str.extract(self.timestamp_pattern, group_index=1)
+                .str.strptime(pl.Datetime, self.timestamp_format, strict=self.strict))
+
     def _parse_timestamp(self):
         # Extract the timestamp to own column
         self.df = self.df.with_columns([
-            pl.col("m_message").str.extract(self.timestamp_pattern, group_index=1).alias("timestamp_str"),
+            self._timestamp(pl.col("m_message")).alias("m_timestamp"),
             pl.col("m_message").str.replace(self.timestamp_pattern, '').alias("m_message")
             #pl.col("m_message").str.replace_first(self.timestamp_pattern, '').str.strip().alias("m_message")
         ])
-        
-        #parse the string timestamp to actual timestamp
-        self.df = self.df.with_columns(
-            pl.col("timestamp_str").str.strptime(pl.Datetime, self.timestamp_format, strict=self.strict).alias("m_timestamp")
-        ).drop("timestamp_str")
         # Reorder columns to have 'm_timestamp' as the first column
-        self.df = self.df.select(["m_timestamp"] + [col for col in self.df.columns if col != "m_timestamp"])
+        self.df = self.df.select(["m_timestamp"] + [col for col in _names(self.df) if col != "m_timestamp"])
 
         # A line the pattern found no timestamp on is a continuation of the line above it far more
         # often than it is garbage, so what to do with it is a policy rather than an error. All six
@@ -195,7 +232,9 @@ class RawLoader(BaseLoader):
         self.df = line_policy.to_events(
             self.df,
             line_policy.event_start("parsed", column="m_timestamp"),
-            policy=self.missing_timestamp_action)
+            # _preprocessed_chunks() raises instead, once it has seen the whole file.
+            policy="keep" if self._in_chunk and self.missing_timestamp_action == "raise"
+            else self.missing_timestamp_action)
 
     #No mandatory columns either. 
     def check_mandatory_columns(self):

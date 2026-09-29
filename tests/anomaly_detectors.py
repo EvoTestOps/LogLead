@@ -1,5 +1,7 @@
 import glob
 import os
+import sys
+import traceback
 import yaml
 import polars as pl
 import argparse
@@ -9,6 +11,9 @@ from loglead import AnomalyDetector, NextEventPredictionNgramDetector, select_pr
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
 parser.add_argument('--config', type=str, default='datasets_mid_labels.yml', help='Path to the YAML file containing dataset information. Default is datasets_mid_labels.yml.')
+parser.add_argument('--only-config', action='store_true',
+                    help="Only process files of datasets named in --config. By default every *_lo file in "
+                         "<root_folder>/test_data is processed, whichever config produced it.")
 args = parser.parse_args()
 
 # Read the configuration file
@@ -97,6 +102,7 @@ def run_anomaly_scoring(df, cols_event, numeric_cols, test_frac):
             scored = sad.predict()
             scores = scored["pred_ano_proba"]
             if len(scored) != expected_rows or scores.null_count():
+                mismatches.append(method)
                 print(f"  MISMATCH! {method} returned {len(scored)} rows and {scores.null_count()} "
                       f"null scores for {expected_rows} test rows.")
                 continue
@@ -225,12 +231,12 @@ def run_anomaly_detectors(df, cols_event, numeric_cols, test_frac):
         sad.test_train_split(_narrow(df, {"numeric_cols": numeric_cols}), test_frac=test_frac) 
         sad.evaluate_all_ads(disabled_methods=disabled_methods)
 
-for dataset in datasets:
+def detect_one(dataset):
     dataset_config = next((d for d in config['datasets'] if d['name'] in dataset), None)
 
     if dataset_config and not dataset_config.get('anomaly_detection', True):
         print(f"Skipping anomaly detection for dataset: {dataset}")
-        continue
+        return
 
     # Load the event level data
     primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
@@ -249,4 +255,21 @@ for dataset in datasets:
         print(f"Running structured-column detectors with {primary_file}")
         run_structured_predictors(df, test_frac=0.5, dataset_config=dataset_config)
 
+
+mismatches = []
+failures = []
+if args.only_config:
+    names = [d['name'] for d in config['datasets']]
+    datasets = {d for d in datasets if any(n in d for n in names)}
+for dataset in sorted(datasets):
+    try:
+        detect_one(dataset)
+    except Exception:
+        print(f"FAIL detecting anomalies on {dataset}:")
+        traceback.print_exc(file=sys.stdout)
+        failures.append(dataset)
+
+if failures or mismatches:
+    print(f"Anomaly detectors test complete. FAILED: raised on {failures}, mismatches in {mismatches}")
+    sys.exit(1)
 print("Anomaly detectors test complete.")

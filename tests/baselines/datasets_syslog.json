@@ -1,0 +1,39 @@
+{
+ "syslog": {
+  "hashes": {
+   "app_name": "4845963766025719615",
+   "facility": "6254989961242925992",
+   "file_name": "1973827426841027410",
+   "host": "4312555985804548589",
+   "level": "15209660861096101674",
+   "m_message": "9499445168378466610",
+   "m_timestamp": "3167175348582527092",
+   "pri": "15209660861096101674",
+   "procid": "1543980291022260183"
+  },
+  "height": 787859,
+  "nulls": {
+   "app_name": 0,
+   "facility": 787859,
+   "file_name": 0,
+   "host": 0,
+   "level": 787859,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "pri": 787859,
+   "procid": 23218
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "app_name": "String",
+   "facility": "Int64",
+   "file_name": "String",
+   "host": "String",
+   "level": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "pri": "String",
+   "procid": "String"
+  }
+ }
+}

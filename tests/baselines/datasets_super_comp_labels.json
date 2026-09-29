@@ -1,0 +1,54 @@
+{
+ "thunderbird": {
+  "hashes": {
+   "anomaly": "10415137253175150501",
+   "component": "16377618085443573895",
+   "date": "5589888381475795332",
+   "day": "8129308380695489801",
+   "label": "5805370166380588600",
+   "location": "5776565359997072577",
+   "m_message": "9419472312610276898",
+   "m_timestamp": "18402519334634271867",
+   "month": "13987298368538250590",
+   "normal": "11356271410903834752",
+   "pid": "10898253131445291397",
+   "time": "12670089789636338566",
+   "timestamp": "4480126302505204136",
+   "userid": "7435869505926428341"
+  },
+  "height": 211212192,
+  "nulls": {
+   "anomaly": 0,
+   "component": 1238,
+   "date": 0,
+   "day": 0,
+   "label": 0,
+   "location": 0,
+   "m_message": 485476,
+   "m_timestamp": 0,
+   "month": 0,
+   "normal": 0,
+   "pid": 106981969,
+   "time": 0,
+   "timestamp": 0,
+   "userid": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "component": "String",
+   "date": "String",
+   "day": "String",
+   "label": "String",
+   "location": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "month": "String",
+   "normal": "Boolean",
+   "pid": "String",
+   "time": "String",
+   "timestamp": "String",
+   "userid": "String"
+  }
+ }
+}

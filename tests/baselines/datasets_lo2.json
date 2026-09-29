@@ -1,0 +1,64 @@
+{
+ "lo2": {
+  "hashes": {
+   "anomaly": "6135342197411976298",
+   "m_message": "6337974157525887591",
+   "m_timestamp": "3801270494389836531",
+   "normal": "9682138549936421117",
+   "run": "9026811066410731486",
+   "seq_id": "7030784249180168665",
+   "service": "5691198566596236431",
+   "test_case": "10112648964533295552"
+  },
+  "height": 2854867,
+  "nulls": {
+   "anomaly": 0,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "normal": 0,
+   "run": 0,
+   "seq_id": 0,
+   "service": 0,
+   "test_case": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "normal": "Boolean",
+   "run": "String",
+   "seq_id": "String",
+   "service": "String",
+   "test_case": "String"
+  }
+ },
+ "lo2_seq": {
+  "hashes": {
+   "anomaly": "3373024091984970537",
+   "end_time": "3501830920763257225",
+   "m_message": "1118739942208609732",
+   "normal": "17932765637907947195",
+   "seq_id": "1029022328284086085",
+   "start_time": "12241022158188625406"
+  },
+  "height": 1582,
+  "nulls": {
+   "anomaly": 0,
+   "end_time": 0,
+   "m_message": 0,
+   "normal": 0,
+   "seq_id": 0,
+   "start_time": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "end_time": "Datetime(time_unit='us', time_zone=None)",
+   "m_message": "String",
+   "normal": "Boolean",
+   "seq_id": "String",
+   "start_time": "Datetime(time_unit='us', time_zone=None)"
+  }
+ }
+}

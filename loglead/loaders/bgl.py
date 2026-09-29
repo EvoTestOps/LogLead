@@ -8,9 +8,11 @@ __all__ = ['BGLLoader']
 # Processor for the BGL log file
 # At the moment there are 34470 null messages that are not handled by the loader
 class BGLLoader(BaseLoader):
-    def load(self):
-        self.df = pl.read_csv(self.filename, has_header=False, infer_schema_length=0,
-                              separator=self._csv_separator, ignore_errors=True)
+    supports_streaming = True
+
+    def csv_options(self):
+        return dict(has_header=False, infer_schema_length=0, separator=self._csv_separator,
+                    ignore_errors=True, encoding="utf8-lossy", quote_char=None)
 
     def preprocess(self):
         self._split_and_unnest(["label", "timestamp", "date", "node", "time",

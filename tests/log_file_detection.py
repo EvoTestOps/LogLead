@@ -14,6 +14,7 @@ tests/datasets_auto.yml, which re-loads whole corpora through it and compares ro
 """
 import argparse
 import os
+import sys
 
 import yaml
 
@@ -146,3 +147,5 @@ if missing:
     summary += f" {missing} skipped (not downloaded)."
 print(summary)
 print("Detection test complete.")
+if failures:
+    sys.exit(1)

@@ -1,0 +1,443 @@
+{
+ "adfa": {
+  "hashes": {
+   "label": "1651980973412134255",
+   "m_message": "633395868429861483",
+   "seq_id": "14933339275815815419"
+  },
+  "height": 2747550,
+  "nulls": {
+   "label": 0,
+   "m_message": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "label": "String",
+   "m_message": "String",
+   "seq_id": "String"
+  }
+ },
+ "adfa_seq": {
+  "hashes": {
+   "anomaly": "5288633968626250722",
+   "m_message": "16572138147950265147",
+   "normal": "3838965059559713323",
+   "seq_id": "11017515032086758850"
+  },
+  "height": 5951,
+  "nulls": {
+   "anomaly": 0,
+   "m_message": 0,
+   "normal": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "m_message": "List(String)",
+   "normal": "Boolean",
+   "seq_id": "String"
+  }
+ },
+ "awsctd": {
+  "hashes": {
+   "label": "18321873425837292898",
+   "m_message": "1970053845408908178",
+   "seq_id": "14230996178518675162"
+  },
+  "height": 174847810,
+  "nulls": {
+   "label": 0,
+   "m_message": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "label": "Categorical",
+   "m_message": "String",
+   "seq_id": "Categorical"
+  }
+ },
+ "awsctd_seq": {
+  "hashes": {
+   "anomaly": "13536314373311041230",
+   "label": "13957244057788220826",
+   "m_message": "271198683232813711",
+   "normal": "2953412908824381248",
+   "seq_id": "13414170207254613272"
+  },
+  "height": 592505,
+  "nulls": {
+   "anomaly": 0,
+   "label": 0,
+   "m_message": 0,
+   "normal": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "label": "Categorical",
+   "m_message": "List(String)",
+   "normal": "Boolean",
+   "seq_id": "Categorical"
+  }
+ },
+ "bgl": {
+  "hashes": {
+   "anomaly": "17660094043033241982",
+   "component": "13837425320689324705",
+   "date": "2664188053585475603",
+   "label": "751121702160407956",
+   "level": "18084477614240402597",
+   "m_message": "18233488381975447873",
+   "m_timestamp": "2001897678185547356",
+   "node": "3059958860607564739",
+   "noderepeat": "14535058636866946095",
+   "normal": "7111000209564765988",
+   "time": "5350392100818237646",
+   "timestamp": "10448488461372647693",
+   "type": "11781079092944862352"
+  },
+  "height": 4747963,
+  "nulls": {
+   "anomaly": 0,
+   "component": 0,
+   "date": 0,
+   "label": 0,
+   "level": 0,
+   "m_message": 34470,
+   "m_timestamp": 0,
+   "node": 0,
+   "noderepeat": 0,
+   "normal": 0,
+   "time": 0,
+   "timestamp": 0,
+   "type": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "component": "String",
+   "date": "String",
+   "label": "String",
+   "level": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "node": "String",
+   "noderepeat": "String",
+   "normal": "Boolean",
+   "time": "String",
+   "timestamp": "String",
+   "type": "String"
+  }
+ },
+ "hadoop": {
+  "hashes": {
+   "column_1": "9668657839071000391",
+   "component": "15936700023698376501",
+   "date": "10336128240604162806",
+   "level": "12937129067370608036",
+   "m_message": "9365948567252734847",
+   "m_timestamp": "9535894452668470159",
+   "process": "17269046075064422585",
+   "row_nr_per_file": "7303918333806342461",
+   "seq_id": "773925818248121816",
+   "seq_id_sub": "11325735764341439003",
+   "time": "7757459225191552621"
+  },
+  "height": 180897,
+  "nulls": {
+   "column_1": 0,
+   "component": 0,
+   "date": 0,
+   "level": 0,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "process": 0,
+   "row_nr_per_file": 0,
+   "seq_id": 0,
+   "seq_id_sub": 0,
+   "time": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "column_1": "String",
+   "component": "String",
+   "date": "String",
+   "level": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='ms', time_zone=None)",
+   "process": "String",
+   "row_nr_per_file": "UInt32",
+   "seq_id": "String",
+   "seq_id_sub": "String",
+   "time": "String"
+  }
+ },
+ "hadoop_seq": {
+  "hashes": {
+   "Label": "1243322863849026698",
+   "anomaly": "4565062111971040107",
+   "app_name": "13610497063991783587",
+   "normal": "15591351527760971508",
+   "seq_id": "7870969953252778781"
+  },
+  "height": 55,
+  "nulls": {
+   "Label": 0,
+   "anomaly": 0,
+   "app_name": 0,
+   "normal": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "Label": "String",
+   "anomaly": "Boolean",
+   "app_name": "String",
+   "normal": "Boolean",
+   "seq_id": "String"
+  }
+ },
+ "hdfs": {
+  "hashes": {
+   "component": "13596487496564008722",
+   "date": "592092199015618286",
+   "id": "17694883914522854981",
+   "level": "8839434136120229744",
+   "m_message": "9863557729028793113",
+   "m_timestamp": "4124782472674317190",
+   "seq_id": "62838653467597948",
+   "time": "14710791524062467264"
+  },
+  "height": 11175629,
+  "nulls": {
+   "component": 0,
+   "date": 0,
+   "id": 0,
+   "level": 0,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "seq_id": 0,
+   "time": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "component": "String",
+   "date": "String",
+   "id": "String",
+   "level": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "seq_id": "String",
+   "time": "String"
+  }
+ },
+ "hdfs_seq": {
+  "hashes": {
+   "anomaly": "17676828482373091198",
+   "normal": "17741704926859167439",
+   "seq_id": "16890953110104062523"
+  },
+  "height": 575061,
+  "nulls": {
+   "anomaly": 0,
+   "normal": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "anomaly": "Boolean",
+   "normal": "Boolean",
+   "seq_id": "String"
+  }
+ },
+ "nezha_tt": {
+  "hashes": {
+   "Container": "4874505738634475220",
+   "Node": "10181292660880652272",
+   "PodName": "11094430946520745131",
+   "SpanID": "5942888433307362286",
+   "TimeUnixNano": "4862268319728594957",
+   "Timestamp": "8142517060782090224",
+   "TraceID": "17513187511532103949",
+   "anomaly": "9979303459733688274",
+   "anomaly_folder": "9765597224499105779",
+   "date_folder": "9067490673989331066",
+   "file_name": "1198442347030593041",
+   "inject_type": "3440559703993878380",
+   "m_message": "5116394519999895960",
+   "m_timestamp": "17270172591334364131",
+   "metric_anomaly": "8777442372922091260",
+   "normal": "789852489661260413",
+   "raw_m_message": "12092721148380041105",
+   "row_key": "10038097711961467100",
+   "row_nr": "10038097711961467100",
+   "row_nr_per_file": "3825658453933258545",
+   "seq_id": "5407997223071259407",
+   "severity": "1641305845327651396"
+  },
+  "height": 272270,
+  "nulls": {
+   "Container": 0,
+   "Node": 0,
+   "PodName": 0,
+   "SpanID": 0,
+   "TimeUnixNano": 0,
+   "Timestamp": 0,
+   "TraceID": 0,
+   "anomaly": 0,
+   "anomaly_folder": 0,
+   "date_folder": 0,
+   "file_name": 0,
+   "inject_type": 263489,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "metric_anomaly": 263489,
+   "normal": 0,
+   "raw_m_message": 0,
+   "row_key": 0,
+   "row_nr": 0,
+   "row_nr_per_file": 0,
+   "seq_id": 0,
+   "severity": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "Container": "String",
+   "Node": "String",
+   "PodName": "String",
+   "SpanID": "String",
+   "TimeUnixNano": "String",
+   "Timestamp": "String",
+   "TraceID": "String",
+   "anomaly": "Boolean",
+   "anomaly_folder": "Boolean",
+   "date_folder": "String",
+   "file_name": "String",
+   "inject_type": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "metric_anomaly": "Boolean",
+   "normal": "Boolean",
+   "raw_m_message": "String",
+   "row_key": "UInt32",
+   "row_nr": "UInt32",
+   "row_nr_per_file": "UInt32",
+   "seq_id": "String",
+   "severity": "String"
+  }
+ },
+ "nezha_tt_seq": {
+  "hashes": {
+   "ano_count": "15423464322021383039",
+   "seq_id": "18361070401886341068"
+  },
+  "height": 3507,
+  "nulls": {
+   "ano_count": 0,
+   "seq_id": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "ano_count": "Float64",
+   "seq_id": "String"
+  }
+ },
+ "openstack": {
+  "hashes": {
+   "Content": "2397075429175108039",
+   "EventId": "17318683526053614133",
+   "EventTemplate": "11486280114390151623",
+   "LineId": "15812542988576164761",
+   "ParameterList": "6969187648364327338",
+   "anom_label": "17778886589601972358",
+   "anomaly": "5446883425320489556",
+   "api_round_1": "2707310783017879462",
+   "api_round_2": "44711350264021189",
+   "assertions_round_1": "14119100559960569891",
+   "assertions_round_2": "4107617245147391116",
+   "clusters": "15342824087895684246",
+   "encoded_labels": "8967726880865636704",
+   "hour": "13564441969033241898",
+   "level": "12268408240542518251",
+   "m_message": "15524239718884616836",
+   "m_timestamp": "14073578611273072568",
+   "normal": "10707494792252555592",
+   "parent_service": "11587674324671002390",
+   "pid": "6394512900766361638",
+   "real_index": "42812136292022348",
+   "round": "12455456306430958352",
+   "round_1": "7981199343547530153",
+   "round_2": "9812656119582646303",
+   "service": "14087364913071288135",
+   "test_id": "8808693438432058741",
+   "time_hour": "11206785826123316988",
+   "timestamp": "18170816217620488468"
+  },
+  "height": 217534,
+  "nulls": {
+   "Content": 0,
+   "EventId": 0,
+   "EventTemplate": 211,
+   "LineId": 0,
+   "ParameterList": 0,
+   "anom_label": 0,
+   "anomaly": 0,
+   "api_round_1": 0,
+   "api_round_2": 0,
+   "assertions_round_1": 0,
+   "assertions_round_2": 0,
+   "clusters": 0,
+   "encoded_labels": 0,
+   "hour": 0,
+   "level": 0,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "normal": 0,
+   "parent_service": 0,
+   "pid": 0,
+   "real_index": 0,
+   "round": 0,
+   "round_1": 0,
+   "round_2": 0,
+   "service": 0,
+   "test_id": 0,
+   "time_hour": 0,
+   "timestamp": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "Content": "String",
+   "EventId": "String",
+   "EventTemplate": "String",
+   "LineId": "Int64",
+   "ParameterList": "String",
+   "anom_label": "Int64",
+   "anomaly": "Boolean",
+   "api_round_1": "String",
+   "api_round_2": "String",
+   "assertions_round_1": "String",
+   "assertions_round_2": "String",
+   "clusters": "Int64",
+   "encoded_labels": "Int64",
+   "hour": "String",
+   "level": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "normal": "Boolean",
+   "parent_service": "String",
+   "pid": "String",
+   "real_index": "Int64",
+   "round": "Int64",
+   "round_1": "String",
+   "round_2": "String",
+   "service": "String",
+   "test_id": "Int64",
+   "time_hour": "String",
+   "timestamp": "String"
+  }
+ }
+}

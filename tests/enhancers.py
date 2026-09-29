@@ -1,5 +1,7 @@
 import glob
 import os
+import sys
+import traceback
 import polars as pl
 import yaml
 import shutil
@@ -13,6 +15,9 @@ from loglead.enhancers import EventLogEnhancer, SequenceEnhancer
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
 parser.add_argument('--config', type=str, default='datasets_mid_labels.yml', help='Path to the YAML file containing dataset information. Default is datasets_mid_labels.yml.')
+parser.add_argument('--only-config', action='store_true',
+                    help="Only process files of datasets named in --config. By default every *_lo file in "
+                         "<root_folder>/test_data is processed, whichever config produced it.")
 args = parser.parse_args()
 
 # Read the configuration file
@@ -38,7 +43,7 @@ for f in all_files:
         datasets.add(dataset_name)
 
 # Loop through each dataset and enhance
-for dataset in datasets:
+def enhance_one(dataset):
     
     # Check if enhancement should be skipped for this dataset.
     # Even if it is, create a file where nulls are removed so it can be used for ano detection
@@ -61,7 +66,7 @@ for dataset in datasets:
             if "m_message" in df_seq.columns:
                 df_seq = df_seq.filter(pl.col("m_message").is_not_null())
             df_seq.write_parquet(f"{test_data_path}/{dataset}_ehSkipped_seq.parquet")
-        continue
+        return
 
     # Load the event level data
     primary_file = os.path.join(test_data_path, f"{dataset}.parquet")
@@ -152,4 +157,20 @@ for dataset in datasets:
         print("\nTensorFlow is not installed. Embedding creation not tested")
         # Add any alternative code here if TensorFlow is not available
 
+
+failures = []
+if args.only_config:
+    names = [d['name'] for d in config['datasets']]
+    datasets = {d for d in datasets if any(n in d for n in names)}
+for dataset in sorted(datasets):
+    try:
+        enhance_one(dataset)
+    except Exception:
+        print(f"\nFAIL enhancing {dataset}:")
+        traceback.print_exc(file=sys.stdout)
+        failures.append(dataset)
+
+if failures:
+    print(f"Enhancers test complete. {len(failures)} FAILED: {', '.join(failures)}")
+    sys.exit(1)
 print("Enhancers test complete.")

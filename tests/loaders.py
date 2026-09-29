@@ -1,8 +1,12 @@
 import psutil
 import os
+import sys
 import time
+import traceback
 import yaml
 import argparse
+
+import fingerprint as fp
 
 from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader,
                              HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader,
@@ -12,6 +16,14 @@ from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLo
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
 parser.add_argument('--config', type=str, default='datasets_mid_labels.yml', help='Path to the YAML file containing dataset information. Default is datasets_mid_labels.yml.')
+parser.add_argument('--baseline', choices=('check', 'capture', 'off'), default='check',
+                    help='check: compare each loaded frame with tests/baselines/<config>.json (default). '
+                         'capture: record the fingerprints as the new baseline. off: neither.')
+parser.add_argument('--only', nargs='+', metavar='NAME', default=None,
+                    help='Load only these datasets from the config.')
+parser.add_argument('--keep-full', action='store_true',
+                    help='Keep the full <name>_full.parquet a streamed dataset is written to '
+                         '(deleted after sampling by default).')
 args = parser.parse_args()
 
 # Read the configuration file
@@ -26,6 +38,9 @@ memory = psutil.virtual_memory().available / (1024 ** 3)
 memory = round(memory, 2)
 
 print(f"Loaders test starting. Memory available: {memory}GB. Data folder: {full_data_path}")
+baseline_file = fp.baseline_path(config_file)
+baselines = fp.load_baselines(baseline_file)
+failures = []
 def create_correct_loader(dataset_name, data, system=""):
     loader = None
     if 'log_file' in data:
@@ -36,21 +51,10 @@ def create_correct_loader(dataset_name, data, system=""):
     if dataset_name == "hdfs":
         loader = HDFSLoader(filename=default_path,
                             labels_file_name=os.path.join(full_data_path,dataset_name, data['labels_file']))
-    elif dataset_name == "thunderbird":  # Must have gbs for TB
-        if memory > memory_limit_TB:
-            loader = ThuSpiLibLoader(filename=default_path)
-        else:
-             print("Skipping Thunderbird due to memory limit")
-    elif dataset_name == "spirit": 
-        if memory > memory_limit_TB:
-            loader = ThuSpiLibLoader(filename=default_path)
-        else:
-            print("Skipping Spirit due to memory limit") 
-    elif dataset_name == "liberty": 
-        if memory > memory_limit_TB:
-            loader = ThuSpiLibLoader(filename=default_path, split_component=False)
-        else:
-            print("Skipping Liberty due to memory limit") 
+    elif dataset_name in ("thunderbird", "spirit"):  # Streamed when memory is short, see load_one()
+        loader = ThuSpiLibLoader(filename=default_path)
+    elif dataset_name == "liberty":
+        loader = ThuSpiLibLoader(filename=default_path, split_component=False)
     elif dataset_name == "bgl":
         loader = BGLLoader(filename=default_path)
     elif dataset_name == "profilence":
@@ -119,6 +123,29 @@ def create_correct_loader(dataset_name, data, system=""):
         
     return loader
 
+def check_baseline(key, frame):
+    """Check that loading still gives the rows recorded earlier, or record them with --baseline capture."""
+    if args.baseline == "off":
+        return
+    actual = fp.fingerprint(frame)
+    if args.baseline == "capture":
+        baselines[key] = actual
+        print(f"Baseline captured for {key}: {actual['height']} rows, {len(actual['schema'])} columns")
+        return
+    expected = baselines.get(key)
+    if expected is None:
+        print(f"No baseline for {key} in {baseline_file}; run with --baseline capture to record one.")
+        return
+    problems = fp.compare(expected, actual)
+    if problems:
+        print(f"MISMATCH! {key} differs from its baseline: " + "; ".join(problems))
+        failures.append(f"{key}: baseline")
+    else:
+        note = "" if fp.hashes_comparable(expected, actual) else \
+            f" (content hashes not compared: baseline from polars {expected.get('polars')})"
+        print(f"Baseline OK for {key}{note}")
+
+
 def check_and_save(dataset, loader, config, system=""):
     # Create a test data folder
     test_data_path = os.path.join(full_data_path, "test_data")
@@ -150,6 +177,13 @@ def check_and_save(dataset, loader, config, system=""):
     # Check and print mismatch if any
     if expected_length and len(loader.df) != expected_length and expected_length != 0:
         print(f"MISMATCH! {dataset} expected {expected_length} was {len(loader.df)}. Perhaps old version of data?")
+        failures.append(f"{dataset}: row count")
+
+    check_baseline(dataset, loader.df)
+    if loader.df_seq is not None:
+        # Sequence frames come out of group_by/unique, whose row order varies from run to run.
+        df_seq = loader.df_seq.sort("seq_id") if "seq_id" in loader.df_seq.columns else loader.df_seq
+        check_baseline(f"{dataset}_seq", df_seq)
 
     # Reduce data if reduction_fraction is specified
     if reduction_fraction:
@@ -160,10 +194,75 @@ def check_and_save(dataset, loader, config, system=""):
     if any(sub in dataset for sub in ["hdfs", "profilence", "hadoop", "adfa", "awsctd", "lo2"]):
         loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_lo_seq.parquet")  
 
+def stream_and_save(dataset_name, dataset, loader):
+    """Load a dataset too big for memory: sink it to parquet, check it, keep a sample for later stages.
+
+    Memory stays bounded by a batch, so this handles datasets that do not fit in RAM. The row
+    count and baseline checks run as streaming aggregations over the written file; the sample
+    that enhancers.py and anomaly_detectors.py get is drawn with loglead.streaming.sample.
+    """
+    from loglead.streaming import count_rows, sample
+
+    test_data_path = os.path.join(full_data_path, "test_data")
+    os.makedirs(test_data_path, exist_ok=True)
+    full = os.path.join(test_data_path, f"{dataset_name}_full.parquet")
+    seq_full = os.path.join(test_data_path, f"{dataset_name}_full_seq.parquet")
+    loader.sink(full, seq_path=seq_full)
+    rows = count_rows(full)
+    expected_length = dataset.get('expected_length')
+    if expected_length and rows != expected_length:
+        print(f"MISMATCH! {dataset_name} expected {expected_length} was {rows}. Perhaps old version of data?")
+        failures.append(f"{dataset_name}: row count")
+    check_baseline(dataset_name, full)
+    if loader.df_seq is not None:
+        check_baseline(f"{dataset_name}_seq", loader.df_seq.sort("seq_id"))
+    fraction = dataset.get('reduction_fraction') or 1.0
+    reduced = sample(full, fraction=fraction, seed=42)
+    reduced.write_parquet(f"{test_data_path}/{dataset_name}_lo.parquet")
+    print(f"Streamed {rows} rows of {dataset_name} to {full}; kept a {fraction} sample of "
+          f"{reduced.height} rows as {dataset_name}_lo.parquet")
+    if not args.keep_full:
+        os.remove(full)
+        if os.path.exists(seq_full):
+            os.remove(seq_full)
+
+
+def use_streaming(dataset_name, dataset, loader):
+    """Stream when the config asks for it, or when an eager load would not fit in memory."""
+    if not getattr(loader, "supports_streaming", False):
+        return False
+    if dataset.get('stream'):
+        return True
+    return dataset_name in ("thunderbird", "spirit", "liberty") and memory <= memory_limit_TB
+
+
+def load_one(dataset_name, dataset, system=""):
+    label = f"{dataset_name} ({system})" if system else dataset_name
+    loader = create_correct_loader(dataset_name, dataset, system)
+    if loader is None:
+        return
+    start_time = time.time()
+    try:
+        if use_streaming(dataset_name, dataset, loader):
+            print(f"Streaming {label} (stream: {bool(dataset.get('stream'))}, memory available {memory:.1f}GB)")
+            stream_and_save(dataset_name, dataset, loader)
+            print(f"Loading {label} took {time.time() - start_time:.2f}s")
+            return
+        loader.execute()
+        print(f"Loading {label} took {time.time() - start_time:.2f}s")
+        check_and_save(dataset_name, loader, config, system)
+    except Exception:
+        print(f"FAIL loading {label}:")
+        traceback.print_exc(file=sys.stdout)
+        failures.append(f"{label}: raised")
+
+
 # Loop through the datasets in the configuration file
 for dataset in config['datasets']:
     dataset_name = dataset['name']
     memory = psutil.virtual_memory().available / (1024 ** 3)
+    if args.only and dataset_name not in args.only:
+        continue
 
     skip_loader = not dataset.get('load', True)
     if skip_loader:
@@ -174,20 +273,14 @@ for dataset in config['datasets']:
     if dataset_name == "nezha":
         for system in dataset['systems']:
             print(f"System: {system}")
-            loader = create_correct_loader(dataset_name, dataset, system)
-            if loader is None:
-                continue
-            start_time = time.time()
-            loader.execute()
-            print(f"Loading {dataset_name} ({system}) took {time.time() - start_time:.2f}s")
-            check_and_save(dataset_name, loader, config, system)
+            load_one(dataset_name, dataset, system)
     else:
-        loader = create_correct_loader(dataset_name, dataset)
-        if loader is None:
-            continue
-        start_time = time.time()
-        loader.execute()
-        print(f"Loading {dataset_name} took {time.time() - start_time:.2f}s")
-        check_and_save(dataset_name, loader, config)
+        load_one(dataset_name, dataset)
 
+if args.baseline == "capture":
+    fp.save_baselines(baseline_file, baselines)
+    print(f"Baselines written to {baseline_file}")
+if failures:
+    print(f"Loading test complete. {len(failures)} FAILED: {', '.join(failures)}")
+    sys.exit(1)
 print("Loading test complete.")

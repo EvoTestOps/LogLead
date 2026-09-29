@@ -4,6 +4,7 @@ datasets:
   - name: liberty
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
     log_file: liberty2.log
+    stream: true   # sink to parquet instead of loading whole; memory stays flat
     download: true
     load: true
     enhance: true 
@@ -13,6 +14,7 @@ datasets:
   - name: spirit
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
     log_file: spirit2.log
+    stream: true   # sink to parquet instead of loading whole; memory stays flat
     download: true
     load: true
     enhance: true 
@@ -22,6 +24,7 @@ datasets:
   - name: thunderbird
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
     log_file: tbird2.log 
+    stream: true   # sink to parquet instead of loading whole; memory stays flat
     download: true
     load: true
     enhance: true 

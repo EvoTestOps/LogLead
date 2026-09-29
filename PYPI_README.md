@@ -136,7 +136,7 @@ uv run demo/HDFS_samples.py                          # basic demos
 uv run demo/TB_samples.py
 uv run demo/parser_benchmark/ano_detection.py         # parser benchmark
 uv run demo/parser_benchmark/parsing_speed.py
-uv run tests/main.py                                  # full test suite
+uv run tests/run.py mid                               # full test suite (tests/run.py --list for all suites)
 ```
 
 ## Example of Anomaly Detection results

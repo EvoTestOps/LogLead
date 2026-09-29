@@ -267,14 +267,16 @@ python ano_detection.py
 python parsing_speed.py
 ```
 
-Run full tests
+Run tests. `tests/run.py --list` shows every suite and what it needs; each step runs in its own process and a summary with timings and peak memory is printed at the end.
 ```
-uv run tests/main.py
+uv run tests/run.py smoke          # bundled samples only, a few minutes
+uv run tests/run.py mid            # downloads and tests the mid-sized datasets (~30 min)
+uv run tests/run.py full           # everything that runs unattended, except the supercomputer logs
+uv run tests/run.py super          # Thunderbird/Spirit/Liberty, streamed under a memory cap (hours)
 ```
 Or with `pip`:
 ```
-cd tests
-python main.py
+python tests/run.py smoke
 ```
 
 ## Example of Anomaly Detection results

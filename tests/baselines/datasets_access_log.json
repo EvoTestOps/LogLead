@@ -1,0 +1,60 @@
+{
+ "access_log": {
+  "hashes": {
+   "body_bytes_sent": "12800344100573821514",
+   "http_referer": "14793121927928344631",
+   "http_user_agent": "2156774339002992664",
+   "http_x_forwarded_for": "10585442886112962235",
+   "ident": "2474420260810687940",
+   "m_message": "16412735135701925549",
+   "m_timestamp": "18163991405577707889",
+   "method": "15358595244346661291",
+   "path": "4496693299670938827",
+   "protocol": "15520167180100720590",
+   "remote_addr": "242113818798089762",
+   "remote_user": "7587657366942545507",
+   "request": "748411524801148404",
+   "seq_id": "242113818798089762",
+   "status": "7430176021008612684",
+   "time_local": "6381330516284625761"
+  },
+  "height": 10365152,
+  "nulls": {
+   "body_bytes_sent": 0,
+   "http_referer": 1646359,
+   "http_user_agent": 14477,
+   "http_x_forwarded_for": 10341086,
+   "ident": 10365152,
+   "m_message": 0,
+   "m_timestamp": 0,
+   "method": 0,
+   "path": 43,
+   "protocol": 75,
+   "remote_addr": 0,
+   "remote_user": 10365150,
+   "request": 0,
+   "seq_id": 0,
+   "status": 0,
+   "time_local": 0
+  },
+  "polars": "1.44.2",
+  "schema": {
+   "body_bytes_sent": "Int64",
+   "http_referer": "String",
+   "http_user_agent": "String",
+   "http_x_forwarded_for": "String",
+   "ident": "String",
+   "m_message": "String",
+   "m_timestamp": "Datetime(time_unit='us', time_zone=None)",
+   "method": "String",
+   "path": "String",
+   "protocol": "String",
+   "remote_addr": "String",
+   "remote_user": "String",
+   "request": "String",
+   "seq_id": "String",
+   "status": "Int64",
+   "time_local": "String"
+  }
+ }
+}
