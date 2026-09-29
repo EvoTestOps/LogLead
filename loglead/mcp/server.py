@@ -80,6 +80,11 @@ sequence_line_event_prediction, which learns event order from the comparison fol
 
 5) Try relaxing the mask as well and remasking with it. Too tight mask can miss anomalies.
 
+Folder arguments: distance_*, plot_* and new_tokens take one exact target_folder per
+call (anomaly_* also accept "ALL", a list or a wildcard). Several
+comparison_folders go in a JSON list (["a", "b"]); a comma-separated string is read
+as a single folder name.
+
 Write custom scripts only as last resort. The tools listed here are faster as they run on top of
 Rust and are optimized for speed. Custom scripts will be slower and will not scale to large log folders.
 """)
@@ -1301,8 +1306,10 @@ def distance_folder_content(
     sharply (e.g. 0 one way, 0.7 the other).
     Args:
         session_id: Handle from open_log_root.
-        target_folder: Exact log folder name to investigate.
-        comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
+        target_folder: One exact log folder name per call -- no list, "ALL" or
+            wildcard; call again for another target.
+        comparison_folders: "ALL", a JSON list of names (["a", "b"]), an int N,
+            or a "Prefix*" wildcard. A comma-separated string is read as one name.
         mask: Compare masked text. Requires a session opened with mask=True.
         content_format: "Words", "3grams", "Sklearn" (raw text), or
             "Parse-<Algorithm>" such as "Parse-Tip" or "Parse-Drain".
