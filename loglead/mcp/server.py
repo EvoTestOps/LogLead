@@ -448,7 +448,7 @@ def open_log_root(
     format: str = "auto",
     max_detect_files: int = DEFAULT_MAX_DETECT_FILES,
     mask: bool = True,
-    mask_pattern: str = "myllari_extended",
+    mask_pattern: str = masking.DEFAULT_PATTERN,
     parsers: Optional[Sequence[str]] = None,
     file_name_normalizer: str = "none",
     min_file_size: int = 0,
@@ -510,8 +510,10 @@ def open_log_root(
             differently. Ignored unless format="auto".
         mask: Replace volatile tokens (ids, IPs, timestamps, hex) with
             placeholders. Almost always wanted.
-        mask_pattern: One of the built-ins -- "myllari_extended", "myllari",
-            "drain_loglead", "drain_orig" -- or the name of a pattern
+        mask_pattern: A built-in -- "merged" (the default, every per-dataset
+            mask below in one), a per-dataset mask ("hdfs", "bgl", "lo2", "zeek",
+            ...; see list_mask_patterns), or LogDelta's "myllari_extended",
+            "myllari", "drain_loglead", "drain_orig" -- or the name of a pattern
             registered earlier with register_mask_pattern, to use your own
             regexes instead of or on top of a built-in one. See
             list_mask_patterns for what is available.
@@ -606,8 +608,8 @@ def register_mask_pattern(
 
     Args:
         name: How this pattern is referenced later. Letters, digits, "_" and
-            "-" only; cannot reuse a built-in name (myllari_extended,
-            myllari, drain_loglead, drain_orig).
+            "-" only; cannot reuse a built-in name (merged, the per-dataset
+            masks, myllari_extended, myllari, drain_loglead, drain_orig).
         patterns: `[{"replacement": "${start}<APP_ID>${end}", "regex": "..."}, ...]`,
             applied in this order. Wrap the part that must survive in named
             groups `start`/`end` the way the built-ins do (see
@@ -636,13 +638,22 @@ def register_mask_pattern(
 
 @tool
 def list_mask_patterns() -> dict:
-    """List built-in and registered mask patterns, with what each one matches."""
+    """List built-in and registered mask patterns, with what each one matches.
+
+    The per-dataset masks are given as positions in "merged" (with their
+    replacement, for reading): every pair they use is there, regex included.
+    """
     builtins = {
         pattern_name: [{"replacement": r, "regex": p} for r, p in pattern]
         for pattern_name, pattern in masking.PATTERNS.items()
+        if pattern_name not in masking.DATASET_MASKS
     }
+    position = {pair: i for i, pair in enumerate(masking.merged)}
     return {
         "builtin": builtins,
+        "dataset_masks": {name: [{"merged_index": position[pair], "replacement": pair[0]}
+                                 for pair in pattern]
+                          for name, pattern in masking.DATASET_MASKS.items()},
         "custom": STORE.mask_registry.list_records(),
     }
 
@@ -658,8 +669,8 @@ def remask_log_root(session_id: str, mask_pattern: str) -> dict:
 
     Args:
         session_id: Handle from open_log_root.
-        mask_pattern: A built-in name ("myllari_extended", "myllari",
-            "drain_loglead", "drain_orig") or one registered with
+        mask_pattern: A built-in name ("merged", a per-dataset mask such as
+            "hdfs", or LogDelta's "myllari_extended") or one registered with
             register_mask_pattern. A session opened with mask=False can be
             given a mask this way.
     """
@@ -2453,7 +2464,7 @@ def run_config(config_path: str, session_id: Optional[str] = None,
     patterns = regex_masking.get("pattern") or []
     # LogDelta applies each pattern in turn but normalize() is idempotent, so
     # only the last one ever took effect. Use it directly.
-    mask_pattern = patterns[-1]["name"] if patterns else "myllari_extended"
+    mask_pattern = patterns[-1]["name"] if patterns else masking.DEFAULT_PATTERN
 
     pre_parse = config.get("pre_parse") or {}
     parsers = []

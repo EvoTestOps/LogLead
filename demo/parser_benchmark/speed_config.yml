@@ -32,7 +32,7 @@ datasets:
     filename: "/bgl/BGL.log"
     loader: "BGLLoader"
   # Pro:
-  #   filename: "/profilence/*.txt"
+  #   filename: "/pro_android/*.txt"
   #   loader: "ProLoader"
   Hdfs:
     filename: "/hdfs/HDFS.log"

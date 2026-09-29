@@ -221,7 +221,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
         # for the plain-text reading LogDelta does.
         format=format,
         mask=True,
-        mask_pattern="myllari_extended",
+        mask_pattern="merged",
         parsers=["tip"],
         # Hadoop file names embed the folder id, so without this no file appears
         # in more than one log folder and L3/L4 have nothing to compare.
@@ -247,7 +247,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     again = server.open_log_root(
         # Every argument that shapes the frame has to match for the cache to be hit, format
         # included -- it decides which loader ran and therefore every column.
-        path=log_root_path, format=format, mask=True, mask_pattern="myllari_extended",
+        path=log_root_path, format=format, mask=True, mask_pattern="merged",
         parsers=["tip"], file_name_normalizer="strip_folder_id", folder_names=names,
         session_id="demo2",
     )

@@ -143,7 +143,7 @@ _DATASET_PATTERNS = (
     ("hdfs", r'^\d{6} \d{6} \d+ [A-Z]+ '),
     ("bgl", r'^\S+ \d{9,10} \d{4}\.\d{2}\.\d{2} \S+ \d{4}-\d{2}-\d{2}-\d{2}\.\d{2}\.\d{2}\.\d+ '),
     ("thuspilib", r'^\S+ \d{9,10} \d{4}\.\d{2}\.\d{2} \S+ [A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}:\d{2} '),
-    ("profilence", r'^\d+ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}\.\d{3} '),
+    ("pro_android", r'^\d+ \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}\.\d{3} '),
 )
 
 # Timestamp shapes for text that is none of the named formats, as (regex capturing the timestamp,
@@ -409,10 +409,10 @@ def detect_dataset(path, system=None):
                          {"filename_pattern": "*.log", "labels_file_name": labels},
                          format="hadoop")
 
-    # Profilence: the label is the file name, so both spellings have to be present.
+    # pro_android: the label is the file name, so both spellings have to be present.
     if any(fnmatch.fnmatch(n, "success*.txt") for n in names) and \
             any(fnmatch.fnmatch(n, "fail*.txt") for n in names):
-        return Detection(ProLoader, {"_glob": os.path.join(path, "*.txt")}, format="profilence")
+        return Detection(ProLoader, {"_glob": os.path.join(path, "*.txt")}, format="pro_android")
 
     # HDFS: one big log plus its labels, which the downloader unpacks into preprocessed/.
     labels = _first_existing(os.path.join(path, "preprocessed", "anomaly_label.csv"),
@@ -463,12 +463,12 @@ def _detect_dataset_file(path, sample):
             return Detection(ThuSpiLibLoader, {"split_component": split},
                              format="thunderbird/spirit/liberty", rate=rate, lines=len(sample))
 
-        if name == "profilence":
+        if name == "pro_android":
             # ProLoader takes the anomaly label from the file name, so without that convention it
             # would silently mark every sequence anomalous.
             if not base.startswith(("success", "fail")):
                 continue
-            return Detection(ProLoader, {}, format="profilence", rate=rate, lines=len(sample))
+            return Detection(ProLoader, {}, format="pro_android", rate=rate, lines=len(sample))
     return None
 
 

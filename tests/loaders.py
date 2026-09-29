@@ -53,7 +53,7 @@ def create_correct_loader(dataset_name, data, system=""):
             print("Skipping Liberty due to memory limit") 
     elif dataset_name == "bgl":
         loader = BGLLoader(filename=default_path)
-    elif dataset_name == "profilence":
+    elif dataset_name == "pro_android":
         loader = ProLoader(filename=default_path)
     elif dataset_name == "hadoop":
         loader = HadoopLoader(filename=default_path,
@@ -157,7 +157,7 @@ def check_and_save(dataset, loader, config, system=""):
 
     # Save the data used for anomaly_detectors tests.
     loader.df.write_parquet(f"{test_data_path}/{dataset}_lo.parquet") 
-    if any(sub in dataset for sub in ["hdfs", "profilence", "hadoop", "adfa", "awsctd", "lo2"]):
+    if any(sub in dataset for sub in ["hdfs", "pro_android", "hadoop", "adfa", "awsctd", "lo2"]):
         loader.df_seq.write_parquet(f"{test_data_path}/{dataset}_lo_seq.parquet")  
 
 # Loop through the datasets in the configuration file

@@ -34,7 +34,7 @@ datasets:
       - https://github.com/IntelligentDDS/Nezha/tree/main/construct_data/
       - https://github.com/IntelligentDDS/Nezha/tree/main/rca_data/
     download: true
-  # - name: profilence
+  # - name: pro_android
   #   download: true
   - name: adfa
     url: https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset/raw/master/ADFA-LD.zip

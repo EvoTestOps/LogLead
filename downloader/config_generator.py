@@ -10,7 +10,7 @@ from download_data import main as download_data_main
 """
 This UI based tool is primarily meant for generating more varied configuration files faster. It can also be more approachable to some users.
 
-Profilence cannot be downloaded because it is not a public dataset. ADFA and AWSCTD should not be enhanced because they are already parsed events.
+pro_android cannot be downloaded because it is not a public dataset. ADFA and AWSCTD should not be enhanced because they are already parsed events.
 
 The buttons to run the scripts in the UI always fetches the .yml file configured in the text box. Note that it might be different than the selection in the UI.
 """
@@ -109,7 +109,7 @@ datasets = [
         }
     },
     {
-        'name': 'profilence',
+        'name': 'pro_android',
         'log_file': '*.txt',
         'download': False,
         'load': False,
@@ -218,7 +218,7 @@ class ConfigGenerator(tk.Tk):
                     'expected_length': dataset['expected_length']
                 })
 
-            ttk.Checkbutton(dataset_frame, text="Download", variable=var_download, state='disabled' if dataset['name'] == 'profilence' else 'normal').pack(anchor='w')
+            ttk.Checkbutton(dataset_frame, text="Download", variable=var_download, state='disabled' if dataset['name'] == 'pro_android' else 'normal').pack(anchor='w')
             ttk.Checkbutton(dataset_frame, text="Load", variable=var_load).pack(anchor='w')
             ttk.Checkbutton(dataset_frame, text="Enhance", variable=var_enhance, state='disabled' if dataset['name'] in ['adfa', 'awsctd'] else 'normal').pack(anchor='w')
             ttk.Checkbutton(dataset_frame, text="Anomaly Detection", variable=var_anomaly_detection).pack(anchor='w')

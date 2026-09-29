@@ -626,7 +626,7 @@ class GridContext:
                 "input_data_folder": self.path,
                 "output_folder": os.path.join(self.workdir, "run-config-output"),
                 "regex_masking": {"enabled": True,
-                                  "pattern": [{"name": "myllari_extended"}]},
+                                  "pattern": [{"name": "merged"}]},
                 "steps": {"distance_run_content": [{"target_run": self.target}]},
             }, handle)
         sid = self.sid + "-cfg"

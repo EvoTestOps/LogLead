@@ -1180,7 +1180,7 @@ output_folder: output
 regex_masking:
   enabled: true
   pattern:
-    - name: myllari_extended
+    - name: merged
 pre_parse:
   enabled: true
   parsers:
@@ -1202,6 +1202,15 @@ steps:
 """
     config_path = config_dir / "logdelta_config.yml"
     config_path.write_text(config)
+
+    # run_config cannot force a fresh read, and a past run's stage 10 may have left
+    # Drain in the cache it hits. Refresh it here so the parser check sees only the
+    # config's parser.
+    server.open_log_root(path=str(log_root), format="auto", mask=True,
+                         mask_pattern="merged", parsers=["tip"],
+                         file_name_normalizer="strip_folder_id",
+                         session_id="config-session", refresh=True)
+    server.close_log_root("config-session")
 
     result = timed("run_config", server.run_config, str(config_path),
                    session_id="config-session", format="auto")
@@ -1225,7 +1234,7 @@ steps:
              sorted(plot_step[0]["params"]["plots"]) if plot_step else None,
              sorted(visualize.PLOTS))
     check.eq("the config's masking pattern was used",
-             result["log_root"]["mask_pattern"], "myllari_extended")
+             result["log_root"]["mask_pattern"], "merged")
     check.eq("its pre_parse parser ran", result["log_root"]["parsers"], ["tip"])
     check.eq("its preprocessing step became our normalizer",
              result["log_root"]["file_name_normalizer"], "strip_folder_id")

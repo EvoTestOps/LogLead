@@ -43,7 +43,7 @@ datasets: #Each dataset will be a single latex table in the output
   #   predict: event 
   #   normalize: False 
 #  Pro:
-#    filename: "/profilence/*.txt"
+#    filename: "/pro_android/*.txt"
 #    loader: "ProLoader"
 #  Nezha-TrainTicket:
 #    filename: "/nezha/"

@@ -60,7 +60,7 @@ datasets:
     web_shop:
       expected_length: 3958203
       reduction_fraction: 0.025
-  # - name: profilence
+  # - name: pro_android
   #   log_file: "*.txt"
   #   download: true
   #   load: true

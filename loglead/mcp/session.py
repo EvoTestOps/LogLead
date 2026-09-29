@@ -30,7 +30,7 @@ from pathlib import Path
 
 import polars as pl
 
-from ..delta import export, log_root
+from ..delta import export, log_root, masking
 from ..enhancers import EventLogEnhancer
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 
@@ -185,7 +185,7 @@ class Session:
             "format": self.format,
             "max_detect_files": self.max_detect_files,
             "mask": self.masked,
-            "mask_pattern": self.mask_pattern or "myllari_extended",
+            "mask_pattern": self.mask_pattern or masking.DEFAULT_PATTERN,
             "parsers": self.parsers,
             "file_name_normalizer": self.file_name_normalizer,
             "min_file_size": self.min_file_size,
@@ -394,7 +394,7 @@ class SessionStore:
     # -- lifecycle --------------------------------------------------------- #
 
     def open(self, path, filename_pattern="*.log", mask=True,
-             mask_pattern="myllari_extended", parsers=(), file_name_normalizer="none",
+             mask_pattern=masking.DEFAULT_PATTERN, parsers=(), file_name_normalizer="none",
              min_file_size=0, output_dir=None, table_format="csv", session_id=None,
              refresh=False, folder_names=None, keep_original_folder_name=True,
              format="auto", max_detect_files=DEFAULT_MAX_DETECT_FILES):

@@ -3,6 +3,24 @@
 Notable changes to LogLead. Versions follow [semantic versioning](https://semver.org/): a major
 bump means something that worked before needs changing.
 
+## Unreleased
+
+### Added
+
+- **Per-dataset masks** in `loglead.delta.masking`, one for each dataset family LogLead loads
+  (`hdfs`, `bgl`, `hadoop`, `thunderbird`, `spirit`, `liberty`, `openstack`, `lo2`, `nezha`, `zeek`,
+  `access_log`, `iis`, `syslog`, `logfmt`, `loghub`, `gha`, `pro_android`, `comp_ws`, `ait_ads`,
+  `security_datasets`), and **`merged`**, their union. All share one ordering, most specific
+  first, so an IPv4 address is `<IP>` rather than myllari's `<VERSION>`.
+
+### Changed
+
+- `merged` replaces `myllari_extended` as the default mask of `loglead.delta` and the MCP server.
+  Pass `mask_pattern="myllari_extended"` to keep the old templates. `EventLogEnhancer.mask()`'s own
+  default is unchanged.
+- `list_mask_patterns` lists the per-dataset masks under `dataset_masks` as positions in `merged`,
+  where their regexes are.
+
 ## 2.1.0 - 2026-09-22
 
 The headline addition is order-aware anomaly detection: two detectors that score a sequence by the

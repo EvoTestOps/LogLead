@@ -47,7 +47,7 @@ Typical use::
     from loglead.delta import log_root, anomaly
 
     df, info = log_root.read_log_root("/data/hadoop")   # format="auto" by default
-    df = EventLogEnhancer(df).mask(regexs=masking.get_pattern("myllari_extended"))
+    df = EventLogEnhancer(df).mask(regexs=masking.get_pattern(masking.DEFAULT_PATTERN))
     results, df = anomaly.anomaly_folder(df, target_folder="ALL", content_format="Words")
     print(results.sort("rank_sum", descending=True).head())
 

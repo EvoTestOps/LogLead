@@ -39,7 +39,7 @@ BY_NAME = {
     "thunderbird": "ThuSpiLibLoader",
     "spirit": "ThuSpiLibLoader",
     "liberty": "ThuSpiLibLoader",
-    "profilence": "ProLoader",
+    "pro_android": "ProLoader",
     "nezha": "NezhaLoader",
     "adfa": "ADFALoader",
     "awsctd": "AWSCTDLoader",

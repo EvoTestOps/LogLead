@@ -53,7 +53,7 @@ shipped spec, listed with its own landing page in that loader's section below.
 | [`LO2Loader`](lo2.py) | tree of runs/test-cases/services (text logs + JSON metrics) | LO2v2, legacy (Light-OAuth2 microservice logs & metrics) | [zenodo.org/records/18937117](https://zenodo.org/records/18937117) |
 | [`ADFALoader`](adfa.py) | directories of `.txt` (already-parsed syscall ids) | ADFA-LD | [github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) |
 | [`AWSCTDLoader`](awsctd.py) | directories of `.csv` (syscall names, one sequence per file) | AWSCTD | [github.com/DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD) |
-| [`ProLoader`](pro.py) | directory of files | Profilence | not a public dataset (see below) |
+| [`ProLoader`](pro.py) | directory of files | pro_android | not a public dataset (see below) |
 
 ## Detecting
 
@@ -71,7 +71,7 @@ Detection happens in two stages, most specific first:
    sibling file both confirms the dataset and supplies the argument. A dataset whose labels are
    missing is deliberately **not** recognized as that dataset — it falls through to stage 2 and loads unlabeled rather
    than crashing or silently marking everything normal. Covers HDFS, Hadoop, ADFA, AWSCTD, Nezha,
-   LO2, Profilence, BGL and Thunderbird/Spirit/Liberty. Not every dataset keeps its labels in a
+   LO2, pro_android, BGL and Thunderbird/Spirit/Liberty. Not every dataset keeps its labels in a
    file: LO2's label is the *name of the test-case directory* (`correct` vs the error injected), so
    there the `correct/` directory is what the probe looks for. **`dataset_probe=False`** skips this
    check, and you need that when a line has to carry the file it came from. These dataset loaders
@@ -379,7 +379,7 @@ detection.
 ### `ProLoader` ([`pro.py`](pro.py))
 
 Reads a directory of positional whitespace-separated text files; the anomaly label comes from
-whether the file name starts with `success`. Dataset: **Profilence** — not a public dataset (see
+whether the file name starts with `success`. Dataset: **pro_android** — not a public dataset (see
 the "Not open dataset" comment in the loader itself); included because the rest of the pipeline
 (enhancers, anomaly detectors) is exercised against it internally, not because the data is
 downloadable.
