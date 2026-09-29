@@ -16,6 +16,28 @@ root_folder: '~/Datasets'
 # 0.623. Do not add LO2v1 back alongside it.
 
 datasets:
+  # LO2v2Loader over the same archive as the lo2 entry below. Listed first on purpose:
+  # enhancers.py and anomaly_detectors.py find an entry by substring of the parquet name, and
+  # "lo2" is a substring of "lo2v2_lo" too.
+  - name: lo2v2
+    loader: lo2v2
+    download: false             # the lo2 entry downloads the archive both entries read
+    load: true
+    enhance: true
+    anomaly_detection: true
+    folder: light-oauth2-logs
+    # The same selection as the lo2 entry, spelled out rather than sampled. Every run is read, and
+    # a run that lacks the error case still contributes its correct case.
+    test_cases: [correct, access_token_client_secret_wrong_401]
+    # Stack-trace lines stay as rows of their own with the time of the line above; lo2 drops them.
+    continuation_lines: fill-lastseen
+    # 1589 log files -> 3,746,079 events.
+    expected_length: 3746079
+    predictor_cols:
+      numeric: [nep_abs_min, nep_abs_max, eve_len_min, eve_len_max, eve_len_med]
+      # test_case is the label itself, so it must never be a feature.
+      categorical: [service]
+    reduction_fraction: 0.2
   - name: lo2
     loader: lo2
     url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1

@@ -6,7 +6,8 @@ import argparse
 
 from loglead.loaders import (AccessLogLoader, AutoLoader, BGLLoader, ThuSpiLibLoader, HDFSLoader,
                              HadoopLoader, ProLoader, NezhaLoader, ADFALoader, AWSCTDLoader,
-                             DelimitedLoader, JsonLoader, LogfmtLoader, SyslogLoader, LO2Loader)
+                             DelimitedLoader, JsonLoader, LogfmtLoader, SyslogLoader, LO2Loader,
+                             LO2v2Loader)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Dataset Loader Configuration')
@@ -82,6 +83,12 @@ def create_correct_loader(dataset_name, data, system=""):
                            dup_errors=data.get('dup_errors', True),
                            single_error_type=data.get('single_error_type'),
                            single_service=data.get('single_service', ''))
+    elif dataset_name == "lo2v2":
+        # Reads the same unpacked archive as the lo2 entry, so the path is lo2's, not the entry name's.
+        loader = LO2v2Loader(filename=os.path.join(full_data_path, "lo2", data.get('folder', '')),
+                             test_cases=data.get('test_cases'),
+                             services=data.get('services'),
+                             continuation_lines=data.get('continuation_lines', 'fill-lastseen'))
     #TODO from here on we no longer test dataset_name but something else. 
     #Code created by idiot Claude and cannot even fix it. 
     #Needs to be alligend later with the dataset_name above.

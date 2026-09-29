@@ -49,7 +49,8 @@ shipped spec, listed with its own landing page in that loader's section below.
 | [`BGLLoader`](bgl.py) | one file | BlueGene/L (BGL) | [github.com/logpai/loghub/tree/master/BGL](https://github.com/logpai/loghub/tree/master/BGL) |
 | [`ThuSpiLibLoader`](supercomputers.py) | one file | Thunderbird / Spirit / Liberty | [usenix.org/cfdr-data#hpc4](https://www.usenix.org/cfdr-data#hpc4) |
 | [`NezhaLoader`](nezha.py) | tree of CSVs + JSONs (logs, traces, metrics, fault labels) | Nezha (TrainTicket, WebShop) | [github.com/IntelligentDDS/Nezha](https://github.com/IntelligentDDS/Nezha) |
-| [`LO2Loader`](lo2.py) | tree of runs/test-cases/services (text logs + JSON metrics) | LO2v2 (Light-OAuth2 microservice logs & metrics) | [zenodo.org/records/18937117](https://zenodo.org/records/18937117) |
+| [`LO2v2Loader`](lo2v2.py) | tree of runs/test-cases/services (text logs) | LO2v2 (Light-OAuth2 microservice logs) | [zenodo.org/records/18937117](https://zenodo.org/records/18937117) |
+| [`LO2Loader`](lo2.py) | tree of runs/test-cases/services (text logs + JSON metrics) | LO2v2, legacy (Light-OAuth2 microservice logs & metrics) | [zenodo.org/records/18937117](https://zenodo.org/records/18937117) |
 | [`ADFALoader`](adfa.py) | directories of `.txt` (already-parsed syscall ids) | ADFA-LD | [github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset](https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset) |
 | [`AWSCTDLoader`](awsctd.py) | directories of `.csv` (syscall names, one sequence per file) | AWSCTD | [github.com/DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD) |
 | [`ProLoader`](pro.py) | directory of files | Profilence | not a public dataset (see below) |
@@ -306,7 +307,40 @@ log/trace/metric dataset, covering two systems (pass as the loader's `system` ar
 - `TrainTicket` — [github.com/FudanSELab/train-ticket](https://github.com/FudanSELab/train-ticket)
 - `WebShop` — [github.com/GoogleCloudPlatform/microservices-demo](https://github.com/GoogleCloudPlatform/microservices-demo)
 
+### `LO2v2Loader` ([`lo2v2.py`](lo2v2.py))
+
+Reads the same `run/test_case/service` tree as `LO2Loader`, and is the one to use for new work.
+Each test case holds one log file per microservice (`client`, `code`, `key`, `refresh-token`,
+`service`, `token`, `user`), so a file is identified by run, test case and service, and each is
+kept apart: continuation lines are handled per file, and a sequence is one service log
+(`seq_by="service"`, as in `LO2Loader`) or all seven services of a test case (`seq_by="test_case"`).
+`test_case == "correct"` is normal. `test_case` is therefore the label, so keep it out of features.
+
+What differs from `LO2Loader`:
+
+- **No sampling.** Every run, test case and service passed in (`runs`, `test_cases`, `services`;
+  `None` = all) is read in sorted order, so the same arguments give the same rows on every machine.
+  A run that lacks a requested error case still contributes its `correct` case. Choosing error types
+  per experiment is left to the caller.
+- **Stack-trace lines are kept.** About a fifth of the lines are Java stack frames and exception
+  headers with no timestamp, and `LO2Loader` deletes them. Here `continuation_lines` takes a
+  `line_policy` policy. The default is `fill-lastseen`: each frame stays its own row with the time of
+  the line above. `merge-message` is available but misleading on the published archive, because
+  its logs were thinned to every 20th line, so the line above a frame is rarely the event that threw it.
+- **Real dates.** Log times are UTC without a date. The date comes from the epoch in the run
+  directory's name (`oauth2_logs_LO2_run_<epoch>`), with a day added past midnight.
+- **Parsed fields.** `thread`, `correlation_id`, `level`, `logger` and `method` are split off, and
+  `m_message` is the text after ` - `. These are null on continuation lines.
+- **Fast.** Reading and parsing run as one Polars query over all files: the test selection
+  (3.7M lines) loads in about 15 s.
+
+Metrics are not read. `LO2Loader.load_metrics()` still exists for them. `AutoLoader` still
+detects LO2 as `LO2Loader`.
+
 ### `LO2Loader` ([`lo2.py`](lo2.py))
+Kept for existing scripts; `LO2v2Loader` above replaces it. It samples which error test cases it
+reads at random and drops every line without a timestamp.
+
 
 Reads a tree of `run/test_case/service` log files (plus optional Prometheus-style JSON metrics via
 `load_metrics()`) from load-testing a Light-OAuth2 microservice deployment; `seq_id` is built from
