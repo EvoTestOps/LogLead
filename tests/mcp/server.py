@@ -711,15 +711,26 @@ def stage_hadoop_distance(check, session_id, target, file_name):
     l2 = timed("distance_folder_content", server.distance_folder_content,
                session_id, target, comparison_folders=10, content_format="Words")
     check.eq("one row per comparison log folder", l2["n_rows"], 10)
-    measures = ["cosine", "jaccard", "compression", "containment"]
-    check.ok("all four distance measures are present",
+    measures = ["cosine", "jaccard", "containment"]
+    check.ok("the three default distance measures are present",
              all(m in l2["rows"][0] for m in measures), str(list(l2["rows"][0])))
+    check.ok("compression is opt-in, not a default",
+             "compression" not in l2["rows"][0], str(list(l2["rows"][0])))
+    check.ok("running the defaults adds no subset warning",
+             not any("did not run" in note for note in l2["notes"]))
     check.ok("rank_sum combines them", "rank_sum" in l2["rows"][0])
     check.ok("rank_sum is within [n_measures, n_measures * n_rows]",
              all(len(measures) <= row["rank_sum"] <= len(measures) * l2["n_rows"]
                  for row in l2["rows"]))
     check.ok("the note says larger means more different",
              any("more different" in note for note in l2["notes"]))
+
+    l2c = server.distance_folder_content(session_id, target, comparison_folders=3,
+                                         content_format="Words",
+                                         measures=measures + ["compression"])
+    check.ok("compression still runs when asked for", "compression" in l2c["rows"][0])
+    check.ok("adding compression to the defaults adds no subset warning",
+             not any("did not run" in note for note in l2c["notes"]))
 
     l3 = timed("distance_file_content", server.distance_file_content,
                session_id, target, comparison_folders=5, target_files=2,

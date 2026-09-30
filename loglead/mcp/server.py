@@ -1214,15 +1214,16 @@ def query_result(
 # --------------------------------------------------------------------------- #
 
 _DISTANCE_NOTE = (
-    "All four measures are distances (larger = more different). rank_sum combines "
+    "All measures are distances (larger = more different). rank_sum combines "
     "them scale-free; prefer it over zscore_sum."
 )
 
 _DISTANCE_SUBSET_NOTE = (
-    "Only {count} of the 4 measures ran ({names}), so rank_sum here combines {count} "
-    "of them instead of 4 and is a weaker, differently-scaled ranking -- not "
-    "comparable with a 4-measure rank_sum. Re-run with measures unset to add "
-    "{missing} unless you have a specific reason to isolate one."
+    "Default measures {missing} did not run ({count} ran: {names}), so rank_sum "
+    "here combines {count} measures instead of {total} and is a weaker, "
+    "differently-scaled ranking -- not comparable with a default rank_sum. Re-run "
+    "with measures unset to add {missing} unless you have a specific reason to "
+    "isolate one."
 )
 
 #: One measure makes rank_sum a relabelling of that measure, not a combination.
@@ -1245,7 +1246,7 @@ def _distance_notes(measures, *extra):
     if missing:
         notes.append(_DISTANCE_SUBSET_NOTE.format(
             count=len(used), names=", ".join(used) or "none",
-            missing=", ".join(missing),
+            missing=", ".join(missing), total=len(distance.DEFAULT_MEASURES),
         ))
         if len(used) == 1:
             notes.append(_DISTANCE_SINGLE_MEASURE_NOTE)
@@ -1296,17 +1297,15 @@ def distance_folder_content(
     measures: Optional[Sequence[str]] = None,
     max_rows: int = 25,
 ) -> dict:
-    """Compare log folders by their log text content, with four distance measures.
+    """Compare log folders by their log text content, with several distance measures.
 
-    The four measures are cosine, jaccard, compression, and containment
-    distance (larger = more different); rank_sum/zscore_sum in the result
-    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
-    comparison per measure, so cost increase with comparison_folders. 
-    Consider select only one when measuring distance between many logs. 
-    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
-    built), while compression (a bz2 pass over the full text)
-    gets expensive as the log folders grow large. Containment: unlike the other 
-    three it is not 
+    The default measures are cosine, jaccard, and containment distance
+    (larger = more different); rank_sum/zscore_sum in the result combine them
+    scale-free -- prefer rank_sum. Each measure is a pairwise comparison, so
+    cost increases with comparison_folders; all three are cheap (matrix ops on
+    vectors already built). Compression distance (a bz2 pass over the full
+    text) is available but off by default: it gets slow as log folders grow
+    and its ranking is less reliable. Containment: unlike the others it is not
     symmetric -- it scores how much of one side's text is contained in the
     other's, so target-vs-comparison and comparison-vs-target can differ
     sharply (e.g. 0 one way, 0.7 the other).
@@ -1318,12 +1317,10 @@ def distance_folder_content(
         content_format: "Words", "3grams", "Sklearn" (raw text), or
             "Parse-<Algorithm>" such as "Parse-Tip" or "Parse-Drain".
         vectorizer: "Count" or "Tfidf".
-        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
-            "containment"] then run and rank_sum combines them, which is what
-            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
-            it only to answer a question about one measure -- e.g. isolating
-            "compression" (a bz2 pass over the full text) from the other three
-            (matrix ops on the already-built vectors).
+        measures: Leave unset. ["cosine", "jaccard", "containment"] then run
+            and rank_sum combines them, which is what makes the ranking
+            trustworthy. Add "compression" only when explicitly asked for it.
+            Compression distance is slow and its ranking is often less reliable.
         max_rows: Rows returned inline, largest distance (least similar) first.
             For the closest matches instead, call query_result on the returned
             result_id with sort_by="rank_sum", descending=False.
@@ -1364,15 +1361,13 @@ def distance_file_content(
 
     Only files present in both log folders can be compared -- use
     `describe_log_root(include_files=True)` to see which those are.
-    The four measures are cosine, jaccard, compression, and containment
-    distance (larger = more different); rank_sum/zscore_sum in the result
-    combine them scale-free -- prefer rank_sum. Running all four is a pairwise
-    comparison per measure, so cost increase with comparison_folders. 
-    Consider select only one when measuring distance between many logs. 
-    Cosine,jaccard, and containment are equally cheap (matrix ops on vectors already
-    built), while compression (a bz2 pass over the full text)
-    gets expensive as the log folders grow large. Containment: unlike the other 
-    three it is not 
+    The default measures are cosine, jaccard, and containment distance
+    (larger = more different); rank_sum/zscore_sum in the result combine them
+    scale-free -- prefer rank_sum. Each measure is a pairwise comparison, so
+    cost increases with comparison_folders; all three are cheap (matrix ops on
+    vectors already built). Compression distance (a bz2 pass over the full
+    text) is available but off by default: it gets slow as log folders grow
+    and its ranking is less reliable. Containment: unlike the others it is not
     symmetric -- it scores how much of one side's text is contained in the
     other's, so target-vs-comparison and comparison-vs-target can differ
     sharply (e.g. 0 one way, 0.7 the other).
@@ -1385,10 +1380,11 @@ def distance_file_content(
         mask: Compare masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
-        measures: Leave unset. All four of ["cosine", "jaccard", "compression",
-            "containment"] then run and rank_sum combines them, which is what
-            makes the ranking trustworthy. Narrowing this weakens rank_sum; do
-            it only to answer a question about one measure.
+        measures: Leave unset. ["cosine", "jaccard", "containment"] then run
+            and rank_sum combines them, which is what makes the ranking
+            trustworthy. Add "compression" only when explicitly asked for it.
+            Narrowing this weakens rank_sum; do it only to answer a question
+            about one measure.
         max_rows: Rows returned inline, largest distance (least similar) first.
             For the closest matches instead, call query_result on the returned
             result_id with sort_by="zscore_sum", descending=False.
@@ -1657,7 +1653,7 @@ def _anomaly_notes(detectors, *extra):
     if missing:
         notes.append(_SUBSET_NOTE.format(
             count=len(used), names=", ".join(used) or "none",
-            missing=", ".join(missing),
+            missing=", ".join(missing), total=len(distance.DEFAULT_MEASURES),
         ))
         if len(used) == 1:
             notes.append(_SINGLE_DETECTOR_NOTE)

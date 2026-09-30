@@ -12,13 +12,13 @@ Four functions, mirroring LogDelta's config step names:
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
 
-``distance_folder_content``/``distance_file_content`` compute all four content
-measures (cosine, jaccard, compression, containment) per comparison by default;
-``measures`` narrows that to a subset, run in isolation -- e.g. to isolate the
-cost of ``compression`` (a bz2 pass over the full text, the expensive one) from
-``cosine``/``jaccard``/``containment`` (matrix ops on the vectors already built
-for the comparison). Narrowing weakens ``rank_sum``/``zscore_sum`` the same way
-narrowing ``detectors`` does for the anomaly tools.
+``distance_folder_content``/``distance_file_content`` compute cosine, jaccard
+and containment per comparison by default (matrix ops on the vectors already
+built for the comparison). ``compression`` (a bz2 pass over the full text) is
+opt-in via ``measures``: it gets slow on large log folders and its ranking has
+been unreliable, and agents rarely change defaults. ``measures`` also narrows
+to a subset, run in isolation; narrowing weakens ``rank_sum``/``zscore_sum``
+the same way narrowing ``detectors`` does for the anomaly tools.
 
 ``distance_line_content`` takes ``measures`` too, but its measures are bucket
 granularities (``Exact``, ``Prefix``, ``Minhash``) rather than vector distances:
@@ -42,14 +42,14 @@ logger = logging.getLogger(__name__)
 DISTANCE_MEASURES = {"cosine": "cosine", "jaccard": "jaccard",
                      "compression": "compression", "containment": "containment"}
 
-DEFAULT_MEASURES = list(DISTANCE_MEASURES)
+DEFAULT_MEASURES = ["cosine", "jaccard", "containment"]
 
 
 def _resolve_measures(measures):
     measures = DEFAULT_MEASURES if measures is None else list(measures)
     unknown = [m for m in measures if m not in DISTANCE_MEASURES]
     if unknown:
-        raise ValueError(f"Unknown measures {unknown}. Valid options: {DEFAULT_MEASURES}")
+        raise ValueError(f"Unknown measures {unknown}. Valid options: {list(DISTANCE_MEASURES)}")
     return measures
 
 
@@ -100,8 +100,8 @@ def distance_folder_content(
     """Compare log folders by their whole log text.
 
     :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
-        computes all four; a measure left out is skipped entirely, not just
-        hidden -- narrowing this is how one measure's own cost is isolated.
+        computes :data:`DEFAULT_MEASURES` (all but ``compression``); a measure
+        left out is skipped entirely, not just hidden -- narrowing this is how one measure's own cost is isolated.
     :returns: ``(results_df, df)`` -- one row per comparison log folder with the
         requested distances plus ``zscore_sum``/``rank_sum`` over just those, and
         the (possibly enhanced) input frame so the caller can retain any newly
@@ -140,8 +140,8 @@ def distance_file_content(
     given, the comparison is further restricted to that set.
 
     :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
-        computes all four; a measure left out is skipped entirely, not just
-        hidden -- narrowing this is how one measure's own cost is isolated.
+        computes :data:`DEFAULT_MEASURES` (all but ``compression``); a measure
+        left out is skipped entirely, not just hidden -- narrowing this is how one measure's own cost is isolated.
     :returns: ``(results_df, df)`` -- one row per (file, comparison log folder),
         with the requested distances plus ``zscore_sum``/``rank_sum`` over
         just those.

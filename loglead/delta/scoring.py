@@ -1,6 +1,6 @@
 """Combining several distance/anomaly measures into one comparable score.
 
-The four distance measures and the four anomaly detectors all live on wildly
+The distance measures and the four anomaly detectors all live on wildly
 different scales (KMeans returns a cluster distance, IsolationForest a shifted
 decision function, RarityDetector and OOVDetector raw counts). Summing them raw is
 meaningless, so results get combined two ways:
@@ -22,7 +22,7 @@ import numpy as np
 import polars as pl
 from scipy.stats import rankdata, zscore
 
-#: Column names produced by the four distance measures.
+#: Column names produced by the distance measures.
 DISTANCE_COLUMNS = ["cosine", "jaccard", "compression", "containment"]
 
 #: Column names produced by the four anomaly detectors.

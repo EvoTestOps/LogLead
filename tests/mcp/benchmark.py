@@ -436,9 +436,10 @@ GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
 #: The four anomaly tools and the two vectorized-distance content tools, each
 #: run with a single detector/measure instead of the default all-four -- Part
 #: C/D of PERFORMANCE.md and PERF_MEMORY.md. Built from
-#: ``anomaly.DEFAULT_DETECTORS`` / ``distance.DEFAULT_MEASURES`` rather than
+#: ``anomaly.DEFAULT_DETECTORS`` / ``distance.DISTANCE_MEASURES`` rather than
 #: hardcoded, so a detector or measure added there shows up here without a
-#: second edit. ``distance_folder_filename`` (jaccard/overlap distance over
+#: second edit. All distance measures are listed, not just the defaults, so the
+#: opt-in ``compression`` keeps its timing row. ``distance_folder_filename`` (jaccard/overlap distance over
 #: file names only) has nothing to isolate -- it computes one measure, not a
 #: default pair. ``distance_line_content`` isolates its own bucket measures
 #: (``distance.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
@@ -456,7 +457,7 @@ DETAIL_GRID_ROWS = tuple(
     for tool in DETAIL_ANOMALY_TOOLS for detector in anomaly.DEFAULT_DETECTORS
 ) + tuple(
     ("distance_detail", f"{tool} ({measure})")
-    for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DEFAULT_MEASURES
+    for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DISTANCE_MEASURES
 ) + tuple(
     ("distance_detail", f"distance_line_content ({measure})")
     for measure in distance.BUCKET_MEASURES
@@ -794,7 +795,7 @@ def grid_detail_cells(ctx):
             lambda detector=detector: call(lambda: server.anomaly_line_content(
                 sid, target, target_files=[file_name], detectors=[detector]))))
 
-    for measure in distance.DEFAULT_MEASURES:
+    for measure in distance.DISTANCE_MEASURES:
         cells.append((
             "distance_detail", f"distance_folder_content ({measure})",
             lambda measure=measure: call(lambda: server.distance_folder_content(
