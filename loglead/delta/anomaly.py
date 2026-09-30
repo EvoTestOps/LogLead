@@ -100,19 +100,36 @@ def run_anomaly_detection(
     return result
 
 
-def _score_objects(df, field, target_folder, comparison_folders, group_by, detectors,
-                   vectorizer, detector_params):
-    """Aggregate target and baseline to one row per ``group_by`` value, then score."""
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
-    target_agg = log_root.aggregate_dataframe(target_df, group_by, field)
-    baseline_agg = log_root.aggregate_dataframe(
-        df.filter(pl.col("folder").is_in(comparison_folder_names)), group_by, field
-    )
-    scored = run_anomaly_detection(
-        baseline_agg, target_agg, field,
-        detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
-    )
-    return scored, comparison_folder_names
+def _group_by_baseline(df, target_folder_names, comparison_folders):
+    """Group targets that share the same comparison log folders, in first-seen order.
+
+    A target is never in its own baseline, so targets only need separate fits when
+    one sits in another's comparison set. Targets with an identical baseline are
+    scored against one fit: every detector scores rows independently, so the
+    scores match per-target fits.
+    """
+    groups = {}
+    for name in target_folder_names:
+        _, comparison_folder_names = log_root.prepare_folders(df, name, comparison_folders)
+        groups.setdefault(tuple(comparison_folder_names), []).append(name)
+    return groups
+
+
+def _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files):
+    """File-level :func:`_group_by_baseline`: one fit per (comparison log folders, file name).
+
+    :returns: ``(jobs, groups)`` -- ``jobs`` lists every (target, file) in the
+        order the per-target loop visited them; ``groups`` maps
+        ``(comparison_folder_names, file_name)`` to the targets sharing that fit.
+    """
+    jobs, groups = [], {}
+    for name in target_folder_names:
+        target_df, comparison_folder_names = log_root.prepare_folders(df, name, comparison_folders)
+        # Resolve against this log folder's own files, not the previous iteration's.
+        for file_name in log_root.prepare_files(target_df, target_files):
+            jobs.append((name, file_name))
+            groups.setdefault((tuple(comparison_folder_names), file_name), []).append(name)
+    return jobs, groups
 
 
 def anomaly_folder(
@@ -125,26 +142,38 @@ def anomaly_folder(
         forces ``content_format="File"``; ``False`` describes it by its log
         *text*.
     :param target_folder: exact name, ``"ALL"``, an int N, or a ``"Prefix*"``
-        wildcard -- each resolved target gets its own baseline.
+        wildcard. Targets sharing a baseline are scored against one fit; a target
+        is never in its own baseline, so overlapping ones get separate fits.
     :returns: ``(results_df, df)`` -- one row per scored log folder.
     """
     if file:
         content_format = "File"
     df, field = log_root.prepare_content(df, mask, content_format)
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
+    order = {name: i for i, name in enumerate(target_folder_names)}
 
     frames = []
-    for name in target_folder_names:
-        scored, comparison_folder_names = _score_objects(
-            df, field, name, comparison_folders, "folder",
-            detectors, vectorizer, detector_params,
+    for comparison_folder_names, names in _group_by_baseline(
+        df, target_folder_names, comparison_folders
+    ).items():
+        target_agg = log_root.aggregate_dataframe(
+            df.filter(pl.col("folder").is_in(names)), "folder", field
+        )
+        baseline_agg = log_root.aggregate_dataframe(
+            df.filter(pl.col("folder").is_in(comparison_folder_names)), "folder", field
         )
         # LogDelta forwarded no vectorizer here, so anomaly_folder always used Count.
+        scored = run_anomaly_detection(
+            baseline_agg, target_agg, field,
+            detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
+        )
         frames.append(
             scored.with_columns(pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"))
         )
 
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
+    if frames:
+        results = results.sort(pl.col("folder").replace_strict(order, return_dtype=pl.Int64))
     results = scoring.add_combined_scores(results, scoring.ANOMALY_COLUMNS)
     return results, df
 
@@ -169,53 +198,52 @@ def anomaly_file_content(
     """
     df, field = log_root.prepare_content(df, mask, content_format)
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
+    jobs, groups = _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files)
 
-    frames = []
+    scored_by_job = {}
     skipped = 0
-    for folder_name in target_folder_names:
-        target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
-        # Resolve against this log folder's own files, not the previous iteration's.
-        file_names = log_root.prepare_files(target_df, target_files)
-        comparison_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
-
-        for file_name in file_names:
-            # The baseline is *this file* as the other log folders wrote it: one
-            # document per comparison log folder that has a file of this name.
-            # Not one document per file name, which is what LogDelta's original
-            # computed (hoisted out of this loop, so it never saw file_name) and
-            # what its own "Found no files matching files in comparisons runs"
-            # message shows it did not mean to: that scores security.log against
-            # the other *kinds* of file rather than against the other runs'
-            # security.log, which is the comparison this level exists to make.
-            baseline_agg = log_root.aggregate_dataframe(
-                comparison_df.filter(pl.col("file_name") == file_name), "folder", field
-            )
-            if baseline_agg.height == 0:
-                # no comparison log folder has a file of this name
-                logger.debug("anomaly_file_content: %s/%s has no comparison log folder with that "
-                             "file, skipped.", folder_name, file_name)
-                skipped += 1
-                continue
-            target_agg = log_root.aggregate_dataframe(
-                target_df.filter(pl.col("file_name") == file_name), "file_name", field
-            )
-            if target_agg.height == 0:
-                logger.debug("anomaly_file_content: %s/%s produced an empty target aggregate, "
-                             "skipped.", folder_name, file_name)
-                skipped += 1
-                continue
-            scored = run_anomaly_detection(
-                baseline_agg, target_agg, field,
-                detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
-            )
-            frames.append(scored.with_columns([
-                pl.lit(folder_name).alias("target_folder"),
-                pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"),
-            ]))
+    for (comparison_folder_names, file_name), names in groups.items():
+        # The baseline is *this file* as the other log folders wrote it: one
+        # document per comparison log folder that has a file of this name.
+        # Not one document per file name, which is what LogDelta's original
+        # computed (hoisted out of this loop, so it never saw file_name) and
+        # what its own "Found no files matching files in comparisons runs"
+        # message shows it did not mean to: that scores security.log against
+        # the other *kinds* of file rather than against the other runs'
+        # security.log, which is the comparison this level exists to make.
+        baseline_agg = log_root.aggregate_dataframe(
+            df.filter(pl.col("folder").is_in(comparison_folder_names)
+                      & (pl.col("file_name") == file_name)), "folder", field
+        )
+        if baseline_agg.height == 0:
+            # no comparison log folder has a file of this name
+            logger.debug("anomaly_file_content: %s in %s has no comparison log folder with that "
+                         "file, skipped.", file_name, names)
+            skipped += len(names)
+            continue
+        target_agg = log_root.aggregate_dataframe(
+            df.filter(pl.col("folder").is_in(names) & (pl.col("file_name") == file_name)),
+            "folder", field,
+        )
+        scored = run_anomaly_detection(
+            baseline_agg, target_agg, field,
+            detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
+        )
+        scored = scored.rename({"folder": "target_folder"}).with_columns(
+            pl.lit(file_name).alias("file_name"),
+            pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"),
+        )
+        scored = scored.select(
+            "file_name", pl.exclude("file_name", "target_folder", "comparison_folders"),
+            "target_folder", "comparison_folders",
+        )
+        for name in names:
+            scored_by_job[(name, file_name)] = scored.filter(pl.col("target_folder") == name)
 
     if skipped:
         logger.info("anomaly_file_content: skipped %d target file(s) with no comparable data.",
                     skipped)
+    frames = [scored_by_job[job] for job in jobs if job in scored_by_job]
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
     results = scoring.add_combined_scores(results, scoring.ANOMALY_COLUMNS)
     return results, df
@@ -237,30 +265,37 @@ def anomaly_line_content(
     """
     df, field = log_root.prepare_content(df, mask, content_format)
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
+    jobs, groups = _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files)
 
-    per_file = []
-    for folder_name in target_folder_names:
-        target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
-        file_names = log_root.prepare_files(target_df, target_files)
-        other_folders_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
-
-        for file_name in file_names:
-            target_lines = target_df.filter(pl.col("file_name") == file_name)
-            baseline_lines = other_folders_df.filter(pl.col("file_name") == file_name)
-            if baseline_lines.height == 0 or target_lines.height == 0:
+    scored_by_job = {}
+    for (comparison_folder_names, file_name), names in groups.items():
+        baseline_lines = df.filter(pl.col("folder").is_in(comparison_folder_names)
+                                   & (pl.col("file_name") == file_name))
+        if baseline_lines.height == 0:
+            continue
+        # Concatenated in target order; filtering by folder below keeps each
+        # target's lines in their original order.
+        target_lines = pl.concat(
+            [df.filter((pl.col("folder") == name) & (pl.col("file_name") == file_name))
+             for name in names],
+            how="vertical_relaxed",
+        )
+        scored_group = run_anomaly_detection(
+            baseline_lines, target_lines, field,
+            detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
+        )
+        score_cols = [
+            col for _, col in DETECTORS.values() if col in scored_group.columns
+        ]
+        for name in names:
+            scored = scored_group.filter(pl.col("folder") == name)
+            if scored.height == 0:
                 continue
-
-            scored = run_anomaly_detection(
-                baseline_lines, target_lines, field,
-                detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
-            )
-            score_cols = [
-                col for _, col in DETECTORS.values() if col in scored.columns
-            ]
             score_only = scored.select(score_cols)
             scored = scored.with_columns(scoring.moving_averages(score_only, 10))
             scored = scored.with_columns(scoring.moving_averages(score_only, 100))
-            scored = scored.with_row_index("line_number")
-            per_file.append((folder_name, file_name, scored))
+            scored_by_job[(name, file_name)] = scored.with_row_index("line_number")
 
+    per_file = [(name, file_name, scored_by_job[(name, file_name)])
+                for name, file_name in jobs if (name, file_name) in scored_by_job]
     return per_file, df

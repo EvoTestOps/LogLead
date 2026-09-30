@@ -1680,7 +1680,8 @@ def anomaly_folder_filename(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
-            Each target is scored against its own baseline of comparison folders.
+            Targets outside comparison_folders share one fit, so "Anomaly_*" vs
+            "Normal_*" trains once; a target inside it gets its own fit.
         comparison_folders: The baseline. "ALL", a list, an int N, or "Prefix*".
         detectors: Leave unset. All four of ["KMeans", "IsolationForest",
             "RarityDetector", "OOVDetector"] then run and rank_sum combines them,
@@ -1724,6 +1725,8 @@ def anomaly_folder_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
+            Targets outside comparison_folders share one fit, so "Anomaly_*" vs
+            "Normal_*" trains once; a target inside it gets its own fit.
         comparison_folders: The training baseline. Point this at known-good folders
             when you have them".
         detectors: Leave unset so all four run -- rank_sum is only trustworthy

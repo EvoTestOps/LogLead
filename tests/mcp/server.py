@@ -1409,8 +1409,8 @@ def stage_hdfs(check, log_root, session_id):
              all(row["lines"] < 5 for row in small["rows"]))
 
     # The labelled check at this scale: score a mixed handful against a baseline
-    # of normal log folders only. One model is fitted per target, so this stays
-    # a handful deliberately.
+    # of normal log folders only. Each Normal_ target is left out of its own baseline, so
+    # it gets its own fit; the Anomaly_ targets share one. Kept a handful deliberately.
     targets = anomalies[:10] + normals[:10]
     scored = timed("anomaly_folder_content (20 targets vs Normal_*)",
                    server.anomaly_folder_content, session_id, target_folder=targets,
