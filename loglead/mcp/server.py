@@ -1773,7 +1773,9 @@ def read_bucket_lines(
 _ANOMALY_NOTE = (
     "Rank by rank_sum of 4 detectors. Single detector, each is on its own scale and "
     "is weak evidence alone. rank_sum beats zscore_sum, which one "
-    "distorted detector can dominate. No labels here, so this is suspicion, not a verdict."
+    "distorted detector can dominate. No labels here, so this is suspicion, not a verdict. "
+    "OOVD_pred_ano_proba counts occurrences of tokens no baseline folder has; check a high "
+    "one with new_tokens before dismissing it as mask noise."
 )
 
 _SUBSET_NOTE = (
