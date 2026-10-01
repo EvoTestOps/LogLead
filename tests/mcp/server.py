@@ -112,7 +112,7 @@ TOOLS = (
     "open_log_root", "list_log_roots", "describe_log_root", "set_folder_names",
     "close_log_root", "read_log_lines", "filter_log_lines", "search_log_lines", "query_result",
     "distance_folder_filename", "distance_folder_content", "distance_file_content",
-    "distance_line_content", "anomaly_folder_filename", "anomaly_folder_content",
+    "log_line_clustering", "anomaly_folder_filename", "anomaly_folder_content",
     "anomaly_file_content", "anomaly_line_content", "plot_folder_filename",
     "plot_folder_content", "plot_file_content", "run_config",
     "peek_log_root", "split_log_file",
@@ -681,8 +681,8 @@ def stage_hadoop_new_tokens(check, session_id, target):
 
 
 def stage_hadoop_distance(check, session_id, target, file_name):
-    """The four distance_* tools -- pairwise comparison, L1 to L4."""
-    check.section("5. distance_folder_filename / _folder_content / _file_content / _line_content")
+    """The three distance_* tools (pairwise comparison, L1 to L3) and log_line_clustering (L4)."""
+    check.section("5. distance_folder_filename / _folder_content / _file_content, log_line_clustering")
 
     l1 = server.distance_folder_filename(session_id, target, baseline_folders="ALL",
                                          threshold=False)
@@ -806,7 +806,7 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              == sorted((row["threshold_score"] for row in l3r["clean_range"]
                         if row["threshold_score"] is not None), reverse=True))
 
-    l4 = timed("distance_line_content", server.distance_line_content,
+    l4 = timed("log_line_clustering", server.log_line_clustering,
                session_id, target, baseline_folders=2, target_files=[file_name],
                max_rows=5)
     check.eq("one entry for the one target file", l4["n_files"], 1)
@@ -834,7 +834,7 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              any("look-alike lines" in note for note in l4["notes"]),
              str(l4["notes"]))
     check.raises("mask=False is refused", ValueError,
-                 server.distance_line_content, session_id, target,
+                 server.log_line_clustering, session_id, target,
                  baseline_folders=2, target_files=[file_name], mask=False)
 
     bucket_row = l4["rows"][0]
@@ -863,7 +863,7 @@ def stage_hadoop_distance(check, session_id, target, file_name):
                  server.read_bucket_lines, session_id, target, file_name,
                  bucket_row["bucket"], measure="Bigram")
 
-    l4m = timed("distance_line_content (minhash)", server.distance_line_content,
+    l4m = timed("log_line_clustering (minhash)", server.log_line_clustering,
                 session_id, target, baseline_folders=2, target_files=[file_name],
                 content_format="3grams", measures=["Minhash", "Exact"], max_rows=5)
     minhash_entry = l4m["files"][0]
@@ -878,12 +878,12 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              f"{minhash_entry['measures'][0]['buckets']} <= "
              f"{minhash_entry['measures'][1]['buckets']}")
     check.raises("an unknown measure is refused", ValueError,
-                 server.distance_line_content, session_id, target,
+                 server.log_line_clustering, session_id, target,
                  baseline_folders=2, target_files=[file_name],
                  measures=["Bigram"])
     # Prefix and Minhash read tokens, so a scalar content_format cannot serve them.
     check.raises("a token measure over a non-token content_format is refused",
-                 ValueError, server.distance_line_content, session_id, target,
+                 ValueError, server.log_line_clustering, session_id, target,
                  baseline_folders=2, target_files=[file_name],
                  content_format="Sklearn", measures=["Prefix"])
     return l2

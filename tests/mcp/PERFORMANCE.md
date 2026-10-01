@@ -95,9 +95,9 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 | distance_file_content (threshold=False) | hadoop_renamed | 0.234 | 0.538 | 2.593 | 6.230 |
 | distance_file_content (threshold=False) | hdfs_balanced_5k | 0.023 | 0.019 | 0.021 | 0.025 |
 | distance_file_content (threshold=False) | bgl_split_10 | 0.047 | 0.063 | 0.136 | 0.255 |
-| distance_line_content | hadoop_renamed | 0.101 | 0.121 | 0.194 | 0.367 |
-| distance_line_content | hdfs_balanced_5k | 0.034 | 0.036 | 0.062 | 0.063 |
-| distance_line_content | bgl_split_10 | 0.069 | 0.085 | 0.250 | 0.449 |
+| log_line_clustering | hadoop_renamed | 0.101 | 0.121 | 0.194 | 0.367 |
+| log_line_clustering | hdfs_balanced_5k | 0.034 | 0.036 | 0.062 | 0.063 |
+| log_line_clustering | bgl_split_10 | 0.069 | 0.085 | 0.250 | 0.449 |
 
 ## Table A3 -- Anomaly tools
 
@@ -236,9 +236,9 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 | distance_file_content (threshold=False) | hadoop_renamed | 0.236 | 0.524 | 2.532 | 5.548 |
 | distance_file_content (threshold=False) | hdfs_balanced_5k | 0.022 | 0.021 | 0.022 | 0.027 |
 | distance_file_content (threshold=False) | bgl_split_10 | 0.043 | 0.063 | 0.148 | 0.248 |
-| distance_line_content | hadoop_renamed | 0.101 | 0.090 | 0.205 | 0.358 |
-| distance_line_content | hdfs_balanced_5k | 0.037 | 0.042 | 0.063 | 0.069 |
-| distance_line_content | bgl_split_10 | 0.065 | 0.080 | 0.289 | 0.361 |
+| log_line_clustering | hadoop_renamed | 0.101 | 0.090 | 0.205 | 0.358 |
+| log_line_clustering | hdfs_balanced_5k | 0.037 | 0.042 | 0.063 | 0.069 |
+| log_line_clustering | bgl_split_10 | 0.065 | 0.080 | 0.289 | 0.361 |
 
 ## Table B3 -- Anomaly tools
 
@@ -299,7 +299,7 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with their three default measures (cosine, jaccard, containment; compression is opt-in), and `sequence_line_event_prediction` with both order detectors, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair. The anomaly rows pass `threshold=False`, so they show one detector's own cost without the extra fits of the clean range; the distance rows keep the default clean range.
+The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with their three default measures (cosine, jaccard, containment; compression is opt-in), and `sequence_line_event_prediction` with both order detectors, at once; `log_line_clustering` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `log_line_clustering` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair. The anomaly rows pass `threshold=False`, so they show one detector's own cost without the extra fits of the clean range; the distance rows keep the default clean range.
 
 # Part C -- cold (first call)
 
@@ -384,17 +384,17 @@ The tables above run every anomaly tool with all four detectors, `distance_folde
 | distance_file_content (containment) | hadoop_renamed | 0.234 | 1.004 | 4.454 | 4.910 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.025 | 0.026 | 0.028 | 0.032 |
 | distance_file_content (containment) | bgl_split_10 | 0.056 | 0.067 | 0.178 | 0.326 |
-| distance_line_content (Exact) | hadoop_renamed | 0.136 | 0.097 | 0.163 | 2.292* |
-| distance_line_content (Exact) | hdfs_balanced_5k | 0.032 | 0.046 | 0.083 | 0.094 |
-| distance_line_content (Exact) | bgl_split_10 | 0.073 | 0.086 | 0.275 | 0.513 |
-| distance_line_content (Prefix) | hadoop_renamed | 0.085 | 0.073 | 0.147 | 0.365 |
-| distance_line_content (Prefix) | hdfs_balanced_5k | 0.036 | 0.037 | 0.053 | 0.065 |
-| distance_line_content (Prefix) | bgl_split_10 | 0.076 | 0.086 | 0.258 | 0.433 |
-| distance_line_content (Minhash) | hadoop_renamed | 0.120 | 0.114 | 0.200 | 1.460 |
-| distance_line_content (Minhash) | hdfs_balanced_5k | 0.034 | 0.035 | 0.058 | 0.062 |
-| distance_line_content (Minhash) | bgl_split_10 | 0.072 | 0.087 | 0.242 | 0.513 |
+| log_line_clustering (Exact) | hadoop_renamed | 0.136 | 0.097 | 0.163 | 2.292* |
+| log_line_clustering (Exact) | hdfs_balanced_5k | 0.032 | 0.046 | 0.083 | 0.094 |
+| log_line_clustering (Exact) | bgl_split_10 | 0.073 | 0.086 | 0.275 | 0.513 |
+| log_line_clustering (Prefix) | hadoop_renamed | 0.085 | 0.073 | 0.147 | 0.365 |
+| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.036 | 0.037 | 0.053 | 0.065 |
+| log_line_clustering (Prefix) | bgl_split_10 | 0.076 | 0.086 | 0.258 | 0.433 |
+| log_line_clustering (Minhash) | hadoop_renamed | 0.120 | 0.114 | 0.200 | 1.460 |
+| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.034 | 0.035 | 0.058 | 0.062 |
+| log_line_clustering (Minhash) | bgl_split_10 | 0.072 | 0.087 | 0.242 | 0.513 |
 
-\* `distance_line_content (Exact)` on `hadoop_renamed` at 100% looks like an outlier (2.292s cold
+\* `log_line_clustering (Exact)` on `hadoop_renamed` at 100% looks like an outlier (2.292s cold
 vs. 0.380s warm -- see Table D2), but it isn't about `Exact`. `Exact`
 is the first of the three bucket measures run, so its cold call pays the one-time cost of
 materializing the `Words` content column for the whole log root. `Prefix`'s and `Minhash`'s cold
@@ -437,7 +437,7 @@ a parse. The plain `open_log_root` row is the `parsers=["tip"]` case measured in
 and `open_log_root (parse tip)` should agree.
 
 Rows measured against an already-built representation, and so *not* paying for it: all of Table
-A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `distance_line_content`'s `Prefix` and
+A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `log_line_clustering`'s `Prefix` and
 `Minhash` cold cells (`Words`, as a side effect of `Exact` running first -- see the `*` note).
 
 # Part D -- warm (repeated call)
@@ -523,15 +523,15 @@ A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `distance_line_content`
 | distance_file_content (containment) | hadoop_renamed | 0.219 | 0.745 | 3.306 | 4.669 |
 | distance_file_content (containment) | hdfs_balanced_5k | 0.026 | 0.025 | 0.027 | 0.028 |
 | distance_file_content (containment) | bgl_split_10 | 0.057 | 0.062 | 0.200 | 0.329 |
-| distance_line_content (Exact) | hadoop_renamed | 0.078 | 0.077 | 0.195 | 0.380 |
-| distance_line_content (Exact) | hdfs_balanced_5k | 0.034 | 0.040 | 0.063 | 0.068 |
-| distance_line_content (Exact) | bgl_split_10 | 0.070 | 0.089 | 0.253 | 0.443 |
-| distance_line_content (Prefix) | hadoop_renamed | 0.084 | 0.090 | 0.125 | 0.313 |
-| distance_line_content (Prefix) | hdfs_balanced_5k | 0.034 | 0.037 | 0.062 | 0.062 |
-| distance_line_content (Prefix) | bgl_split_10 | 0.072 | 0.083 | 0.221 | 0.477 |
-| distance_line_content (Minhash) | hadoop_renamed | 0.115 | 0.118 | 0.183 | 0.797 |
-| distance_line_content (Minhash) | hdfs_balanced_5k | 0.032 | 0.039 | 0.053 | 0.063 |
-| distance_line_content (Minhash) | bgl_split_10 | 0.069 | 0.082 | 0.226 | 0.420 |
+| log_line_clustering (Exact) | hadoop_renamed | 0.078 | 0.077 | 0.195 | 0.380 |
+| log_line_clustering (Exact) | hdfs_balanced_5k | 0.034 | 0.040 | 0.063 | 0.068 |
+| log_line_clustering (Exact) | bgl_split_10 | 0.070 | 0.089 | 0.253 | 0.443 |
+| log_line_clustering (Prefix) | hadoop_renamed | 0.084 | 0.090 | 0.125 | 0.313 |
+| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.034 | 0.037 | 0.062 | 0.062 |
+| log_line_clustering (Prefix) | bgl_split_10 | 0.072 | 0.083 | 0.221 | 0.477 |
+| log_line_clustering (Minhash) | hadoop_renamed | 0.115 | 0.118 | 0.183 | 0.797 |
+| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.032 | 0.039 | 0.053 | 0.063 |
+| log_line_clustering (Minhash) | bgl_split_10 | 0.069 | 0.082 | 0.226 | 0.420 |
 
 ## Table D3 -- Sequence tools detailed
 
@@ -556,10 +556,10 @@ measurement date.
   ("Memory measurements added") through `21235f9` ("Memory measurement improvements") -- except:
   - `read_log_lines (new tokens)` / `new_tokens` rows (Table A1/B1): 2026-09-11, `f2a5c50`
     ("Vocabulary analyzer added").
-  - `distance_line_content` rows (Table A2/B2): 2026-09-13, `475a7ff` ("Benchmark updates").
+  - `log_line_clustering` rows (Table A2/B2): 2026-09-13, `475a7ff` ("Benchmark updates").
 - Tables C1-D2 (per-detector / per-measure detail, incl. OOVDetector): 2026-09-10, `0e072ec`
   ("Distance measures options added") -- except:
-  - `distance_line_content (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
+  - `log_line_clustering (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
     ("Benchmark updates").
 - Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP) and the three
   `open_log_root (no parsers|parse tip|parse drain)` rows in Table A1/B1: 2026-09-23, not yet

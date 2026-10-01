@@ -27,8 +27,11 @@ Granularity        Distance (pair)              Anomaly (one vs many)          V
 folder / files     ``distance_folder_filename`` ``anomaly_folder(file=True)``  ``plot_folder(file=True)``
 folder / text      ``distance_folder_content``  ``anomaly_folder()``           ``plot_folder()``
 file               ``distance_file_content``    ``anomaly_file_content``       ``plot_file_content``
-line               ``distance_line_content``    ``anomaly_line_content``       --
+line               ``log_line_clustering`` *    ``anomaly_line_content``       --
 =================  ===========================  =============================  ==========================
+
+\* A line has no distance of its own, so the line level clusters lines instead
+and compares how often each cluster occurs in the target and the baseline.
 
 :mod:`sequence` scores lines by their *order* rather than their content:
 ``sequence_line_event_prediction`` asks how expected each line is after the
@@ -82,7 +85,7 @@ _LAZY_NAMES = {
     "resolve_format": "log_root",
     "split_log_file": "split",
     "distance_file_content": "distance",
-    "distance_line_content": "distance",
+    "log_line_clustering": "distance",
     "distance_folder_content": "distance",
     "distance_folder_filename": "distance",
     "DEFAULT_PLOTS": "visualize",
@@ -130,7 +133,7 @@ __all__ = [
     "distance_folder_filename",
     "distance_folder_content",
     "distance_file_content",
-    "distance_line_content",
+    "log_line_clustering",
     "anomaly_folder",
     "anomaly_file_content",
     "anomaly_line_content",

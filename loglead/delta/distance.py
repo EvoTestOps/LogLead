@@ -1,16 +1,20 @@
-"""Pairwise distance between log folders, files, and lines.
+"""Pairwise distance between log folders and files, and line clustering.
 
-Four functions, mirroring LogDelta's config step names:
+Three distance functions, mirroring LogDelta's config step names, and one
+line-level clustering function:
 
 * ``distance_folder_filename`` -- log folder vs log folder over *file
   names* only. Never opens a file.
 * ``distance_folder_content``  -- log folder vs log folder over log *text*.
 * ``distance_file_content``    -- file vs same-named file, across log folders.
-* ``distance_line_content``    -- bucket-histogram comparison of one file's
+* ``log_line_clustering``      -- bucket-histogram comparison of one file's
   lines against the same file in the baseline log folders.
 
-Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
-**distances**, so larger means more different, and 0 means identical.
+Every function returns a ``pl.DataFrame`` and writes nothing. The measures of
+the three distance functions are **distances**, so larger means more different,
+and 0 means identical. A single line has no meaningful distance, so
+``log_line_clustering`` instead groups lines into clusters and profiles how often
+each cluster occurs on the target and the baseline side.
 
 ``distance_folder_content``/``distance_file_content`` compute cosine, jaccard
 and containment per comparison by default (matrix ops on the vectors already
@@ -20,7 +24,7 @@ been unreliable, and agents rarely change defaults. ``measures`` also narrows
 to a subset, run in isolation; narrowing weakens ``rank_sum``/``zscore_sum``
 the same way narrowing ``detectors`` does for the anomaly tools.
 
-``distance_line_content`` takes ``measures`` too, but its measures are bucket
+``log_line_clustering`` takes ``measures`` too, but its measures are bucket
 granularities (``Exact``, ``Prefix``, ``Minhash``) rather than vector distances:
 ``content_format`` picks the representation and a measure decides how coarsely
 that representation is grouped. Each one yields its own bucket histogram, so
@@ -29,7 +33,7 @@ there is no ``rank_sum`` combining them.
 ``clean_range``/``filename_clean_range``/``file_content_clean_range`` give a
 distance its scale without a hand-picked threshold: how much a sample of the
 baseline folders differ from each other, which ``scale_to_clean_range`` then
-places the target against. ``distance_line_content`` has none; its
+places the target against. ``log_line_clustering`` has none; its
 ``target_only`` buckets are already relative to the pooled baseline folders.
 """
 
@@ -514,7 +518,7 @@ def require_bucket_mask(mask):
     """
     if not mask:
         raise ValueError(
-            "distance_line_content requires mask=True. On raw lines almost every "
+            "log_line_clustering requires mask=True. On raw lines almost every "
             "line is distinct, so nearly all of them fall into target-only "
             "buckets and the histogram carries no signal."
         )
@@ -562,7 +566,7 @@ def _bucket_histogram(target_df, baseline_df, label, measure):
     return buckets, _divergences(buckets, n_target, n_baseline)
 
 
-def distance_line_content(
+def log_line_clustering(
     df, target_folder, baseline_folders="ALL", target_files="ALL", mask=True,
     content_format="Words", measures=None, prefix_tokens=3, minhash_rows=4,
 ):
@@ -650,7 +654,7 @@ def distance_line_content(
         # No baseline log folder has a file of this name, so there is nothing
         # to judge it against -- the same rule distance_file_content applies.
         if target_lines.height == 0 or baseline_lines.height == 0:
-            logger.debug("distance_line_content: %s/%s has no lines on one side, skipped.",
+            logger.debug("log_line_clustering: %s/%s has no lines on one side, skipped.",
                          target_folder, file_name)
             continue
 
@@ -676,7 +680,7 @@ def distance_line_content(
 
 def lines_in_bucket(df, folder, file_name, bucket, measure="Prefix", mask=True,
                     content_format="Words", prefix_tokens=3, minhash_rows=4):
-    """The lines behind one of :func:`distance_line_content`'s buckets.
+    """The lines behind one of :func:`log_line_clustering`'s buckets.
 
     A bucket row says how many lines it holds and shows one of them; this
     returns all of them. The label is recomputed rather than stored, so the
@@ -698,7 +702,7 @@ def lines_in_bucket(df, folder, file_name, bucket, measure="Prefix", mask=True,
     if measure != "Exact":
         _require_tokens(df.schema, field, measure, content_format)
 
-    # Minhash rides on a working copy for the same reason distance_line_content
+    # Minhash rides on a working copy for the same reason log_line_clustering
     # keeps it off the session frame: it explodes and regroups.
     work = df
     if measure == "Minhash":

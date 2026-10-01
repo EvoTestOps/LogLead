@@ -50,7 +50,7 @@ split_log_file turns into slices you can compare. Then open_log_root, and drill
 down through folder-name, folder-content, file-content, and line-content, in
 that order.
 
-1) Start by finding a good mask pattern.
+1) Start by finding a good mask pattern if the default masking does not suit your log root.
 Run new_tokens over a couple of known good log folders. If you see token-wise differences,
 they are a good indication of what needs to be masked. Once you have a good mask pattern,
 run remask_log_root. Ensure your mask matches your target. When finding execution anomalies,
@@ -58,8 +58,8 @@ you want to mask things like IP addresses. If you are searching for security ano
 want to keep IP addresses. Masking too much or too little will cause problems. 
 
 2) Then work top down.
-Top-level approaches are statistical machine learning approaches. The intended path is: folder/file/line, and in tools,
-distance_* or anomaly_* functions. Both distance and anomaly functions return a threshold_score, 
+Top-level approaches are statistical machine learning approaches. The intended path is: folder/file/line, 
+and in tools, distance_* or anomaly_* functions. Both distance and anomaly functions return a threshold_score, 
 if you pass clean baseline.
 First, look at the folder level to see which folder is the outlier, then the same at the file
 level within that folder to see which file is the outlier, then at the line
@@ -67,17 +67,20 @@ level within that file to see which lines are the outliers. It is recommended
 to run line-level anomaly detection and look at lines that have high
 anomaly scores.
 
-3) Try to find point anomalies. For them, try distance_line_content
-that does fuzzy diff and anomaly_line_content. new_tokens is a statistics step too: it lists the words a log folder has that
+3) Other tools 
+- log_line_clustering that clusters lines and profiles how often each cluster occurs (fuzzy diff) 
+in baseline and target. 
+- new_tokens  lists the words a log folder has that
 baseline folders never have, and filter_log_lines(new_tokens_vs=..., only_new=True)
-shows the lines they are on. read_bucket_lines opens a distance_line_content bucket
+shows the lines they are on. read_bucket_lines opens a log_line_clustering bucket
 and shows every line in it.
+- sequence_line_event_prediction learns the order of events in baseline folders and 
+predicts the next event in a sequence. familiar lines skipped, repeated, or out of sequence
+- plot tools can be usefull for user needing visualizations. 
 
-4) Remember to search for both point anomalies and distributional pattern anomalies.
-For order anomalies -- familiar lines skipped, repeated, or out of sequence -- use
-sequence_line_event_prediction, which learns event order from the baseline folders.
+4) Remember to search for distributional pattern anomalies, order anomalies and point anomalies.
 
-5) Try relaxing the mask as well and remasking with it. Too tight mask can miss anomalies.
+5) Try also relaxing the mask. Too tight mask can miss anomalies.
 
 Write custom scripts only as last resort. The tools listed here are faster as they run on top of
 Rust and are optimized for speed. Custom scripts will be slower and will not scale to large log folders.
@@ -382,7 +385,7 @@ def split_log_file(
     tools are the ones to use on a split file: distance_folder_content,
     anomaly_folder_content and plot_folder_content. The file-level and
     line-level tools (distance_file_content, anomaly_file_content,
-    distance_line_content, anomaly_line_content) match files by name across log
+    log_line_clustering, anomaly_line_content) match files by name across log
     folders, and no two slices share a file name, so they find nothing here.
 
     Args:
@@ -738,7 +741,7 @@ def describe_log_root(session_id: str, include_files: bool = False) -> dict:
         out["notes"] = [
             "Files present in many log folders are the comparable ones; a file "
             "present in only one has nothing to compare against in "
-            "distance_file_content, anomaly_file_content, distance_line_content, "
+            "distance_file_content, anomaly_file_content, log_line_clustering, "
             "or anomaly_line_content, which all pair a file with its namesake in "
             "another log folder."
         ]
@@ -1572,7 +1575,7 @@ _LINE_BUCKET_NOTE = (
 
 
 @tool
-def distance_line_content(
+def log_line_clustering(
     session_id: str,
     target_folder: str,
     baseline_folders: FolderSelector = "ALL",
@@ -1638,7 +1641,7 @@ def distance_line_content(
     if comparable:
         session.ensure_content(mask, content_format)
 
-    per_file, summary, session.df = distance.distance_line_content(
+    per_file, summary, session.df = distance.log_line_clustering(
         session.df, target_folder, baseline_folders, target_files, mask,
         content_format, measures, prefix_tokens, minhash_rows,
     )
@@ -1659,7 +1662,7 @@ def distance_line_content(
 
     buckets = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
     return formatting.result(
-        session, "distance_line_content", 4,
+        session, "log_line_clustering", 4,
         {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "target_files": target_files, "mask": mask, "content_format": content_format,
          "measures": measures, "prefix_tokens": prefix_tokens,
@@ -1686,7 +1689,7 @@ def read_bucket_lines(
     limit: int = 100,
     masked: bool = False,
 ) -> dict:
-    """Read every log line in one distance_line_content bucket.
+    """Read every log line in one log_line_clustering bucket.
 
     A bucket row names a group of look-alike lines and shows one of them; this
     shows the rest. Use it on a target_only bucket to read the point anomaly it
@@ -1694,14 +1697,14 @@ def read_bucket_lines(
     shift is made of.
 
     Pass the `bucket` value from the row, with the same measure, mask,
-    content_format and prefix_tokens the distance_line_content call used. The
+    content_format and prefix_tokens the log_line_clustering call used. The
     bucket label is recomputed from them rather than stored, so parameters that
     disagree match no line.
 
     Args:
         session_id: Handle from open_log_root.
         folder: Log folder the bucket was found in -- the target_folder of the
-            distance_line_content call.
+            log_line_clustering call.
         file_name: File name, relative to its log folder.
         bucket: The `bucket` value of the row to open.
         measure: The measure that row's `measure` column names -- "Prefix",
@@ -1752,7 +1755,7 @@ def read_bucket_lines(
         result["notes"] = [
             f"No line of {folder}/{file_name} is in this bucket. The label is "
             "recomputed, so this is what a measure, mask, content_format or "
-            "prefix_tokens differing from the distance_line_content call looks "
+            "prefix_tokens differing from the log_line_clustering call looks "
             "like -- check them against that call's 'params'."
         ]
     elif offset + window.height < lines.height:
@@ -2756,7 +2759,7 @@ _STEP_TOOLS = {
     "distance_run_file": distance_folder_filename,
     "distance_run_content": distance_folder_content,
     "distance_file_content": distance_file_content,
-    "distance_line_content": distance_line_content,
+    "distance_line_content": log_line_clustering,
     "anomaly_run_file": anomaly_folder_filename,
     "anomaly_run_content": anomaly_folder_content,
     "anomaly_file_content": anomaly_file_content,

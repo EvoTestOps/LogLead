@@ -700,7 +700,7 @@ def strip_folder_id_from_file_names(df):
     ``container_1445062781478_0011_01_000001.log`` becomes
     ``container__01_000001.log``. Without this, file-content and line-content
     analyses (``distance_file_content``, ``anomaly_file_content``,
-    ``distance_line_content``, ``anomaly_line_content``) find zero matching
+    ``log_line_clustering``, ``anomaly_line_content``) find zero matching
     files between log folders.
 
     Ported from LogDelta's ``remove_run_name_from_file_names``.

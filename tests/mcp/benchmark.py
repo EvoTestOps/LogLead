@@ -419,7 +419,7 @@ GRID_ROWS = (
     ("distance", "distance_folder_content (threshold=False)"),
     ("distance", "distance_file_content"),
     ("distance", "distance_file_content (threshold=False)"),
-    ("distance", "distance_line_content"),
+    ("distance", "log_line_clustering"),
     ("anomaly", "anomaly_folder_filename"),
     ("anomaly", "anomaly_folder_filename (threshold=False)"),
     ("anomaly", "anomaly_folder_content"),
@@ -448,7 +448,7 @@ GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
 #: second edit. All distance measures are listed, not just the defaults, so the
 #: opt-in ``compression`` keeps its timing row. ``distance_folder_filename`` (jaccard/overlap distance over
 #: file names only) has nothing to isolate -- it computes one measure, not a
-#: default pair. ``distance_line_content`` isolates its own bucket measures
+#: default pair. ``log_line_clustering`` isolates its own bucket measures
 #: (``distance.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
 #: since the default call already runs Prefix+Exact together rather than one
 #: at a time. ``sequence_line_event_prediction`` isolates its two order-based
@@ -466,7 +466,7 @@ DETAIL_GRID_ROWS = tuple(
     ("distance_detail", f"{tool} ({measure})")
     for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DISTANCE_MEASURES
 ) + tuple(
-    ("distance_detail", f"distance_line_content ({measure})")
+    ("distance_detail", f"log_line_clustering ({measure})")
     for measure in distance.BUCKET_MEASURES
 ) + tuple(
     ("sequence_detail", f"{tool} ({detector})")
@@ -737,8 +737,8 @@ def grid_cells(ctx):
          lambda: call(lambda: server.distance_file_content(sid, target))),
         ("distance", "distance_file_content (threshold=False)",
          lambda: call(lambda: server.distance_file_content(sid, target, threshold=False))),
-        ("distance", "distance_line_content",
-         lambda: call(lambda: server.distance_line_content(
+        ("distance", "log_line_clustering",
+         lambda: call(lambda: server.log_line_clustering(
              sid, target, target_files=[file_name]))),
 
         ("anomaly", "anomaly_folder_filename",
@@ -835,8 +835,8 @@ def grid_detail_cells(ctx):
 
     for measure in distance.BUCKET_MEASURES:
         cells.append((
-            "distance_detail", f"distance_line_content ({measure})",
-            lambda measure=measure: call(lambda: server.distance_line_content(
+            "distance_detail", f"log_line_clustering ({measure})",
+            lambda measure=measure: call(lambda: server.log_line_clustering(
                 sid, target, target_files=[file_name], measures=[measure]))))
 
     for detector in sequence.DEFAULT_DETECTORS:
@@ -1086,11 +1086,11 @@ _DETAIL_INTRO = [
     "`distance_folder_content`/`distance_file_content` with their three default "
     "measures (cosine, jaccard, containment; compression is opt-in), "
     "and `sequence_line_event_prediction` with both order detectors, at once; "
-    "`distance_line_content` defaults to its coarse pair (Prefix + "
+    "`log_line_clustering` defaults to its coarse pair (Prefix + "
     "Exact) in one pass. Part C/D below break the same figure down per "
     "detector / per measure run in isolation (`detectors=[\"<name>\"]` / "
     "`measures=[\"<name>\"]`), so the cost of narrowing either is visible on "
-    "its own rather than folded into the combined call -- `distance_line_content` "
+    "its own rather than folded into the combined call -- `log_line_clustering` "
     "included, run once per bucket measure (Exact, Prefix, Minhash) so they can "
     "be compared directly. `distance_folder_filename` (jaccard/overlap "
     "distance over file names only) is not broken down further -- it computes "

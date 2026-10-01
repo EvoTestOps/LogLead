@@ -295,8 +295,8 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
                                        target_files=2, content_format="Words")
     show(res, ["file_name", "baseline_folder", "cosine", "zscore_sum"])
 
-    banner("L4 distance_line_content -- which kinds of line are new here?")
-    res = server.distance_line_content("demo", target, baseline_folders=3,
+    banner("L4 log_line_clustering -- which kinds of line are new here?")
+    res = server.log_line_clustering("demo", target, baseline_folders=3,
                                        target_files=1)
     for entry in res["files"]:
         for row in entry["measures"]:
