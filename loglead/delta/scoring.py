@@ -133,3 +133,51 @@ def normalize_measure_columns(df, columns):
             for col in columns
         ]
     )
+
+
+#: Fewest baseline log folders a clean range is formed from. With two, both
+#: folders' values would be the same single distance.
+MIN_CLEAN_FOLDERS = 3
+
+#: Most baseline log folders a clean range is formed from. The range needs a
+#: sample of clean-to-clean values, not all of them: 10 folders are 45 distance
+#: pairs or 10 extra detector fits, while all 5,000 folders of a log root would
+#: be 12.5 million pairs.
+MAX_CLEAN_FOLDERS = 10
+
+
+def median(values):
+    values = [value for value in values if value is not None]
+    return float(np.median(values)) if values else None
+
+
+def clean_sample(baseline_folder_names):
+    """The baseline folders a clean range is formed from: all of them up to
+    MAX_CLEAN_FOLDERS, else that many evenly spaced in name order, so the same
+    baseline folders always give the same sample."""
+    names = sorted(baseline_folder_names)
+    if len(names) <= MAX_CLEAN_FOLDERS:
+        return names
+    step = len(names) / MAX_CLEAN_FOLDERS
+    return [names[int(i * step)] for i in range(MAX_CLEAN_FOLDERS)]
+
+
+def range_row(values):
+    """clean_min/clean_mid/clean_max of one measure's per-folder values."""
+    values = [value for value in values if value is not None]
+    return {"clean_min": min(values) if values else None,
+            "clean_mid": median(values),
+            "clean_max": max(values) if values else None}
+
+
+def threshold_score(value, row):
+    """(value - clean_mid) / (clean_max - clean_mid), floored at 0: 0 is a typical
+    clean run or closer, 1 the most extreme one, above 1 beyond any of them.
+    Anchored on the median rather than clean_min because the min comes from a
+    single folder and is noisy. Floored because being more similar than a typical
+    clean run says nothing about anomalies. None when clean_max equals clean_mid:
+    there is no spread to scale by."""
+    mid, top = row["clean_mid"], row["clean_max"]
+    if value is None or mid is None or top is None or top - mid <= 0:
+        return None
+    return max(0.0, (value - mid) / (top - mid))

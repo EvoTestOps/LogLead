@@ -32,10 +32,10 @@ line               ``distance_line_content``    ``anomaly_line_content``       -
 
 :mod:`sequence` scores lines by their *order* rather than their content:
 ``sequence_line_event_prediction`` asks how expected each line is after the
-lines before it, given the same file in the comparison folders.
+lines before it, given the same file in the baseline folders.
 
 :mod:`vocabulary` answers a fourth question at folder or file granularity:
-which tokens a target has that its comparison folders never had.
+which tokens a target has that its baseline folders never had.
 
 Unlike the LogDelta originals, these functions hold no module-level state,
 never change the process working directory, and never write files -- they

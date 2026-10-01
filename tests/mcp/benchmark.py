@@ -414,13 +414,20 @@ GRID_ROWS = (
     ("aux", "close_log_root"),
     ("aux", "run_config"),
     ("distance", "distance_folder_filename"),
+    ("distance", "distance_folder_filename (threshold=False)"),
     ("distance", "distance_folder_content"),
+    ("distance", "distance_folder_content (threshold=False)"),
     ("distance", "distance_file_content"),
+    ("distance", "distance_file_content (threshold=False)"),
     ("distance", "distance_line_content"),
     ("anomaly", "anomaly_folder_filename"),
+    ("anomaly", "anomaly_folder_filename (threshold=False)"),
     ("anomaly", "anomaly_folder_content"),
+    ("anomaly", "anomaly_folder_content (threshold=False)"),
     ("anomaly", "anomaly_file_content"),
+    ("anomaly", "anomaly_file_content (threshold=False)"),
     ("anomaly", "anomaly_line_content"),
+    ("anomaly", "anomaly_line_content (threshold=False)"),
     ("plot", "plot_folder_filename"),
     ("plot", "plot_folder_content (scatter)"),
     ("plot", "plot_folder_content (scatter+umap)"),
@@ -720,23 +727,40 @@ def grid_cells(ctx):
 
         ("distance", "distance_folder_filename",
          lambda: call(lambda: server.distance_folder_filename(sid, target))),
+        ("distance", "distance_folder_filename (threshold=False)",
+         lambda: call(lambda: server.distance_folder_filename(sid, target, threshold=False))),
         ("distance", "distance_folder_content",
          lambda: call(lambda: server.distance_folder_content(sid, target))),
+        ("distance", "distance_folder_content (threshold=False)",
+         lambda: call(lambda: server.distance_folder_content(sid, target, threshold=False))),
         ("distance", "distance_file_content",
          lambda: call(lambda: server.distance_file_content(sid, target))),
+        ("distance", "distance_file_content (threshold=False)",
+         lambda: call(lambda: server.distance_file_content(sid, target, threshold=False))),
         ("distance", "distance_line_content",
          lambda: call(lambda: server.distance_line_content(
              sid, target, target_files=[file_name]))),
 
         ("anomaly", "anomaly_folder_filename",
          lambda: call(lambda: server.anomaly_folder_filename(sid, target_folder=[target]))),
+        ("anomaly", "anomaly_folder_filename (threshold=False)",
+         lambda: call(lambda: server.anomaly_folder_filename(
+             sid, target_folder=[target], threshold=False))),
         ("anomaly", "anomaly_folder_content",
          lambda: call(lambda: server.anomaly_folder_content(sid, target_folder=[target]))),
+        ("anomaly", "anomaly_folder_content (threshold=False)",
+         lambda: call(lambda: server.anomaly_folder_content(
+             sid, target_folder=[target], threshold=False))),
         ("anomaly", "anomaly_file_content",
          lambda: call(lambda: server.anomaly_file_content(sid, target))),
+        ("anomaly", "anomaly_file_content (threshold=False)",
+         lambda: call(lambda: server.anomaly_file_content(sid, target, threshold=False))),
         ("anomaly", "anomaly_line_content",
          lambda: call(lambda: server.anomaly_line_content(
              sid, target, target_files=[file_name]))),
+        ("anomaly", "anomaly_line_content (threshold=False)",
+         lambda: call(lambda: server.anomaly_line_content(
+             sid, target, target_files=[file_name], threshold=False))),
 
         ("sequence", "sequence_line_event_prediction",
          with_parsed_content(ctx, call, lambda: server.sequence_line_event_prediction(
@@ -781,19 +805,23 @@ def grid_detail_cells(ctx):
         cells.append((
             "anomaly_detail", f"anomaly_folder_filename ({detector})",
             lambda detector=detector: call(lambda: server.anomaly_folder_filename(
-                sid, target_folder=[target], detectors=[detector]))))
+                sid, target_folder=[target], detectors=[detector],
+                threshold=False))))
         cells.append((
             "anomaly_detail", f"anomaly_folder_content ({detector})",
             lambda detector=detector: call(lambda: server.anomaly_folder_content(
-                sid, target_folder=[target], detectors=[detector]))))
+                sid, target_folder=[target], detectors=[detector],
+                threshold=False))))
         cells.append((
             "anomaly_detail", f"anomaly_file_content ({detector})",
             lambda detector=detector: call(lambda: server.anomaly_file_content(
-                sid, target, detectors=[detector]))))
+                sid, target, detectors=[detector],
+                threshold=False))))
         cells.append((
             "anomaly_detail", f"anomaly_line_content ({detector})",
             lambda detector=detector: call(lambda: server.anomaly_line_content(
-                sid, target, target_files=[file_name], detectors=[detector]))))
+                sid, target, target_files=[file_name], detectors=[detector],
+                threshold=False))))
 
     for measure in distance.DISTANCE_MEASURES:
         cells.append((
@@ -1055,7 +1083,8 @@ _DETAIL_INTRO = [
     "# Detailed breakdowns (per detector / per measure)",
     "",
     "The tables above run every anomaly tool with all four detectors, "
-    "`distance_folder_content`/`distance_file_content` with all four measures, "
+    "`distance_folder_content`/`distance_file_content` with their three default "
+    "measures (cosine, jaccard, containment; compression is opt-in), "
     "and `sequence_line_event_prediction` with both order detectors, at once; "
     "`distance_line_content` defaults to its coarse pair (Prefix + "
     "Exact) in one pass. Part C/D below break the same figure down per "
@@ -1065,7 +1094,9 @@ _DETAIL_INTRO = [
     "included, run once per bucket measure (Exact, Prefix, Minhash) so they can "
     "be compared directly. `distance_folder_filename` (jaccard/overlap "
     "distance over file names only) is not broken down further -- it computes "
-    "one measure, not a default pair.",
+    "one measure, not a default pair. The anomaly rows pass `threshold=False`, "
+    "so they show one detector's own cost without the extra fits of the clean "
+    "range; the distance rows keep the default clean range.",
 ]
 
 

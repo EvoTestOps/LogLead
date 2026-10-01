@@ -20,6 +20,12 @@ bump means something that worked before needs changing.
   default is unchanged.
 - `list_mask_patterns` lists the per-dataset masks under `dataset_masks` as positions in `merged`,
   where their regexes are.
+- `comparison_*` is renamed `baseline_*` throughout `loglead.delta` and the MCP tools:
+  `comparison_folders` is now `baseline_folders`, and `distance_line_content` returns `baseline_n`
+  and `baseline_pct`. The old names are not accepted. LogDelta configs keep `comparison_runs`.
+- The distance tools other than `distance_line_content` and every anomaly tool now return a clean
+  range by default: how far apart the baseline folders score from each other, with the target
+  placed against it. Pass `threshold=False` for the old result.
 
 ## 2.1.0 - 2026-09-22
 

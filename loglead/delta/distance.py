@@ -7,7 +7,7 @@ Four functions, mirroring LogDelta's config step names:
 * ``distance_folder_content``  -- log folder vs log folder over log *text*.
 * ``distance_file_content``    -- file vs same-named file, across log folders.
 * ``distance_line_content``    -- bucket-histogram comparison of one file's
-  lines against the same file in the comparison log folders.
+  lines against the same file in the baseline log folders.
 
 Every function returns a ``pl.DataFrame`` and writes nothing. All measures are
 **distances**, so larger means more different, and 0 means identical.
@@ -25,6 +25,12 @@ granularities (``Exact``, ``Prefix``, ``Minhash``) rather than vector distances:
 ``content_format`` picks the representation and a measure decides how coarsely
 that representation is grouped. Each one yields its own bucket histogram, so
 there is no ``rank_sum`` combining them.
+
+``clean_range``/``filename_clean_range``/``file_content_clean_range`` give a
+distance its scale without a hand-picked threshold: how much a sample of the
+baseline folders differ from each other, which ``scale_to_clean_range`` then
+places the target against. ``distance_line_content`` has none; its
+``target_only`` buckets are already relative to the pooled baseline folders.
 """
 
 import logging
@@ -35,6 +41,7 @@ import polars as pl
 from .. import LogDistance
 from ..enhancers import EventLogEnhancer
 from . import log_root, scoring
+from .scoring import MAX_CLEAN_FOLDERS, MIN_CLEAN_FOLDERS, clean_sample
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +60,17 @@ def _resolve_measures(measures):
     return measures
 
 
-def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
+def distance_folder_filename(df, target_folder, baseline_folders="ALL"):
     """Compare log folders by which file names they contain.
 
-    :returns: one row per comparison log folder with set overlaps, ``jaccard distance``
+    :returns: one row per baseline log folder with set overlaps, ``jaccard distance``
         and ``overlap distance``.
     """
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_df, baseline_folder_names = log_root.prepare_folders(df, target_folder, baseline_folders)
     target_files = target_df.select("file_name").unique()
 
     results = []
-    for other_folder in comparison_folder_names:
+    for other_folder in baseline_folder_names:
         other_files = df.filter(pl.col("folder") == other_folder).select("file_name").unique()
         other_series = other_files.get_column("file_name")
         target_series = target_files.get_column("file_name")
@@ -72,16 +79,16 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
         # a same-dtype collection is ambiguous between "is in this set" and an
         # element-wise comparison, and imploding says which one is meant.
         only_in_target = target_files.filter(~pl.col("file_name").is_in(other_series.implode())).height
-        only_in_comparison = other_files.filter(~pl.col("file_name").is_in(target_series.implode())).height
+        only_in_baseline = other_files.filter(~pl.col("file_name").is_in(target_series.implode())).height
         intersection = target_files.filter(pl.col("file_name").is_in(other_series.implode())).height
         union = pl.concat([target_files, other_files]).unique().height
 
         smaller = min(target_files.height, other_files.height)
         results.append({
             "target_folder": target_folder,
-            "comparison_folder": other_folder,
+            "baseline_folder": other_folder,
             "files only in target": only_in_target,
-            "files only in comparison": only_in_comparison,
+            "files only in baseline": only_in_baseline,
             "union": union,
             "intersection": intersection,
             "jaccard distance": 1 - (intersection / union) if union else None,
@@ -94,7 +101,7 @@ def distance_folder_filename(df, target_folder, comparison_folders="ALL"):
 
 
 def distance_folder_content(
-    df, target_folder, comparison_folders="ALL", mask=True,
+    df, target_folder, baseline_folders="ALL", mask=True,
     content_format="Words", vectorizer="Count", measures=None,
 ):
     """Compare log folders by their whole log text.
@@ -102,7 +109,7 @@ def distance_folder_content(
     :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
         computes :data:`DEFAULT_MEASURES` (all but ``compression``); a measure
         left out is skipped entirely, not just hidden -- narrowing this is how one measure's own cost is isolated.
-    :returns: ``(results_df, df)`` -- one row per comparison log folder with the
+    :returns: ``(results_df, df)`` -- one row per baseline log folder with the
         requested distances plus ``zscore_sum``/``rank_sum`` over just those, and
         the (possibly enhanced) input frame so the caller can retain any newly
         computed column.
@@ -110,17 +117,17 @@ def distance_folder_content(
     measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_df, baseline_folder_names = log_root.prepare_folders(df, target_folder, baseline_folders)
 
     results = []
-    for other_folder in comparison_folder_names:
+    for other_folder in baseline_folder_names:
         other_df = df.filter(pl.col("folder") == other_folder)
         distance = LogDistance(target_df, other_df, vectorizer=vectorizer_class, field=field)
         row = {
             "target_folder": target_folder,
-            "comparison_folder": other_folder,
+            "baseline_folder": other_folder,
             "target_lines": distance.size1,
-            "comparison_lines": distance.size2,
+            "baseline_lines": distance.size2,
         }
         for name in measures:
             row[name] = getattr(distance, DISTANCE_MEASURES[name])()
@@ -130,8 +137,214 @@ def distance_folder_content(
     return pl.DataFrame(results), df
 
 
+
+
+def _folder_text(frame, field):
+    # The same joining LogDistance does, so both paths vectorize identical text.
+    if frame.schema[field] == pl.List(pl.Utf8):
+        return frame.select(pl.col(field).list.join(" ").str.concat(" ")).item()
+    return frame.select(pl.col(field).str.concat(" ")).item()
+
+
+def _count_pair_distances(folders, field, measures):
+    """Every pairwise cosine/jaccard/containment from one shared word count.
+
+    Gives the values LogDistance gives pair by pair: a word absent from both
+    folders of a pair adds zero to every count, dot product and set size, so a
+    shared vocabulary changes nothing. Not true for Tfidf, whose weights depend
+    on which folders were fitted. Words are counted one folder at a time with
+    CountVectorizer's own tokenizer, since fitting all sampled folders at once
+    holds every token of every folder in memory -- gigabytes on bgl-sized
+    folders. None where both folders have no words, as LogDistance returns for
+    an empty vocabulary.
+    """
+    from collections import Counter
+
+    from scipy.sparse import csr_matrix
+    from sklearn.feature_extraction.text import CountVectorizer
+
+    size = len(folders)
+    analyze = CountVectorizer().build_analyzer()
+    folder_counts = [Counter(analyze(_folder_text(folder, field))) for folder in folders]
+    vocabulary = {}
+    rows, columns, data = [], [], []
+    for row, folder_count in enumerate(folder_counts):
+        for word, count in folder_count.items():
+            rows.append(row)
+            columns.append(vocabulary.setdefault(word, len(vocabulary)))
+            data.append(count)
+    if not vocabulary:
+        return {measure: [[None] * size for _ in range(size)] for measure in measures}
+    counts = csr_matrix((np.array(data, dtype=float), (rows, columns)),
+                        shape=(size, len(vocabulary)))
+    binary = (counts > 0).astype(float)
+    words = np.asarray(binary.sum(axis=1)).ravel()
+    shared = (binary @ binary.T).toarray()
+    norms = np.sqrt(np.asarray(counts.multiply(counts).sum(axis=1)).ravel())
+    dots = (counts @ counts.T).toarray()
+
+    def pair(measure, i, j):
+        if words[i] == 0 and words[j] == 0:
+            return None
+        if measure == "cosine":
+            if norms[i] == 0 or norms[j] == 0:
+                return 1.0
+            return float(1 - dots[i, j] / (norms[i] * norms[j]))
+        if measure == "jaccard":
+            return float(1 - shared[i, j] / (words[i] + words[j] - shared[i, j]))
+        smaller = min(words[i], words[j])
+        return float(1 - shared[i, j] / smaller) if smaller > 0 else 1.0
+
+    return {measure: [[pair(measure, i, j) for j in range(size)] for i in range(size)]
+            for measure in measures}
+
+
+def _content_pair_distances(folders, field, measures, vectorizer):
+    """Every pairwise distance between ``folders``: with Count, cosine, jaccard
+    and containment come from one shared word count instead of one vectorizer
+    fit per pair; compression, and every measure under Tfidf, go pair by pair.
+    Unordered pairs suffice: cosine, jaccard and containment are symmetric,
+    compression nearly so."""
+    vectorized = [m for m in measures if vectorizer == "Count" and m != "compression"]
+    paired = [m for m in measures if m not in vectorized]
+    values = {}
+    if vectorized:
+        values.update(_count_pair_distances(folders, field, vectorized))
+    if paired:
+        vectorizer_class = log_root.create_vectorizer(vectorizer)
+        for measure in paired:
+            values[measure] = [[None] * len(folders) for _ in folders]
+        for i in range(len(folders)):
+            for j in range(i + 1, len(folders)):
+                distance = LogDistance(folders[i], folders[j],
+                                       vectorizer=vectorizer_class, field=field)
+                for measure in paired:
+                    value = getattr(distance, DISTANCE_MEASURES[measure])()
+                    values[measure][i][j] = values[measure][j][i] = value
+    return values
+
+
+_RANGE_SCHEMA = {"measure": pl.Utf8, "clean_min": pl.Float64,
+                 "clean_mid": pl.Float64, "clean_max": pl.Float64}
+
+
+def _range_frame(values, measures):
+    """One clean range row per measure from a pairwise distance matrix: a
+    folder's value is its median distance to the other sampled folders, the
+    same statistic scale_to_clean_range takes for the target."""
+    rows = []
+    for measure in measures:
+        size = len(values[measure])
+        medians = [scoring.median([values[measure][i][j] for j in range(size) if j != i])
+                   for i in range(size)]
+        rows.append({"measure": measure, **scoring.range_row(medians)})
+    return pl.DataFrame(rows, schema=_RANGE_SCHEMA)
+
+
+def clean_range(df, baseline_folder_names, mask=True, content_format="Words",
+                vectorizer="Count", measures=None, get_range=None):
+    """How much clean runs differ from each other, so a target's distance can be
+    read against normal variation instead of needing a hand-picked threshold.
+
+    Formed from clean_sample of the baseline folders. get_range(key, build)
+    lets a caller cache ranges across calls. None with fewer than
+    MIN_CLEAN_FOLDERS baseline folders.
+    """
+    if len(baseline_folder_names) < MIN_CLEAN_FOLDERS:
+        return None
+    measures = _resolve_measures(measures)
+    names = clean_sample(baseline_folder_names)
+
+    def build():
+        prepared, field = log_root.prepare_content(df, mask, content_format)
+        prepared = prepared.filter(pl.col("folder").is_in(names))
+        folders = [prepared.filter(pl.col("folder") == name) for name in names]
+        return _range_frame(_content_pair_distances(folders, field, measures, vectorizer),
+                            measures)
+
+    if get_range is None:
+        return build()
+    key = ("folder_content", mask, content_format, vectorizer, tuple(measures), tuple(names))
+    return get_range(key, build)
+
+
+#: distance_folder_filename's measures, named as its result columns.
+FILENAME_MEASURES = ["jaccard distance", "overlap distance"]
+
+
+def filename_clean_range(df, baseline_folder_names, get_range=None):
+    """clean_range for distance_folder_filename: how much the sampled baseline
+    folders' sets of file names differ from each other."""
+    if len(baseline_folder_names) < MIN_CLEAN_FOLDERS:
+        return None
+    names = clean_sample(baseline_folder_names)
+
+    def build():
+        files = {name: set(part.get_column("file_name").to_list()) for (name,), part in
+                 df.filter(pl.col("folder").is_in(names)).select("folder", "file_name")
+                 .unique().partition_by("folder", as_dict=True).items()}
+        sets = [files.get(name, set()) for name in names]
+        values = {measure: [[None] * len(names) for _ in names] for measure in FILENAME_MEASURES}
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                shared = len(sets[i] & sets[j])
+                union = len(sets[i] | sets[j])
+                smaller = min(len(sets[i]), len(sets[j]))
+                pair = {"jaccard distance": 1 - shared / union if union else None,
+                        "overlap distance": 1 - shared / smaller if smaller else None}
+                for measure, value in pair.items():
+                    values[measure][i][j] = values[measure][j][i] = value
+        return _range_frame(values, FILENAME_MEASURES)
+
+    if get_range is None:
+        return build()
+    return get_range(("folder_filename", tuple(names)), build)
+
+
+def file_content_clean_range(df, results, mask=True, content_format="Words",
+                             vectorizer="Count", measures=None, get_range=None):
+    """clean_range for distance_file_content, one per file name: formed from the
+    baseline folders that have that file, and scaled against the target's
+    same file. A file compared against fewer than MIN_CLEAN_FOLDERS baseline
+    folders gets no rows. Returns the scaled table, or None when no file had
+    enough baseline folders."""
+    measures = _resolve_measures(measures)
+    frames = []
+    file_names = results.get_column("file_name").unique().to_list() if results.height else []
+    for file_name in sorted(file_names):
+        file_results = results.filter(pl.col("file_name") == file_name)
+        baseline_folder_names = file_results.get_column("baseline_folder").to_list()
+        if len(baseline_folder_names) < MIN_CLEAN_FOLDERS:
+            continue
+        names = clean_sample(baseline_folder_names)
+
+        def build(file_name=file_name, names=names):
+            prepared, field = log_root.prepare_content(df, mask, content_format)
+            prepared = prepared.filter(pl.col("folder").is_in(names)
+                                       & (pl.col("file_name") == file_name))
+            folders = [prepared.filter(pl.col("folder") == name) for name in names]
+            return _range_frame(_content_pair_distances(folders, field, measures, vectorizer),
+                                measures)
+
+        key = ("file_content", file_name, mask, content_format, vectorizer, tuple(measures),
+               tuple(names))
+        clean = build() if get_range is None else get_range(key, build)
+        frames.append(scale_to_clean_range(file_results, clean)
+                      .select(pl.lit(file_name).alias("file_name"), pl.all()))
+    return pl.concat(frames) if frames else None
+
+
+def scale_to_clean_range(results, clean):
+    """Place the target against the clean range with scoring.threshold_score, taking
+    the target as the median of results' distances to the baseline folders."""
+    scaled = [scoring.threshold_score(scoring.median(results[row["measure"]].to_list())
+                                   if row["measure"] in results.columns else None, row)
+              for row in clean.iter_rows(named=True)]
+    return clean.with_columns(pl.Series("threshold_score", scaled, dtype=pl.Float64))
+
+
 def distance_file_content(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", mask=True,
     content_format="Words", vectorizer="Count", measures=None,
 ):
     """Compare each file against the same-named file in other log folders.
@@ -142,14 +355,14 @@ def distance_file_content(
     :param measures: subset of :data:`DISTANCE_MEASURES` to compute. ``None``
         computes :data:`DEFAULT_MEASURES` (all but ``compression``); a measure
         left out is skipped entirely, not just hidden -- narrowing this is how one measure's own cost is isolated.
-    :returns: ``(results_df, df)`` -- one row per (file, comparison log folder),
+    :returns: ``(results_df, df)`` -- one row per (file, baseline log folder),
         with the requested distances plus ``zscore_sum``/``rank_sum`` over
         just those.
     """
     measures = _resolve_measures(measures)
     df, field = log_root.prepare_content(df, mask, content_format)
     vectorizer_class = log_root.create_vectorizer(vectorizer)
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_df, baseline_folder_names = log_root.prepare_folders(df, target_folder, baseline_folders)
 
     wanted = None
     if target_files != "ALL":
@@ -162,7 +375,7 @@ def distance_file_content(
     pairs, target_files_df = {}, {}
     if target_names:
         wanted_names = list(target_names)
-        pairs = (df.filter(pl.col("folder").is_in(comparison_folder_names)
+        pairs = (df.filter(pl.col("folder").is_in(baseline_folder_names)
                            & pl.col("file_name").is_in(wanted_names))
                  .partition_by(["folder", "file_name"], as_dict=True))
         target_files_df = {key[0]: part for key, part in
@@ -175,7 +388,7 @@ def distance_file_content(
     results = []
     # Comparison-folder order, then file name sorted within it -- the order the
     # per-folder loop produced, so the table reads the same as before.
-    for other_folder in comparison_folder_names:
+    for other_folder in baseline_folder_names:
         for file_name in sorted(names_per_folder.get(other_folder, ())):
             # LogDelta dropped `vectorizer` here, silently always using Count.
             distance = LogDistance(
@@ -185,9 +398,9 @@ def distance_file_content(
             row = {
                 "file_name": file_name,
                 "target_folder": target_folder,
-                "comparison_folder": other_folder,
+                "baseline_folder": other_folder,
                 "target_lines": distance.size1,
-                "comparison_lines": distance.size2,
+                "baseline_lines": distance.size2,
             }
             for name in measures:
                 row[name] = getattr(distance, DISTANCE_MEASURES[name])()
@@ -254,10 +467,10 @@ def _bucket_label(schema, field, measure, prefix_tokens):
     return pl.col(_minhash_column(field))
 
 
-def _divergences(bucket_df, target_lines, comparison_lines):
-    """Distribution distances between the target and comparison histograms."""
+def _divergences(bucket_df, target_lines, baseline_lines):
+    """Distribution distances between the target and baseline histograms."""
     p = bucket_df.get_column("target_n").to_numpy() / target_lines
-    q = bucket_df.get_column("comparison_n").to_numpy() / comparison_lines
+    q = bucket_df.get_column("baseline_n").to_numpy() / baseline_lines
     m = (p + q) / 2
     # 0 log 0 is 0 here, so each side contributes only over its own support.
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -271,23 +484,23 @@ def _divergences(bucket_df, target_lines, comparison_lines):
         "js_divergence": float(0.5 * left.sum() + 0.5 * right.sum()),
         "total_variation": float(0.5 * np.abs(p - q).sum()),
         "target_lines": target_lines,
-        "comparison_lines": comparison_lines,
+        "baseline_lines": baseline_lines,
     }
 
 
-def comparable_files(df, target_folder, comparison_folders="ALL", target_files="ALL"):
-    """File names the target log folder shares with at least one comparison one.
+def comparable_files(df, target_folder, baseline_folders="ALL", target_files="ALL"):
+    """File names the target log folder shares with at least one baseline one.
 
     Files are matched by name across log folders, so a log root whose folders
     share no file name has nothing to compare and this is empty. Cheap enough
     to call before deciding whether to build a content representation at all.
     """
-    target_df, comparison_folder_names = log_root.prepare_folders(
-        df, target_folder, comparison_folders
+    target_df, baseline_folder_names = log_root.prepare_folders(
+        df, target_folder, baseline_folders
     )
     file_names = log_root.prepare_files(target_df, target_files)
     shared = set(
-        df.filter(pl.col("folder").is_in(comparison_folder_names))
+        df.filter(pl.col("folder").is_in(baseline_folder_names))
         .get_column("file_name").unique().to_list()
     )
     return [name for name in file_names if name in shared]
@@ -307,7 +520,7 @@ def require_bucket_mask(mask):
         )
 
 
-def _bucket_histogram(target_df, comparison_df, label, measure):
+def _bucket_histogram(target_df, baseline_df, label, measure):
     """One row per bucket, with both sides' share of it."""
     target = (
         target_df.select(label.alias("bucket"), "m_message")
@@ -315,54 +528,54 @@ def _bucket_histogram(target_df, comparison_df, label, measure):
         .agg(pl.len().alias("target_n"),
              pl.col("m_message").first().alias("representative_line"))
     )
-    comparison = (
-        comparison_df.select(label.alias("bucket"), "m_message")
+    baseline = (
+        baseline_df.select(label.alias("bucket"), "m_message")
         .group_by("bucket")
-        .agg(pl.len().alias("comparison_n"),
-             pl.col("m_message").first().alias("_comparison_line"))
+        .agg(pl.len().alias("baseline_n"),
+             pl.col("m_message").first().alias("_baseline_line"))
     )
-    n_target, n_comparison = target_df.height, comparison_df.height
+    n_target, n_baseline = target_df.height, baseline_df.height
 
     buckets = (
-        target.join(comparison, on="bucket", how="full", coalesce=True)
+        target.join(baseline, on="bucket", how="full", coalesce=True)
         .with_columns(pl.col("target_n").fill_null(0),
-                      pl.col("comparison_n").fill_null(0))
+                      pl.col("baseline_n").fill_null(0))
         .with_columns(
             pl.lit(measure).alias("measure"),
-            # A bucket only the comparison side has still needs a readable line.
-            pl.coalesce("representative_line", "_comparison_line")
+            # A bucket only the baseline side has still needs a readable line.
+            pl.coalesce("representative_line", "_baseline_line")
               .alias("representative_line"),
             (pl.col("target_n") / n_target * 100).alias("target_pct"),
-            (pl.col("comparison_n") / n_comparison * 100).alias("comparison_pct"),
+            (pl.col("baseline_n") / n_baseline * 100).alias("baseline_pct"),
         )
         .with_columns(
-            (pl.col("target_pct") - pl.col("comparison_pct")).alias("delta_pct"),
-            (pl.col("comparison_n") == 0).alias("target_only"),
+            (pl.col("target_pct") - pl.col("baseline_pct")).alias("delta_pct"),
+            (pl.col("baseline_n") == 0).alias("target_only"),
         )
         .select("measure", "bucket", "representative_line",
-                "target_n", "target_pct", "comparison_n", "comparison_pct",
+                "target_n", "target_pct", "baseline_n", "baseline_pct",
                 "delta_pct", "target_only")
         # Target-only buckets first, then by how much of the target they hold:
         # the planted-anomaly bucket outranks the singleton noise floor.
         .sort(["target_only", "target_n", "delta_pct"], descending=[True, True, True])
     )
-    return buckets, _divergences(buckets, n_target, n_comparison)
+    return buckets, _divergences(buckets, n_target, n_baseline)
 
 
 def distance_line_content(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", mask=True,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", mask=True,
     content_format="Words", measures=None, prefix_tokens=3, minhash_rows=4,
 ):
     """Compare a file's distribution of line types against the same file elsewhere.
 
     Every line is bucketed by a cheap hash of its content, then the target's
-    bucket histogram is compared with the comparison log folders'. Buckets
-    holding target lines and no comparison lines are point anomalies; buckets
+    bucket histogram is compared with the baseline log folders'. Buckets
+    holding target lines and no baseline lines are point anomalies; buckets
     present on both sides at very different rates are distribution shifts,
     which a nearest-neighbour distance could not see at all.
 
-    The comparison log folders are pooled into one baseline, so ``target_only``
-    means "absent from every comparison log folder", not from one of them.
+    The baseline log folders are pooled into one baseline, so ``target_only``
+    means "absent from every baseline log folder", not from one of them.
 
     :param content_format: the representation to bucket, as elsewhere. ``Prefix``
         and ``Minhash`` read a line's tokens, so they need ``"Words"`` or
@@ -385,7 +598,7 @@ def distance_line_content(
         fewer collisions, so finer buckets.
     :returns: ``(per_file, summary_df, df)``. ``per_file`` is a list of
         ``(target_folder, file_name, bucket_df)``, one entry per file present in
-        both the target and at least one comparison log folder; ``summary_df``
+        both the target and at least one baseline log folder; ``summary_df``
         has one row per (file, measure) with ``target_only_mass``,
         ``js_divergence`` and ``total_variation``; ``df`` is the (possibly
         enhanced) input frame, to be kept so a session avoids re-parsing.
@@ -399,9 +612,9 @@ def distance_line_content(
 
     # Before materializing anything: prepare_content runs over the whole log
     # root, while the analysis only ever reads files the target shares with a
-    # comparison log folder. On a log root where no name is shared -- ten slices
+    # baseline log folder. On a log root where no name is shared -- ten slices
     # of one split file, say -- that work would buy an empty result.
-    comparable = comparable_files(df, target_folder, comparison_folders, target_files)
+    comparable = comparable_files(df, target_folder, baseline_folders, target_files)
     if not comparable:
         return [], pl.DataFrame(), df
 
@@ -425,18 +638,18 @@ def distance_line_content(
               for measure in measures}
 
     # After prepare_content, so these views carry the content column.
-    target_df, comparison_folder_names = log_root.prepare_folders(
-        work, target_folder, comparison_folders
+    target_df, baseline_folder_names = log_root.prepare_folders(
+        work, target_folder, baseline_folders
     )
-    comparison_df = work.filter(pl.col("folder").is_in(comparison_folder_names))
+    baseline_df = work.filter(pl.col("folder").is_in(baseline_folder_names))
 
     per_file, summaries = [], []
     for file_name in comparable:
         target_lines = target_df.filter(pl.col("file_name") == file_name)
-        comparison_lines = comparison_df.filter(pl.col("file_name") == file_name)
-        # No comparison log folder has a file of this name, so there is nothing
+        baseline_lines = baseline_df.filter(pl.col("file_name") == file_name)
+        # No baseline log folder has a file of this name, so there is nothing
         # to judge it against -- the same rule distance_file_content applies.
-        if target_lines.height == 0 or comparison_lines.height == 0:
+        if target_lines.height == 0 or baseline_lines.height == 0:
             logger.debug("distance_line_content: %s/%s has no lines on one side, skipped.",
                          target_folder, file_name)
             continue
@@ -444,14 +657,14 @@ def distance_line_content(
         frames = []
         for measure in measures:
             buckets, summary = _bucket_histogram(
-                target_lines, comparison_lines, labels[measure], measure
+                target_lines, baseline_lines, labels[measure], measure
             )
             frames.append(buckets)
             summaries.append({
                 "target_folder": target_folder,
                 "file_name": file_name,
                 "measure": measure,
-                "comparison_folders": " ".join(comparison_folder_names),
+                "baseline_folders": " ".join(baseline_folder_names),
                 **summary,
             })
         per_file.append(

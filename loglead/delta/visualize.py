@@ -226,7 +226,7 @@ def _add_group_traces(fig, points, target_folder, x_values, y_values, hovertempl
     The target log folder is drawn as a trace of its own, in its group's colour
     but with the reserved shape at a larger size, since "group" is a shared
     colour category (e.g. all log folders of one application) and cannot tell
-    the target apart from the comparison folders on its own without hovering.
+    the target apart from the baseline folders on its own without hovering.
     """
     folders = points["folder"].to_list()
     groups = points["group"].to_list()
@@ -321,7 +321,7 @@ def _figures(points, target_folder, file, title_subject, plots):
 
 
 def plot_folder(
-    df, target_folder, comparison_folders="ALL", file=True, random_seed=None,
+    df, target_folder, baseline_folders="ALL", file=True, random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
     plots=DEFAULT_PLOTS,
 ):
@@ -349,8 +349,8 @@ def plot_folder(
     if grouped:
         df = log_root.group_folders_by_indices(df, group_by_indices)
 
-    _, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
-    included = df.filter(pl.col("folder").is_in([target_folder] + comparison_folder_names))
+    _, baseline_folder_names = log_root.prepare_folders(df, target_folder, baseline_folders)
+    included = df.filter(pl.col("folder").is_in([target_folder] + baseline_folder_names))
     included, field = log_root.prepare_content(included, mask, content_format)
 
     folder_groups, documents = _aggregate_folder_documents(included, field, content_format, grouped)
@@ -372,7 +372,7 @@ def plot_folder(
 
 
 def plot_file_content(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", random_seed=None,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", random_seed=None,
     group_by_indices=None, mask=True, content_format="Words", vectorizer="Count",
     plots=DEFAULT_PLOTS,
 ):
@@ -390,9 +390,9 @@ def plot_file_content(
     if grouped:
         df = log_root.group_folders_by_indices(df, group_by_indices)
 
-    target_df, comparison_folder_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_df, baseline_folder_names = log_root.prepare_folders(df, target_folder, baseline_folders)
     file_names = log_root.prepare_files(target_df, target_files)
-    included = df.filter(pl.col("folder").is_in([target_folder] + comparison_folder_names))
+    included = df.filter(pl.col("folder").is_in([target_folder] + baseline_folder_names))
     included, field = log_root.prepare_content(included, mask, content_format)
 
     per_file = []

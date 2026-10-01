@@ -282,48 +282,48 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
 
     # ------------------------------------------------------------ distance --
     banner("L1 distance_folder_filename -- which log folders differ in file sets?")
-    res = server.distance_folder_filename("demo", target, comparison_folders=5)
-    show(res, ["comparison_folder", "intersection", "jaccard distance", "overlap distance"])
+    res = server.distance_folder_filename("demo", target, baseline_folders=5)
+    show(res, ["baseline_folder", "intersection", "jaccard distance", "overlap distance"])
 
     banner("L2 distance_folder_content -- which log folder's text differs most?")
-    res = server.distance_folder_content("demo", target, comparison_folders=5,
+    res = server.distance_folder_content("demo", target, baseline_folders=5,
                                       content_format="Words")
-    show(res, ["comparison_folder", "cosine", "jaccard", "rank_sum"])
+    show(res, ["baseline_folder", "cosine", "jaccard", "rank_sum"])
 
     banner("L3 distance_file_content -- which file differs most?")
-    res = server.distance_file_content("demo", target, comparison_folders=3,
+    res = server.distance_file_content("demo", target, baseline_folders=3,
                                        target_files=2, content_format="Words")
-    show(res, ["file_name", "comparison_folder", "cosine", "zscore_sum"])
+    show(res, ["file_name", "baseline_folder", "cosine", "zscore_sum"])
 
     banner("L4 distance_line_content -- which kinds of line are new here?")
-    res = server.distance_line_content("demo", target, comparison_folders=3,
+    res = server.distance_line_content("demo", target, baseline_folders=3,
                                        target_files=1)
     for entry in res["files"]:
         for row in entry["measures"]:
             print(f"   {entry['file_name']} @ {row['measure']}: "
                   f"{row['buckets']} buckets, {row['target_only_buckets']} target-only "
                   f"({row['target_only_pct']:.2f}% of lines)")
-    show(res, ["measure", "target_pct", "comparison_pct", "target_only",
+    show(res, ["measure", "target_pct", "baseline_pct", "target_only",
                "representative_line"])
 
     # ------------------------------------------------------------- anomaly --
     banner("L1 anomaly_folder_filename -- score log folders by their file sets")
-    res = server.anomaly_folder_filename("demo", target_folder=3, comparison_folders=10)
+    res = server.anomaly_folder_filename("demo", target_folder=3, baseline_folders=10)
     show(res, ["folder", "rank_sum", "zscore_sum"])
 
     banner("L2 anomaly_folder_content -- score log folders by their text")
-    res = server.anomaly_folder_content("demo", target_folder=3, comparison_folders=10,
+    res = server.anomaly_folder_content("demo", target_folder=3, baseline_folders=10,
                                      content_format="Words")
     show(res, ["folder", "rank_sum", "zscore_sum"])
 
     banner("L3 anomaly_file_content -- which file of the target looks worst?")
-    res = server.anomaly_file_content("demo", target, comparison_folders=10,
+    res = server.anomaly_file_content("demo", target, baseline_folders=10,
                                       target_files=3, content_format="Words")
     show(res, ["file_name", "rank_sum", "zscore_sum"])
     worst_file = res["rows"][0]["file_name"] if res["rows"] else "container__01_000001.log"
 
     banner(f"L4 anomaly_line_content -- worst lines of {worst_file}, with their text")
-    res = server.anomaly_line_content("demo", target, comparison_folders="ALL",
+    res = server.anomaly_line_content("demo", target, baseline_folders="ALL",
                                       target_files=[worst_file],
                                       content_format="Words", max_rows=5)
     for entry in res["files"]:
@@ -336,7 +336,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
 
     banner("detector subset + hyperparameters (LogDelta hardcoded these)")
     res = server.anomaly_folder_content(
-        "demo", target_folder=2, comparison_folders=5,
+        "demo", target_folder=2, baseline_folders=5,
         detectors=["KMeans", "RarityDetector"],
         detector_params={"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}},
     )
@@ -347,13 +347,13 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     session = server.STORE.get("demo")
     print(f" before: parsers={session.parsers}")
     started = time.time()
-    server.anomaly_folder_content("demo", target_folder=2, comparison_folders=5,
+    server.anomaly_folder_content("demo", target_folder=2, baseline_folders=5,
                                content_format="Parse-Drain")
     drain_time = time.time() - started
     print(f" after Parse-Drain: parsers={session.parsers}  ({drain_time:.1f}s)")
 
     started = time.time()
-    server.anomaly_folder_content("demo", target_folder=2, comparison_folders=5,
+    server.anomaly_folder_content("demo", target_folder=2, baseline_folders=5,
                                content_format="Parse-Tip")
     tip_time = time.time() - started
     print(f" reusing Parse-Tip from open time: {tip_time:.1f}s "
@@ -376,13 +376,13 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
 
     # ------------------------------------------------------------ visualize --
     banner("L1 plot_folder_filename -- the axes come back, not just an HTML file")
-    res = server.plot_folder_filename("demo", target, comparison_folders=8,
+    res = server.plot_folder_filename("demo", target, baseline_folders=8,
                                group_by_indices=[0, 1])
     show_plot(res)
     print(f"   plots: {res['plots']}")
 
     banner("L2 plot_folder_content")
-    res = server.plot_folder_content("demo", target, comparison_folders=8,
+    res = server.plot_folder_content("demo", target, baseline_folders=8,
                                   content_format="Words")
     show_plot(res)
 
@@ -392,7 +392,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     # folders. Ask for it when the numbers alone leave the answer unclear.
     banner('L2 plot_folder_content again, plots=["umap", "scatter"] -- the embedding too')
     started = time.perf_counter()
-    res = server.plot_folder_content("demo", target, comparison_folders=8,
+    res = server.plot_folder_content("demo", target, baseline_folders=8,
                                      content_format="Words", random_seed=42,
                                      plots=["umap", "scatter"])
     print(f"   {time.perf_counter() - started:.2f}s, "
@@ -407,7 +407,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     # Scoring every log folder produces one row each, of which a preview shows a
     # handful. The table stays in the session, so the follow-up question is a
     # filter rather than another analysis run.
-    res = server.anomaly_folder_content("demo", target_folder="ALL", comparison_folders="ALL",
+    res = server.anomaly_folder_content("demo", target_folder="ALL", baseline_folders="ALL",
                                         content_format="Words", max_rows=3)
     print(f"   {res['n_rows']} log folders scored, {len(res['rows'])} previewed"
           f" -> result_id {res['result_id']}")
@@ -418,7 +418,7 @@ def run_demo(log_root_path, keep_cache=False, folder_names_path=None, format="au
     show(q, ["folder", "rank_sum"], limit=4)
 
     banner("L3 plot_file_content")
-    res = server.plot_file_content("demo", target, comparison_folders=8,
+    res = server.plot_file_content("demo", target, baseline_folders=8,
                                    target_files=[worst_file],
                                    content_format="Words")
     for entry in res["files"]:

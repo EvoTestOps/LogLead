@@ -1,6 +1,6 @@
 """Unsupervised anomaly scoring of a target against a baseline of other log folders.
 
-The shape is always the same: **comparison log folders are the training set, the
+The shape is always the same: **baseline log folders are the training set, the
 target is the test set**. There are no labels, so only unsupervised detectors
 apply and the output is a score per object, not a verdict.
 
@@ -19,6 +19,10 @@ one detector can be badly distorted, which is also why ``rank_sum`` beats
 ``zscore_sum``: one distorted measure moves a z-score sum a long way and a rank sum
 by at most one rank. Narrowing ``detectors`` is what breaks this, since ``rank_sum``
 then combines fewer measures (with one detector it is just that detector's rank).
+
+``clean_range`` gives the scores a scale without a hand-picked threshold: a
+sample of the baseline folders is each scored like a target against the
+others, and ``scale_to_clean_range`` marks the rows scored above all of them.
 """
 
 import logging
@@ -28,6 +32,7 @@ import polars as pl
 
 from .. import AnomalyDetector
 from . import log_root, scoring
+from .scoring import MAX_CLEAN_FOLDERS, MIN_CLEAN_FOLDERS, clean_sample
 
 logger = logging.getLogger(__name__)
 
@@ -100,40 +105,40 @@ def run_anomaly_detection(
     return result
 
 
-def _group_by_baseline(df, target_folder_names, comparison_folders):
-    """Group targets that share the same comparison log folders, in first-seen order.
+def _group_by_baseline(df, target_folder_names, baseline_folders):
+    """Group targets that share the same baseline log folders, in first-seen order.
 
     A target is never in its own baseline, so targets only need separate fits when
-    one sits in another's comparison set. Targets with an identical baseline are
+    one sits in another's baseline set. Targets with an identical baseline are
     scored against one fit: every detector scores rows independently, so the
     scores match per-target fits.
     """
     groups = {}
     for name in target_folder_names:
-        _, comparison_folder_names = log_root.prepare_folders(df, name, comparison_folders)
-        groups.setdefault(tuple(comparison_folder_names), []).append(name)
+        _, baseline_folder_names = log_root.prepare_folders(df, name, baseline_folders)
+        groups.setdefault(tuple(baseline_folder_names), []).append(name)
     return groups
 
 
-def _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files):
-    """File-level :func:`_group_by_baseline`: one fit per (comparison log folders, file name).
+def _group_files_by_baseline(df, target_folder_names, baseline_folders, target_files):
+    """File-level :func:`_group_by_baseline`: one fit per (baseline log folders, file name).
 
     :returns: ``(jobs, groups)`` -- ``jobs`` lists every (target, file) in the
         order the per-target loop visited them; ``groups`` maps
-        ``(comparison_folder_names, file_name)`` to the targets sharing that fit.
+        ``(baseline_folder_names, file_name)`` to the targets sharing that fit.
     """
     jobs, groups = [], {}
     for name in target_folder_names:
-        target_df, comparison_folder_names = log_root.prepare_folders(df, name, comparison_folders)
+        target_df, baseline_folder_names = log_root.prepare_folders(df, name, baseline_folders)
         # Resolve against this log folder's own files, not the previous iteration's.
         for file_name in log_root.prepare_files(target_df, target_files):
             jobs.append((name, file_name))
-            groups.setdefault((tuple(comparison_folder_names), file_name), []).append(name)
+            groups.setdefault((tuple(baseline_folder_names), file_name), []).append(name)
     return jobs, groups
 
 
 def anomaly_folder(
-    df, target_folder, comparison_folders="ALL", file=False, detectors=None, mask=True,
+    df, target_folder, baseline_folders="ALL", file=False, detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
     """Score whole log folders.
@@ -153,14 +158,14 @@ def anomaly_folder(
     order = {name: i for i, name in enumerate(target_folder_names)}
 
     frames = []
-    for comparison_folder_names, names in _group_by_baseline(
-        df, target_folder_names, comparison_folders
+    for baseline_folder_names, names in _group_by_baseline(
+        df, target_folder_names, baseline_folders
     ).items():
         target_agg = log_root.aggregate_dataframe(
             df.filter(pl.col("folder").is_in(names)), "folder", field
         )
         baseline_agg = log_root.aggregate_dataframe(
-            df.filter(pl.col("folder").is_in(comparison_folder_names)), "folder", field
+            df.filter(pl.col("folder").is_in(baseline_folder_names)), "folder", field
         )
         # LogDelta forwarded no vectorizer here, so anomaly_folder always used Count.
         scored = run_anomaly_detection(
@@ -168,7 +173,7 @@ def anomaly_folder(
             detectors=detectors, vectorizer=vectorizer, detector_params=detector_params,
         )
         frames.append(
-            scored.with_columns(pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"))
+            scored.with_columns(pl.lit(" ".join(baseline_folder_names)).alias("baseline_folders"))
         )
 
     results = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
@@ -179,7 +184,7 @@ def anomaly_folder(
 
 
 def anomaly_file_content(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
     """Score each file of the target log folder against the same file elsewhere.
@@ -187,7 +192,7 @@ def anomaly_file_content(
     Files are matched **by name across log folders**, the same rule
     ``distance_file_content`` and the two line-level functions use: the baseline
     for ``security.log`` is the other log folders' ``security.log``, one
-    document each. A target file no comparison log folder has is skipped, since
+    document each. A target file no baseline log folder has is skipped, since
     there is nothing to judge it against.
 
     That makes this level meaningless on a log root where every log folder holds
@@ -198,13 +203,13 @@ def anomaly_file_content(
     """
     df, field = log_root.prepare_content(df, mask, content_format)
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
-    jobs, groups = _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files)
+    jobs, groups = _group_files_by_baseline(df, target_folder_names, baseline_folders, target_files)
 
     scored_by_job = {}
     skipped = 0
-    for (comparison_folder_names, file_name), names in groups.items():
+    for (baseline_folder_names, file_name), names in groups.items():
         # The baseline is *this file* as the other log folders wrote it: one
-        # document per comparison log folder that has a file of this name.
+        # document per baseline log folder that has a file of this name.
         # Not one document per file name, which is what LogDelta's original
         # computed (hoisted out of this loop, so it never saw file_name) and
         # what its own "Found no files matching files in comparisons runs"
@@ -212,12 +217,12 @@ def anomaly_file_content(
         # the other *kinds* of file rather than against the other runs'
         # security.log, which is the comparison this level exists to make.
         baseline_agg = log_root.aggregate_dataframe(
-            df.filter(pl.col("folder").is_in(comparison_folder_names)
+            df.filter(pl.col("folder").is_in(baseline_folder_names)
                       & (pl.col("file_name") == file_name)), "folder", field
         )
         if baseline_agg.height == 0:
-            # no comparison log folder has a file of this name
-            logger.debug("anomaly_file_content: %s in %s has no comparison log folder with that "
+            # no baseline log folder has a file of this name
+            logger.debug("anomaly_file_content: %s in %s has no baseline log folder with that "
                          "file, skipped.", file_name, names)
             skipped += len(names)
             continue
@@ -231,11 +236,11 @@ def anomaly_file_content(
         )
         scored = scored.rename({"folder": "target_folder"}).with_columns(
             pl.lit(file_name).alias("file_name"),
-            pl.lit(" ".join(comparison_folder_names)).alias("comparison_folders"),
+            pl.lit(" ".join(baseline_folder_names)).alias("baseline_folders"),
         )
         scored = scored.select(
-            "file_name", pl.exclude("file_name", "target_folder", "comparison_folders"),
-            "target_folder", "comparison_folders",
+            "file_name", pl.exclude("file_name", "target_folder", "baseline_folders"),
+            "target_folder", "baseline_folders",
         )
         for name in names:
             scored_by_job[(name, file_name)] = scored.filter(pl.col("target_folder") == name)
@@ -250,7 +255,7 @@ def anomaly_file_content(
 
 
 def anomaly_line_content(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Words", vectorizer="Count", detector_params=None,
 ):
     """Score every line of a target file against the same file elsewhere.
@@ -265,11 +270,11 @@ def anomaly_line_content(
     """
     df, field = log_root.prepare_content(df, mask, content_format)
     target_folder_names = log_root.resolve_target_folders(df, target_folder)
-    jobs, groups = _group_files_by_baseline(df, target_folder_names, comparison_folders, target_files)
+    jobs, groups = _group_files_by_baseline(df, target_folder_names, baseline_folders, target_files)
 
     scored_by_job = {}
-    for (comparison_folder_names, file_name), names in groups.items():
-        baseline_lines = df.filter(pl.col("folder").is_in(comparison_folder_names)
+    for (baseline_folder_names, file_name), names in groups.items():
+        baseline_lines = df.filter(pl.col("folder").is_in(baseline_folder_names)
                                    & (pl.col("file_name") == file_name))
         if baseline_lines.height == 0:
             continue
@@ -299,3 +304,138 @@ def anomaly_line_content(
     per_file = [(name, file_name, scored_by_job[(name, file_name)])
                 for name, file_name in jobs if (name, file_name) in scored_by_job]
     return per_file, df
+
+
+_RANGE_SCHEMA = {"detector": pl.Utf8, "clean_min": pl.Float64,
+                 "clean_mid": pl.Float64, "clean_max": pl.Float64}
+
+#: score column -> detector name, for naming the clean range rows.
+_DETECTOR_OF = {column: name for name, (_, column) in DETECTORS.items()}
+
+
+def _left_out_scores(df, field, name, clean_names, lines, detectors, vectorizer,
+                     detector_params):
+    """Score clean folder ``name`` with the other clean folders as the baseline,
+    as it would be scored if it were the target. Per detector, the folder's score,
+    or with ``lines`` its highest line score. None when no other clean folder has
+    data here, or the detectors cannot fit that baseline."""
+    train = df.filter(pl.col("folder").is_in([other for other in clean_names if other != name]))
+    test = df.filter(pl.col("folder") == name)
+    if train.height == 0 or test.height == 0:
+        return None
+    if not lines:
+        train = log_root.aggregate_dataframe(train, "folder", field)
+        test = log_root.aggregate_dataframe(test, "folder", field)
+    try:
+        scored = run_anomaly_detection(train, test, field, detectors=detectors,
+                                       vectorizer=vectorizer, detector_params=detector_params)
+    except ValueError as error:
+        # The baseline is one folder smaller than the target's, which can be too
+        # few for the detector parameters (KMeans n_clusters=3 on two folders).
+        logger.debug("clean range: scoring %s left out failed: %s", name, error)
+        return None
+    return {column: scored.get_column(column).max()
+            for _, column in DETECTORS.values() if column in scored.columns}
+
+
+def clean_range(df, field, clean_names, file_name=None, lines=False, detectors=None,
+                vectorizer="Count", detector_params=None, known=None, get_range=None,
+                key=()):
+    """How the detectors score clean runs, so a target's score can be read against
+    them instead of needing a hand-picked threshold.
+
+    Each folder of clean_sample(clean_names) is scored with the remaining clean
+    folders as the baseline -- leave one out, since a baseline that includes the
+    folder itself scores it as normal by construction (OOVDetector always gives
+    0). A folder's value is its score, or with ``lines`` its highest line score,
+    so clean_max is the worst line any sampled clean run had. ``known`` maps a
+    folder name to scores the caller already has from exactly that baseline,
+    which skips its fit; with target_folder="ALL" every sampled folder is
+    known. ``file_name`` restricts both sides to that file. get_range(key,
+    build) lets a caller cache ranges across calls; ``key`` names what ``field``
+    was built from. None with fewer than MIN_CLEAN_FOLDERS clean folders.
+    """
+    if len(clean_names) < MIN_CLEAN_FOLDERS:
+        return None
+    names = clean_sample(clean_names)
+    known = known or {}
+
+    def build():
+        base = df if file_name is None else df.filter(pl.col("file_name") == file_name)
+        values = {}
+        for name in names:
+            scores = known.get(name)
+            if scores is None:
+                scores = _left_out_scores(base, field, name, clean_names, lines, detectors,
+                                          vectorizer, detector_params)
+            for column, value in (scores or {}).items():
+                values.setdefault(column, []).append(value)
+        rows = [{"detector": _DETECTOR_OF[column], **scoring.range_row(values[column])}
+                for _, column in DETECTORS.values() if column in values]
+        return pl.DataFrame(rows, schema=_RANGE_SCHEMA)
+
+    if get_range is None:
+        return build()
+    params = tuple(sorted((name, tuple(sorted(value.items())))
+                          for name, value in (detector_params or {}).items()))
+    full_key = ("anomaly", *key, file_name, lines, vectorizer, tuple(detectors or ()), params,
+                tuple(names), tuple(clean_names))
+    return get_range(full_key, build)
+
+
+def folders_with_file(df, file_name):
+    return set(df.filter(pl.col("file_name") == file_name).get_column("folder").unique().to_list())
+
+
+def clean_folders(baseline_folder_names, target_folder_names, present=None):
+    """The baseline folders a clean range is formed from: those that are not
+    also targets, or all of them when fewer than MIN_CLEAN_FOLDERS would remain
+    -- with target_folder="ALL" every folder is a target, and each one's own
+    score is then a leave-one-out score. ``present`` keeps only folders that
+    have a given file."""
+    baseline = [name for name in baseline_folder_names
+                if present is None or name in present]
+    targets = set(target_folder_names)
+    clean = [name for name in baseline if name not in targets]
+    return clean if len(clean) >= MIN_CLEAN_FOLDERS else baseline
+
+
+def known_scores(df, baseline_folders, clean_names, scored, present=None):
+    """Scores the call already has for sampled clean folders that were targets
+    against exactly the other clean folders, so clean_range need not fit them
+    again. ``scored`` maps a folder name to its scored rows (one row, or a
+    file's lines); a folder's value is the highest score per detector.
+    ``present``, the folders that have the file being scored, narrows each
+    baseline the way the file-level fits do."""
+    known = {}
+    for name in clean_sample(clean_names):
+        frame = scored.get(name)
+        if frame is None or frame.height == 0:
+            continue
+        _, baseline = log_root.prepare_folders(df, name, baseline_folders)
+        baseline = set(baseline) if present is None else set(baseline) & present
+        if baseline == set(clean_names) - {name}:
+            known[name] = {column: frame.get_column(column).max()
+                           for _, column in DETECTORS.values() if column in frame.columns}
+    return known
+
+
+def scale_to_clean_range(results, clean, per_detector=True):
+    """Add ``above_clean_max`` -- how many detectors score the row above the
+    highest score any sampled clean run got -- and, with ``per_detector``,
+    ``<detector>_threshold_score`` per detector, as scoring.threshold_score defines it."""
+    ranges = {row["detector"]: row for row in clean.iter_rows(named=True)}
+    above, scaled = [], []
+    for name, row in ranges.items():
+        column = DETECTORS[name][1]
+        if column not in results.columns or row["clean_max"] is None:
+            continue
+        above.append((pl.col(column) > row["clean_max"]).fill_null(False).cast(pl.Int64))
+        if per_detector:
+            mid, top = row["clean_mid"], row["clean_max"]
+            value = (((pl.col(column) - mid) / (top - mid)).clip(lower_bound=0)
+                     if top - mid > 0 else pl.lit(None, dtype=pl.Float64))
+            scaled.append(value.cast(pl.Float64).alias(f"{name}_threshold_score"))
+    if not above:
+        return results
+    return results.with_columns(*scaled, pl.sum_horizontal(above).alias("above_clean_max"))

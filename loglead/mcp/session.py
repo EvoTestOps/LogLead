@@ -56,8 +56,12 @@ MAX_RESULTS = 50
 MAX_RESULT_ROWS = 1_000_000
 
 #: How many baseline vocabularies a session keeps for new-token lookups -- the
-#: distinct tokens of one set of comparison log folders each. See cached_vocabulary.
+#: distinct tokens of one set of baseline log folders each. See cached_vocabulary.
 MAX_VOCABULARIES = 8
+
+#: How many clean ranges a session keeps. Each is a few rows, but costs a
+#: pairwise distance per pair of baseline log folders to build.
+MAX_CLEAN_RANGES = 16
 
 
 def default_cache_dir():
@@ -117,6 +121,9 @@ class Session:
     #: key -> baseline vocabulary. See cached_vocabulary. In memory only, and
     #: cleared whenever the text the tokens came from changes.
     vocabularies: "OrderedDict[tuple, pl.DataFrame]" = dataclass_field(
+        default_factory=OrderedDict)
+    #: key -> clean range. See cached_clean_range. Cleared with vocabularies.
+    clean_ranges: "OrderedDict[tuple, pl.DataFrame]" = dataclass_field(
         default_factory=OrderedDict)
     _dirty: bool = False
 
@@ -247,15 +254,26 @@ class Session:
         Keeps the :data:`MAX_VOCABULARIES` most recently used. The signature is
         the ``get_vocabulary`` hook of :mod:`loglead.delta.vocabulary`.
         """
+        return self._cached(self.vocabularies, MAX_VOCABULARIES, key, build)
+
+    def cached_clean_range(self, key, build):
+        """The clean range for ``key``: kept from an earlier call, else ``build()``.
+
+        Checking targets one call at a time against the same clean runs would
+        otherwise redo every pairwise distance between those runs on each call.
+        """
+        return self._cached(self.clean_ranges, MAX_CLEAN_RANGES, key, build)
+
+    def _cached(self, cache, limit, key, build):
         self.touch()
-        if key in self.vocabularies:
-            self.vocabularies.move_to_end(key)
-            return self.vocabularies[key]
-        vocab = build()
-        self.vocabularies[key] = vocab
-        while len(self.vocabularies) > MAX_VOCABULARIES:
-            self.vocabularies.popitem(last=False)
-        return vocab
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+        value = build()
+        cache[key] = value
+        while len(cache) > limit:
+            cache.popitem(last=False)
+        return value
 
     def ensure_content(self, mask, content_format):
         """Guarantee the column for ``content_format`` exists, and keep it.
@@ -291,6 +309,7 @@ class Session:
             stale = [col for col in derived if col in self.df.columns]
             self.df = self.df.drop(stale)
             self.vocabularies.clear()
+            self.clean_ranges.clear()
             self._dirty = True
 
         before = set(self.df.columns)
@@ -602,6 +621,7 @@ class SessionStore:
         discarded = list(session.results)
         session.results.clear()
         session.vocabularies.clear()
+        session.clean_ranges.clear()
 
         # A restored frame already matches its parquet; flushing it would only
         # rewrite the file it was just read from.
@@ -640,6 +660,7 @@ class SessionStore:
 
         session.df = df
         session.vocabularies.clear()  # keyed on folder names
+        session.clean_ranges.clear()
         session.folder_names = folder_names
         session.keep_original_folder_name = keep_original
         session._dirty = True

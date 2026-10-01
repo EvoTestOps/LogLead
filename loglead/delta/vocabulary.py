@@ -1,6 +1,6 @@
-"""New tokens: what a target log folder has that its comparison folders never had.
+"""New tokens: what a target log folder has that its baseline folders never had.
 
-The baseline vocabulary is the set of distinct tokens in the comparison log
+The baseline vocabulary is the set of distinct tokens in the baseline log
 folders; a target token outside it is new. Tokens are the elements of a content
 column -- ``e_words`` (the text split on spaces) unless another is named. A
 ``Utf8`` column such as a parser's event id is one token per line, so the same
@@ -56,27 +56,27 @@ def vocabulary(df, field="e_words", by_file_name=False):
               .unique())
 
 
-def baseline_vocabulary(df, comparison_folders, field="e_words", by_file_name=False,
+def baseline_vocabulary(df, baseline_folders, field="e_words", by_file_name=False,
                         get_vocabulary=None):
-    """The :func:`vocabulary` of ``comparison_folders``, a list of log folder names.
+    """The :func:`vocabulary` of ``baseline_folders``, a list of log folder names.
 
     :param get_vocabulary: ``get_vocabulary(key, build)`` returning the
         vocabulary for ``key``, where ``build()`` computes it. ``None`` computes it.
-    :raises ValueError: if ``comparison_folders`` is empty.
+    :raises ValueError: if ``baseline_folders`` is empty.
     """
-    if not comparison_folders:
+    if not baseline_folders:
         raise ValueError(
-            "No comparison log folders to build a baseline from. The target log folder "
+            "No baseline log folders to build a baseline from. The target log folder "
             "is never its own baseline, so name at least one other log folder."
         )
 
     def build():
-        return vocabulary(df.filter(pl.col("folder").is_in(list(comparison_folders))),
+        return vocabulary(df.filter(pl.col("folder").is_in(list(baseline_folders))),
                           field, by_file_name)
 
     if get_vocabulary is None:
         return build()
-    return get_vocabulary((field, tuple(sorted(comparison_folders)), by_file_name), build)
+    return get_vocabulary((field, tuple(sorted(baseline_folders)), by_file_name), build)
 
 
 def _new_token_rows(df, vocab, field):
@@ -140,28 +140,28 @@ def token_table(df, vocab, field="e_words", message_column="m_message"):
     return _summarize(df, _new_token_rows(df, vocab, field), message_column)
 
 
-def new_token_table(df, target_folder, comparison_folders="ALL", target_files="ALL",
+def new_token_table(df, target_folder, baseline_folders="ALL", target_files="ALL",
                     field="e_words", match_file_name=False, get_vocabulary=None,
                     message_column="m_message"):
-    """Every new token in ``target_folder``, judged against ``comparison_folders``.
+    """Every new token in ``target_folder``, judged against ``baseline_folders``.
 
     :param target_folder: exact log folder name.
-    :param comparison_folders: ``"ALL"``, a list, an int N, or a ``"Prefix*"``
+    :param baseline_folders: ``"ALL"``, a list, an int N, or a ``"Prefix*"``
         wildcard, resolved by :func:`log_root.prepare_folders`.
     :param target_files: which of the target's files, resolved by
         :func:`log_root.prepare_files`.
     :param match_file_name: judge each file against the same-named files of
-        the comparison folders only, skipping a target file none of them has.
-        Otherwise the baseline is every line of the comparison folders.
+        the baseline folders only, skipping a target file none of them has.
+        Otherwise the baseline is every line of the baseline folders.
     :param get_vocabulary: see :func:`baseline_vocabulary`.
     :returns: ``(table, info)`` -- :func:`token_table`'s frame, and a dict of
-        ``comparison_folders``, ``target_files``, ``skipped_files``,
+        ``baseline_folders``, ``target_files``, ``skipped_files``,
         ``n_lines``, ``lines_with_new_tokens``, ``new_token_occurrences`` and
         ``baseline_vocabulary_size``.
     """
-    target_df, comparison_names = log_root.prepare_folders(df, target_folder, comparison_folders)
+    target_df, baseline_names = log_root.prepare_folders(df, target_folder, baseline_folders)
     files = log_root.prepare_files(target_df, target_files)
-    vocab = baseline_vocabulary(df, comparison_names, field, match_file_name, get_vocabulary)
+    vocab = baseline_vocabulary(df, baseline_names, field, match_file_name, get_vocabulary)
 
     skipped = []
     if match_file_name:
@@ -172,7 +172,7 @@ def new_token_table(df, target_folder, comparison_folders="ALL", target_files="A
 
     rows = _new_token_rows(target_df, vocab, field)
     return _summarize(target_df, rows, message_column), {
-        "comparison_folders": comparison_names,
+        "baseline_folders": baseline_names,
         "target_files": files,
         "skipped_files": skipped,
         "n_lines": target_df.height,

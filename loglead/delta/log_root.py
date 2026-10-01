@@ -877,14 +877,14 @@ def _match_wildcard(candidates, pattern):
     return [c for c in candidates if regex.match(c)]
 
 
-def prepare_folders(df, target_folder, comparison_folders="ALL"):
-    """Split ``df`` into the target log folder's rows and a validated comparison list.
+def prepare_folders(df, target_folder, baseline_folders="ALL"):
+    """Split ``df`` into the target log folder's rows and a validated baseline list.
 
     :param target_folder: exact log folder name. Must exist.
-    :param comparison_folders: ``"ALL"``, a list of names, an int N (first N), or a
+    :param baseline_folders: ``"ALL"``, a list of names, an int N (first N), or a
         ``"Prefix*"`` wildcard.
-    :returns: ``(target_df, comparison_folder_names)``. The target log folder is always
-        excluded from the comparison list, whichever form was used.
+    :returns: ``(target_df, baseline_folder_names)``. The target log folder is always
+        excluded from the baseline list, whichever form was used.
     :raises ValueError: on an unknown folder name or an out-of-range count.
     """
     unique_folders = df.select("folder").unique().sort("folder").to_series().to_list()
@@ -896,33 +896,44 @@ def prepare_folders(df, target_folder, comparison_folders="ALL"):
         )
 
     target_df = df.filter(pl.col("folder") == target_folder)
+    return target_df, _select_baseline(unique_folders, baseline_folders, target_folder)
+
+
+def resolve_baseline_folders(df, baseline_folders="ALL"):
+    """``baseline_folders`` resolved against every log folder, with no target
+    excluded: the baseline shared by several targets."""
+    unique_folders = df.select("folder").unique().sort("folder").to_series().to_list()
+    return _select_baseline(unique_folders, baseline_folders)
+
+
+def _select_baseline(unique_folders, baseline_folders, target_folder=None):
     others = [folder for folder in unique_folders if folder != target_folder]
 
-    if isinstance(comparison_folders, str) and comparison_folders == "ALL":
+    if isinstance(baseline_folders, str) and baseline_folders == "ALL":
         validated = others
-    elif isinstance(comparison_folders, bool):
-        raise ValueError(f"Invalid comparison_folders: {comparison_folders!r}")
-    elif isinstance(comparison_folders, int):
-        if comparison_folders < 1 or comparison_folders > len(others):
+    elif isinstance(baseline_folders, bool):
+        raise ValueError(f"Invalid baseline_folders: {baseline_folders!r}")
+    elif isinstance(baseline_folders, int):
+        if baseline_folders < 1 or baseline_folders > len(others):
             raise ValueError(
-                f"Number of comparison log folders must be between 1 and {len(others)}."
+                f"Number of baseline log folders must be between 1 and {len(others)}."
             )
-        validated = others[:comparison_folders]
-    elif isinstance(comparison_folders, str) and "*" in comparison_folders:
+        validated = others[:baseline_folders]
+    elif isinstance(baseline_folders, str) and "*" in baseline_folders:
         # Full-match wildcard: escape everything, then re-open the '*'
-        regex = re.compile("^" + re.escape(comparison_folders).replace(r"\*", ".*") + "$")
+        regex = re.compile("^" + re.escape(baseline_folders).replace(r"\*", ".*") + "$")
         validated = [folder for folder in others if regex.match(folder)]
         if not validated:
-            raise ValueError(f"No log folders match the wildcard pattern {comparison_folders!r}.")
+            raise ValueError(f"No log folders match the wildcard pattern {baseline_folders!r}.")
     else:
-        if isinstance(comparison_folders, str):
-            comparison_folders = [comparison_folders]
-        validated = [folder for folder in comparison_folders if folder != target_folder]
+        if isinstance(baseline_folders, str):
+            baseline_folders = [baseline_folders]
+        validated = [folder for folder in baseline_folders if folder != target_folder]
         invalid = [folder for folder in validated if folder not in unique_folders]
         if invalid:
-            raise ValueError(f"Comparison log folder names {invalid} not found in the log_root.")
+            raise ValueError(f"Baseline log folder names {invalid} not found in the log_root.")
 
-    return target_df, validated
+    return validated
 
 
 def resolve_target_folders(df, target_folders):

@@ -64,7 +64,7 @@ import numpy  # noqa: E402
 import polars as pl  # noqa: E402
 import make_test_data  # noqa: E402  (sits next to this file)
 from loglead import loaders  # noqa: E402
-from loglead.delta import log_root, sequence, split, visualize, vocabulary  # noqa: E402
+from loglead.delta import anomaly, distance, log_root, sequence, split, visualize, vocabulary  # noqa: E402
 
 try:  # the MCP server is an optional extra, and its absence is not a test failure
     from loglead.mcp import server  # noqa: E402
@@ -577,12 +577,12 @@ def stage_hadoop_new_tokens(check, session_id, target):
 
     everything = server.new_tokens(session_id, target)
     check.eq("the default baseline is every other log folder",
-             everything["n_comparison_folders"], HADOOP_FOLDERS - 1)
+             everything["n_baseline_folders"], HADOOP_FOLDERS - 1)
     session.vocabularies.clear()
 
     result = timed("new_tokens (builds the baseline)", server.new_tokens,
-                   session_id, target, comparison_folders=normal)
-    check.eq("a wildcard baseline is the 8 normal runs", result["n_comparison_folders"], 8)
+                   session_id, target, baseline_folders=normal)
+    check.eq("a wildcard baseline is the 8 normal runs", result["n_baseline_folders"], 8)
     check.ok("a smaller baseline leaves more new tokens",
              result["new_token_occurrences"] >= everything["new_token_occurrences"],
              f"{result['new_token_occurrences']} vs {everything['new_token_occurrences']}")
@@ -600,7 +600,7 @@ def stage_hadoop_new_tokens(check, session_id, target):
     def occurrences(frame):
         return (frame.select(pl.col("e_words").explode().alias("token"))
                      .join(table.select("token"), on="token", how="semi").height)
-    check.eq("...none of them occurs in any comparison folder",
+    check.eq("...none of them occurs in any baseline folder",
              occurrences(session.df.filter(pl.col("folder").str.starts_with("PageRank_Normal"))),
              0)
     check.eq("...and each occurs in the target as often as counted",
@@ -614,7 +614,7 @@ def stage_hadoop_new_tokens(check, session_id, target):
 
     check.eq("the baseline vocabulary is kept in the session", len(session.vocabularies), 1)
     again = timed("new_tokens (reuses it)", server.new_tokens,
-                  session_id, target, comparison_folders=normal)
+                  session_id, target, baseline_folders=normal)
     check.eq("...and a repeat gives the same table", again["n_rows"], result["n_rows"])
 
     # The per-line checks read the file the most common new token first shows up
@@ -643,10 +643,10 @@ def stage_hadoop_new_tokens(check, session_id, target):
              narrow["lines_with_new_tokens"] >= lines["lines_with_new_tokens"],
              f"{narrow['lines_with_new_tokens']} vs {lines['lines_with_new_tokens']}")
 
-    # anomaly_line_content trains on the same file in the comparison log folders
+    # anomaly_line_content trains on the same file in the baseline log folders
     # -- the match_file_name baseline -- and hadoop has no label column, so
     # OOVDetector's vocabulary is every baseline line.
-    scored = server.anomaly_line_content(session_id, target, comparison_folders=normal,
+    scored = server.anomaly_line_content(session_id, target, baseline_folders=normal,
                                          target_files=[file_name],
                                          detectors=["OOVDetector"], max_rows=1)
     oovd = session.get_result(scored["files"][0]["result_id"])[1]["OOVD_pred_ano_proba"]
@@ -663,14 +663,14 @@ def stage_hadoop_new_tokens(check, session_id, target):
 
     if session.parsers:
         parser = session.parsers[0]
-        events = server.new_tokens(session_id, target, comparison_folders=normal,
+        events = server.new_tokens(session_id, target, baseline_folders=normal,
                                    content_format=f"Parse-{parser}")
         check.ok(f"with Parse-{parser} each token is an event id, one per line",
                  all(row["count"] == row["n_lines"] for row in events["rows"]),
                  f"{events['n_rows']} new event types")
 
     check.raises("the target alone is no baseline", ValueError,
-                 server.new_tokens, session_id, target, comparison_folders=[target])
+                 server.new_tokens, session_id, target, baseline_folders=[target])
     check.raises("raw-text content has no tokens", ValueError,
                  server.new_tokens, session_id, target, content_format="Sklearn")
 
@@ -684,10 +684,11 @@ def stage_hadoop_distance(check, session_id, target, file_name):
     """The four distance_* tools -- pairwise comparison, L1 to L4."""
     check.section("5. distance_folder_filename / _folder_content / _file_content / _line_content")
 
-    l1 = server.distance_folder_filename(session_id, target, comparison_folders="ALL")
+    l1 = server.distance_folder_filename(session_id, target, baseline_folders="ALL",
+                                         threshold=False)
     check.eq("every other log folder is compared", l1["n_rows"], HADOOP_FOLDERS - 1)
     check.ok("the target is not compared with itself",
-             all(row["comparison_folder"] != target for row in l1["rows"]))
+             all(row["baseline_folder"] != target for row in l1["rows"]))
     check.ok("jaccard distance is a distance in [0, 1]",
              all(0.0 <= row["jaccard distance"] <= 1.0 for row in l1["rows"]))
     check.ok("the preview is sorted by jaccard distance, least similar first",
@@ -695,22 +696,34 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              == sorted((row["jaccard distance"] for row in l1["rows"]), reverse=True))
     check.eq("sorted_by says so", l1["sorted_by"], "jaccard distance")
     check.ok("the whole table was written", os.path.isfile(l1["artifact"]))
+    l1r = timed("distance_folder_filename (clean range)", server.distance_folder_filename,
+                session_id, target)
+    check.eq("the file-name clean range covers both measures",
+             [row["measure"] for row in l1r["clean_range"]],
+             ["jaccard distance", "overlap distance"])
+    check.ok("...with clean_min <= clean_mid <= clean_max",
+             all(row["clean_min"] <= row["clean_mid"] <= row["clean_max"]
+                 for row in l1r["clean_range"]), str(l1r["clean_range"]))
+    check.ok("...in place of rows", "rows" not in l1r, str(list(l1r)))
 
-    subset = server.distance_folder_filename(session_id, target, comparison_folders=5)
+    subset = server.distance_folder_filename(session_id, target, baseline_folders=5)
     check.eq("an int selector takes the first N", subset["n_rows"], 5)
     wildcard = server.distance_folder_filename(session_id, target,
-                                               comparison_folders="PageRank_Normal*")
+                                               baseline_folders="PageRank_Normal*")
     check.eq("a wildcard selector matches by prefix (8 PageRank_Normal runs)",
              wildcard["n_rows"], 8)
     check.raises("an unknown target log folder is rejected", ValueError,
                  server.distance_folder_filename, session_id, "no_such_folder")
     check.raises("an out-of-range int selector is rejected", ValueError,
                  server.distance_folder_filename, session_id, target,
-                 comparison_folders=10_000)
+                 baseline_folders=10_000)
 
     l2 = timed("distance_folder_content", server.distance_folder_content,
-               session_id, target, comparison_folders=10, content_format="Words")
-    check.eq("one row per comparison log folder", l2["n_rows"], 10)
+               session_id, target, baseline_folders=2, content_format="Words")
+    check.eq("one row per baseline log folder", l2["n_rows"], 2)
+    check.ok("under 3 baseline folders there is no clean_range, and it says so",
+             "clean_range" not in l2
+             and any("No clean_range" in note for note in l2["notes"]), str(l2["notes"]))
     measures = ["cosine", "jaccard", "containment"]
     check.ok("the three default distance measures are present",
              all(m in l2["rows"][0] for m in measures), str(list(l2["rows"][0])))
@@ -725,22 +738,76 @@ def stage_hadoop_distance(check, session_id, target, file_name):
     check.ok("the note says larger means more different",
              any("more different" in note for note in l2["notes"]))
 
-    l2c = server.distance_folder_content(session_id, target, comparison_folders=3,
+    l2c = server.distance_folder_content(session_id, target, baseline_folders=3,
                                          content_format="Words",
                                          measures=measures + ["compression"])
-    check.ok("compression still runs when asked for", "compression" in l2c["rows"][0])
+    check.ok("compression still runs when asked for",
+             "compression" in [row["measure"] for row in l2c["clean_range"]])
     check.ok("adding compression to the defaults adds no subset warning",
              not any("did not run" in note for note in l2c["notes"]))
 
+    # Six PageRank_Normal runs agree closely; a seventh (..._0024) is far from
+    # all of them on cosine, so it must land beyond the range the six form while
+    # the eighth, held out, lands inside it. Margins are wide: observed about
+    # -1 and 98.
+    normals = [name for name in server.STORE.get(session_id).folders
+               if name.startswith("PageRank_Normal")]
+    clean, odd, held_out = normals[:6], normals[6], normals[7]
+    ranged = timed("distance_folder_content (clean range)", server.distance_folder_content,
+                   session_id, held_out, baseline_folders=clean)
+    check.ok("3+ baseline folders return clean_range instead of rows",
+             "clean_range" in ranged and "rows" not in ranged, str(list(ranged)))
+    check.eq("one clean_range row per measure",
+             [row["measure"] for row in ranged["clean_range"]], measures)
+    check.ok("clean_min <= clean_mid <= clean_max",
+             all(row["clean_min"] <= row["clean_mid"] <= row["clean_max"]
+                 for row in ranged["clean_range"]))
+    check.eq("the per-comparison distances stay queryable", ranged["n_rows"], len(clean))
+    scaled = {row["measure"]: row["threshold_score"] for row in ranged["clean_range"]}
+    check.ok("a held-out clean run lands inside the clean range on cosine",
+             scaled["cosine"] < 1, str(scaled))
+    cached = len(server.STORE.get(session_id).clean_ranges)
+    outlier = server.distance_folder_content(session_id, odd, baseline_folders=clean)
+    scaled = {row["measure"]: row["threshold_score"] for row in outlier["clean_range"]}
+    check.ok("a run far from the clean ones lands well beyond it on cosine",
+             scaled["cosine"] > 10, str(scaled))
+    check.eq("the same clean runs reuse the cached range",
+             len(server.STORE.get(session_id).clean_ranges), cached)
+
+    closest = server.distance_folder_content(session_id, odd, baseline_folders=clean,
+                                             threshold=False)
+    check.ok("threshold=False returns rows and no clean_range",
+             "clean_range" not in closest and closest["n_rows"] == len(clean)
+             and not any("clean_range" in note for note in closest["notes"]),
+             str(closest["notes"]))
+    everything = timed("distance_folder_content (clean range, ALL)",
+                       server.distance_folder_content, session_id, target)
+    check.ok("with more than 10 baseline folders the range is sampled, and it says so",
+             "clean_range" in everything
+             and any(f"from {distance.MAX_CLEAN_FOLDERS} of the {HADOOP_FOLDERS - 1}" in note
+                     for note in everything["notes"]), str(everything["notes"]))
+
     l3 = timed("distance_file_content", server.distance_file_content,
-               session_id, target, comparison_folders=5, target_files=2,
-               content_format="Words")
-    check.ok("files x comparison folders rows", l3["n_rows"] > 0, f"{l3['n_rows']} rows")
+               session_id, target, baseline_folders=5, target_files=2,
+               content_format="Words", threshold=False)
+    check.ok("files x baseline folders rows", l3["n_rows"] > 0, f"{l3['n_rows']} rows")
     check.ok("each row names the file it compared",
              all("file_name" in row for row in l3["rows"]))
+    l3r = timed("distance_file_content (clean range)", server.distance_file_content,
+                session_id, target, target_files=2)
+    check.ok("each file gets its own clean range per measure",
+             l3r.get("clean_range")
+             and {row["measure"] for row in l3r["clean_range"]} == set(measures)
+             and all("file_name" in row for row in l3r["clean_range"]),
+             str(l3r.get("clean_range", l3r["notes"]))[:300])
+    check.ok("...largest threshold_score first",
+             [row["threshold_score"] for row in l3r["clean_range"]
+              if row["threshold_score"] is not None]
+             == sorted((row["threshold_score"] for row in l3r["clean_range"]
+                        if row["threshold_score"] is not None), reverse=True))
 
     l4 = timed("distance_line_content", server.distance_line_content,
-               session_id, target, comparison_folders=2, target_files=[file_name],
+               session_id, target, baseline_folders=2, target_files=[file_name],
                max_rows=5)
     check.eq("one entry for the one target file", l4["n_files"], 1)
     entry = l4["files"][0]
@@ -768,7 +835,7 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              str(l4["notes"]))
     check.raises("mask=False is refused", ValueError,
                  server.distance_line_content, session_id, target,
-                 comparison_folders=2, target_files=[file_name], mask=False)
+                 baseline_folders=2, target_files=[file_name], mask=False)
 
     bucket_row = l4["rows"][0]
     opened = timed("read_bucket_lines", server.read_bucket_lines,
@@ -797,7 +864,7 @@ def stage_hadoop_distance(check, session_id, target, file_name):
                  bucket_row["bucket"], measure="Bigram")
 
     l4m = timed("distance_line_content (minhash)", server.distance_line_content,
-                session_id, target, comparison_folders=2, target_files=[file_name],
+                session_id, target, baseline_folders=2, target_files=[file_name],
                 content_format="3grams", measures=["Minhash", "Exact"], max_rows=5)
     minhash_entry = l4m["files"][0]
     check.eq("the opt-in minhash measure ran",
@@ -812,12 +879,12 @@ def stage_hadoop_distance(check, session_id, target, file_name):
              f"{minhash_entry['measures'][1]['buckets']}")
     check.raises("an unknown measure is refused", ValueError,
                  server.distance_line_content, session_id, target,
-                 comparison_folders=2, target_files=[file_name],
+                 baseline_folders=2, target_files=[file_name],
                  measures=["Bigram"])
     # Prefix and Minhash read tokens, so a scalar content_format cannot serve them.
     check.raises("a token measure over a non-token content_format is refused",
                  ValueError, server.distance_line_content, session_id, target,
-                 comparison_folders=2, target_files=[file_name],
+                 baseline_folders=2, target_files=[file_name],
                  content_format="Sklearn", measures=["Prefix"])
     return l2
 
@@ -827,7 +894,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     check.section("6. anomaly_folder_filename / _folder_content / _file_content / _line_content")
 
     l1 = timed("anomaly_folder_filename", server.anomaly_folder_filename,
-               session_id, target_folder=5, comparison_folders="ALL")
+               session_id, target_folder=5, baseline_folders="ALL")
     check.eq("one row per target log folder", l1["n_rows"], 5)
     check.ok("rank_sum and zscore_sum are both there",
              all(key in l1["rows"][0] for key in ("rank_sum", "zscore_sum")))
@@ -857,7 +924,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     # ones. Ranking, not exact scores -- the detectors are unsupervised.
     l2 = timed("anomaly_folder_content (all 55 vs PageRank_Normal*)",
                server.anomaly_folder_content, session_id, target_folder="ALL",
-               comparison_folders="PageRank_Normal*", content_format="Words", max_rows=5)
+               baseline_folders="PageRank_Normal*", content_format="Words", max_rows=5)
     check.eq("every log folder scored", l2["n_rows"], HADOOP_FOLDERS)
     check.ok("the preview is the worst rows, not the first ones",
              [row["rank_sum"] for row in l2["rows"]]
@@ -875,9 +942,35 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     # for the detectors' run-to-run wobble, not for a real regression.
     check.ok("...and the ranking separates the two, not just their means",
              auc >= 0.75, f"AUC {auc:.3f}, expected >= 0.75")
+    check.ok("the clean range has one row per detector",
+             [row["detector"] for row in l2.get("clean_range", [])] == list(anomaly.DETECTORS),
+             str(l2.get("clean_range", l2["notes"])))
+    check.ok("the normal runs being targets too is said",
+             any("also targets" in note for note in l2["notes"]), str(l2["notes"]))
+    normal_above = [row["above_clean_max"] for row in every if "_Normal_" in row["folder"]]
+    failed_above = [row["above_clean_max"] for row in every if "_Normal_" not in row["folder"]]
+    check.info(f"mean above_clean_max: normal {sum(normal_above) / len(normal_above):.2f}, "
+               f"failure {sum(failed_above) / len(failed_above):.2f}")
+    check.ok("failure log folders score above the clean range more often",
+             sum(failed_above) / len(failed_above) > sum(normal_above) / len(normal_above))
+
+    normals = [name for name in server.STORE.get(session_id).folders
+               if name.startswith("PageRank_Normal")]
+    outside = timed("anomaly_folder_content (clean range, 1 target vs 6)",
+                    server.anomaly_folder_content, session_id, target_folder=[normals[6]],
+                    baseline_folders=normals[:6])
+    check.ok("a target outside the baseline folders gets above_clean_max and "
+             "per-detector threshold_score",
+             all(key in outside["rows"][0]
+                 for key in ("above_clean_max", "KMeans_threshold_score")),
+             str(list(outside["rows"][0])))
+    plain = server.anomaly_folder_content(session_id, target_folder=[normals[6]],
+                                          baseline_folders=normals[:6], threshold=False)
+    check.ok("threshold=False adds no clean range",
+             "clean_range" not in plain and "above_clean_max" not in plain["rows"][0])
 
     params = server.anomaly_folder_content(
-        session_id, target_folder=2, comparison_folders=5,
+        session_id, target_folder=2, baseline_folders=5,
         detectors=["KMeans", "RarityDetector"],
         detector_params={"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}})
     check.ok("detector_params reach the detectors",
@@ -885,10 +978,14 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
              and "RM_pred_ano_proba" in params["rows"][0])
 
     l3 = timed("anomaly_file_content", server.anomaly_file_content,
-               session_id, target, comparison_folders="ALL", target_files=3,
+               session_id, target, baseline_folders="ALL", target_files=3,
                content_format="Words")
     check.eq("one row per scored file", l3["n_rows"], 3)
     check.ok("each row names its file", all("file_name" in row for row in l3["rows"]))
+    check.ok("each file has its own clean range",
+             {row["file_name"] for row in l3.get("clean_range", [])}
+             == {row["file_name"] for row in l3["rows"]}
+             and all("above_clean_max" in row for row in l3["rows"]), str(l3["notes"]))
     worst_file = l3["rows"][0]["file_name"]
 
     # anomaly_file_content compares a file with its namesake in the other log
@@ -897,7 +994,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     # its baseline outside the per-file loop and so never filtered it by name,
     # scoring each file against the other *kinds* of file instead. That is
     # invisible in the output (it still returns a row per file with plausible
-    # scores) and shows up only as this: a file no comparison log folder has
+    # scores) and shows up only as this: a file no baseline log folder has
     # must be skipped, not scored against whatever else is lying around.
     unmatched = "no_other_folder_has_this_file.log"
     session = server.STORE.get(session_id)
@@ -907,7 +1004,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
     )
     try:
         renamed = server.anomaly_file_content(
-            session_id, target, comparison_folders="ALL", target_files=[unmatched],
+            session_id, target, baseline_folders="ALL", target_files=[unmatched],
             content_format="Words")
         check.eq("a file no other log folder has is skipped, not scored",
                  renamed["n_rows"], 0)
@@ -921,7 +1018,7 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
                  pl.col("file_name") == unmatched).height, 0)
 
     l4 = timed("anomaly_line_content", server.anomaly_line_content,
-               session_id, target, comparison_folders="ALL", target_files=[worst_file],
+               session_id, target, baseline_folders="ALL", target_files=[worst_file],
                content_format="Words", max_rows=5)
     check.eq("one entry for the file asked for", l4["n_files"], 1)
     entry = l4["files"][0]
@@ -939,6 +1036,10 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
                  for col in server.STORE.get(session_id).get_result(entry["result_id"])[1].columns))
     check.ok("the note points at them",
              any("moving_avg_100_" in note for note in l4["notes"]))
+    check.ok("the file carries its clean range and every line above_clean_max",
+             len(entry.get("clean_range", [])) == len(anomaly.DETECTORS)
+             and all("above_clean_max" in line for line in entry["top_lines"]),
+             str(l4["notes"]))
     return l2, entry
 
 
@@ -956,7 +1057,7 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     tiny = pl.DataFrame(rows, schema=["folder", "m_message", "file_name", "orig_file_name"],
                         orient="row")
     per_file, _ = sequence.sequence_line_event_prediction(
-        tiny, "t", comparison_folders=["f1", "f2"], mask=False, content_format="Sklearn",
+        tiny, "t", baseline_folders=["f1", "f2"], mask=False, content_format="Sklearn",
         ngrams=3, window=2)
     scores = per_file[0][2]["NEP_pred_ano_proba"].to_list()
     check.eq("a swap scores 1 on the n-grams through it and 0 elsewhere",
@@ -966,7 +1067,7 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     check.eq("...and lap_unseen counts them",
              per_file[0][2]["lap_unseen"].to_list(), [0, 2, 2, 2, 1, 0, 0])
     only_lap, _ = sequence.sequence_line_event_prediction(
-        tiny, "t", comparison_folders=["f1", "f2"], detectors=["LAP"], mask=False,
+        tiny, "t", baseline_folders=["f1", "f2"], detectors=["LAP"], mask=False,
         content_format="Sklearn")
     check.ok("detectors=['LAP'] leaves NEP out",
              "NEP_pred_ano_proba" not in only_lap[0][2].columns
@@ -983,7 +1084,7 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     # Parse-Tip, not the default Parse-Drain: a parse lands in the log root's parquet cache,
     # and stage_hadoop_config later asserts that only its own pre_parse parser (Tip) is there.
     result = timed("sequence_line_event_prediction", server.sequence_line_event_prediction,
-                   session_id, target, comparison_folders="ALL", target_files=[file_name],
+                   session_id, target, baseline_folders="ALL", target_files=[file_name],
                    content_format="Parse-Tip", max_rows=5)
     check.eq("one entry for the file asked for", result["n_files"], 1)
     entry = result["files"][0]
@@ -1008,7 +1109,7 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
         [before.filter(~is_target), before.filter(is_target).reverse()])
     try:
         reversed_ = server.sequence_line_event_prediction(
-            session_id, target, comparison_folders="ALL", target_files=[file_name],
+            session_id, target, baseline_folders="ALL", target_files=[file_name],
             content_format="Parse-Tip")
         reversed_table = server.STORE.get(session_id).get_result(
             reversed_["files"][0]["result_id"])[1]
@@ -1108,7 +1209,7 @@ def stage_hadoop_plots(check, session_id, target, file_name):
     check.section("8. plot_folder_filename / plot_folder_content / plot_file_content")
 
     l1 = timed("plot_folder_filename", server.plot_folder_filename,
-               session_id, target, comparison_folders="ALL", group_by_indices=[0, 1])
+               session_id, target, baseline_folders="ALL", group_by_indices=[0, 1])
     check.ok("a plot result carries no rows", "rows" not in l1)
     check.eq("one point per log folder", l1["n_rows"], HADOOP_FOLDERS)
     check.ok("both axes are summarized",
@@ -1134,7 +1235,7 @@ def stage_hadoop_plots(check, session_id, target, file_name):
              "umap_x" not in points["columns"], str(points["columns"]))
 
     l2 = timed("plot_folder_content", server.plot_folder_content,
-               session_id, target, comparison_folders="ALL", content_format="Words")
+               session_id, target, baseline_folders="ALL", content_format="Words")
     check.eq("one point per log folder", l2["n_rows"], HADOOP_FOLDERS)
     check.ok("x is distinct terms, y is lines",
              l2["summary"]["unique_terms"]["max"] > 0
@@ -1146,7 +1247,7 @@ def stage_hadoop_plots(check, session_id, target, file_name):
     # and the default view never uses its output.
     umap = timed("plot_folder_content with UMAP (first one pays numba's JIT)",
                  server.plot_folder_content, session_id, target,
-                 comparison_folders="ALL", content_format="Words",
+                 baseline_folders="ALL", content_format="Words",
                  random_seed=42, plots=["umap", "scatter"])
     check.eq("both figures written", sorted(umap["plots"]), ["scatter", "umap"])
     check.ok("both files exist",
@@ -1163,7 +1264,7 @@ def stage_hadoop_plots(check, session_id, target, file_name):
                  server.plot_folder_content, session_id, target, plots=["barchart"])
 
     l3 = timed("plot_file_content", server.plot_file_content,
-               session_id, target, comparison_folders="ALL", target_files=[file_name],
+               session_id, target, baseline_folders="ALL", target_files=[file_name],
                content_format="Words")
     check.eq("one plot per file asked for", l3["n_files"], 1)
     entry = l3["files"][0]
@@ -1238,7 +1339,7 @@ steps:
              result["executed"] and all(step["params"].get("target_folder") == target
                                         for step in result["executed"]))
     check.ok("comparison_runs was translated too",
-             result["executed"] and all("comparison_folders" in step["params"]
+             result["executed"] and all("baseline_folders" in step["params"]
                                         for step in result["executed"]))
     plot_step = [s for s in result["executed"] if s["step"] == "plot_run_content"]
     check.eq("a LogDelta plot step means both figures, which its config cannot say",
@@ -1270,12 +1371,12 @@ def stage_hadoop_incremental(check, session_id):
              str(session.parsers))
     before = set(session.df.columns)
     reused = timed("re-using Parse-Tip", server.anomaly_folder_content,
-                   session_id, target_folder=2, comparison_folders=5,
+                   session_id, target_folder=2, baseline_folders=5,
                    content_format="Parse-Tip")
     check.eq("no new columns for a parser already there",
              set(server.STORE.get(session_id).df.columns), before)
     added = timed("adding Parse-Drain", server.anomaly_folder_content,
-                  session_id, target_folder=2, comparison_folders=5,
+                  session_id, target_folder=2, baseline_folders=5,
                   content_format="Parse-Drain")
     session = server.STORE.get(session_id)
     check.ok("a new parser adds only its own column",
@@ -1288,10 +1389,10 @@ def stage_hadoop_incremental(check, session_id):
     # request: EventLogEnhancer short-circuits on the output column alone, and
     # Session.content_source is what stops that.
     masked_first = server.distance_folder_content(session_id, session.folders[0],
-                                                  comparison_folders=2, mask=True,
+                                                  baseline_folders=2, mask=True,
                                                   content_format="Words")
     unmasked = server.distance_folder_content(session_id, session.folders[0],
-                                              comparison_folders=2, mask=False,
+                                              baseline_folders=2, mask=False,
                                               content_format="Words")
     check.ok("switching mask recomputes rather than reusing the wrong column",
              any(a["cosine"] != b["cosine"]
@@ -1319,7 +1420,7 @@ def stage_hadoop_mask_off(check, log_root):
              "" if not info["enhanced_columns"] else str(info["enhanced_columns"]))
     check.raises("a masked analysis says how to fix it", ValueError,
                  server.distance_folder_content, "unmasked",
-                 server.STORE.get("unmasked").folders[0], comparison_folders=2, mask=True)
+                 server.STORE.get("unmasked").folders[0], baseline_folders=2, mask=True)
     folder = server.STORE.get("unmasked").folders[0]
     file_name = (server.STORE.get("unmasked").df
                  .filter(pl.col("folder") == folder)["file_name"][0])
@@ -1327,7 +1428,7 @@ def stage_hadoop_mask_off(check, log_root):
                  server.read_log_lines, "unmasked", folder, file_name, masked=True)
     unmasked = server.distance_folder_content("unmasked",
                                               server.STORE.get("unmasked").folders[0],
-                                              comparison_folders=2, mask=False)
+                                              baseline_folders=2, mask=False)
     check.eq("mask=False works on the same session", unmasked["n_rows"], 2)
     server.close_log_root("unmasked")
 
@@ -1380,7 +1481,7 @@ def stage_hdfs(check, log_root, session_id):
     # The file-name plot cannot work here: one file per log folder means the x
     # axis is a single value. It has to say so rather than draw a useless plot.
     l1 = timed("plot_folder_filename", server.plot_folder_filename,
-               session_id, anomalies[0], comparison_folders="ALL")
+               session_id, anomalies[0], baseline_folders="ALL")
     check.eq("a point per log folder", l1["n_rows"], HDFS_FOLDERS)
     check.ok("the degenerate x axis is called out",
              any(note.startswith("CAUTION") and "same number of files" in note
@@ -1390,7 +1491,7 @@ def stage_hdfs(check, log_root, session_id):
     # 5,000 rows. Both are the point of the tool at this size.
     l2 = timed("plot_folder_content (default: scatter only)",
                server.plot_folder_content, session_id, anomalies[0],
-               comparison_folders="ALL", content_format="Words")
+               baseline_folders="ALL", content_format="Words")
     check.eq("all 5,000 log folders are in the table", l2["n_rows"], HDFS_FOLDERS)
     check.ok("but none of them are in the result", "rows" not in l2)
     check.eq("only the scatter was built", list(l2["plots"]), ["scatter"])
@@ -1425,7 +1526,7 @@ def stage_hdfs(check, log_root, session_id):
     targets = anomalies[:10] + normals[:10]
     scored = timed("anomaly_folder_content (20 targets vs Normal_*)",
                    server.anomaly_folder_content, session_id, target_folder=targets,
-                   comparison_folders="Normal_*", content_format="Words", max_rows=20)
+                   baseline_folders="Normal_*", content_format="Words", max_rows=20)
     check.eq("one row per target", scored["n_rows"], len(targets))
     rows = server.query_result(session_id, scored["result_id"], sort_by="rank_sum",
                                max_rows=len(targets))["rows"]
@@ -1449,11 +1550,11 @@ def stage_hdfs(check, log_root, session_id):
     files_detail = server.describe_log_root(session_id, include_files=True)["files_detail"]
     check.ok("no file name recurs across log folders",
              all(row["n_folders"] == 1 for row in files_detail))
-    pairs = server.distance_file_content(session_id, anomalies[0], comparison_folders=20,
+    pairs = server.distance_file_content(session_id, anomalies[0], baseline_folders=20,
                                          content_format="Words")
     check.eq("so L3 distance finds no pairs", pairs["n_rows"], 0)
     scored_file = server.anomaly_file_content(session_id, anomalies[0],
-                                              comparison_folders=20, content_format="Words")
+                                              baseline_folders=20, content_format="Words")
     check.ok("and L3 anomaly has at most the target's own file to score",
              scored_file["n_rows"] <= 1, f"{scored_file['n_rows']} row(s)")
 
@@ -1933,7 +2034,7 @@ def stage_bgl(check, datasets_folder, workdir):
     # other slices' whole content: there is no same-named file to match.
     target = server.STORE.get(session_id).folders[0]
     fresh = timed("new_tokens", server.new_tokens, session_id, target)
-    check.eq("the baseline is the other nine slices", fresh["n_comparison_folders"], 9)
+    check.eq("the baseline is the other nine slices", fresh["n_baseline_folders"], 9)
     check.ok("new tokens are found", fresh["n_rows"] > 0,
              f"{fresh['n_rows']} tokens on {fresh['lines_with_new_tokens']:,} lines")
     unmatched = server.new_tokens(session_id, target, match_file_name=True)

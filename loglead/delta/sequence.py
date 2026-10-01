@@ -3,7 +3,7 @@
 The detectors in :mod:`anomaly` see each line, or a whole file, as a bag of
 tokens, so a familiar line in an unfamiliar place goes unnoticed. The detectors
 here model event order instead: each line is one event, each log file is one
-sequence of events, and the baseline is the same-named file in the comparison
+sequence of events, and the baseline is the same-named file in the baseline
 log folders, one training sequence per file.
 
 * ``NEP`` -- next event prediction with an n-gram model
@@ -77,7 +77,7 @@ def _lap_scores(model, events):
 
 
 def sequence_line_event_prediction(
-    df, target_folder, comparison_folders="ALL", target_files="ALL", detectors=None, mask=True,
+    df, target_folder, baseline_folders="ALL", target_files="ALL", detectors=None, mask=True,
     content_format="Parse-Drain", ngrams=5, window=10,
 ):
     """Score every line of a target file by how expected it is after the lines before it.
@@ -113,9 +113,9 @@ def sequence_line_event_prediction(
 
     per_file = []
     for folder_name in target_folder_names:
-        target_df, comparison_folder_names = log_root.prepare_folders(df, folder_name, comparison_folders)
+        target_df, baseline_folder_names = log_root.prepare_folders(df, folder_name, baseline_folders)
         file_names = log_root.prepare_files(target_df, target_files)
-        other_folders_df = df.filter(pl.col("folder").is_in(comparison_folder_names))
+        other_folders_df = df.filter(pl.col("folder").is_in(baseline_folder_names))
 
         for file_name in file_names:
             target_lines = target_df.filter(pl.col("file_name") == file_name)

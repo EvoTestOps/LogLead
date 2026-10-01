@@ -27,7 +27,7 @@ def _path_safe(value):
 
 
 def build_file_name(
-    analysis, level=0, target_folder="", comparison_folder="", file="", mask=False,
+    analysis, level=0, target_folder="", baseline_folder="", file="", mask=False,
     content_format="", vectorizer="", prefix="", timestamp=None,
 ):
     """Assemble the LogDelta-style stem for an output file (no extension)."""
@@ -37,8 +37,8 @@ def build_file_name(
     # name on top, so neither is trusted to be path-safe.
     if target_folder:
         name += f"_{_path_safe(target_folder)}"
-    if comparison_folder:
-        name += f"_vs_{_path_safe(comparison_folder)}"
+    if baseline_folder:
+        name += f"_vs_{_path_safe(baseline_folder)}"
     name += f"_mask={mask}"
     if content_format:
         name += f"_format={content_format}"

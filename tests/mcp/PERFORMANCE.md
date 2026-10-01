@@ -77,15 +77,24 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_filename | hadoop_renamed | 0.066 | 0.074 | 0.402 | 0.715 |
-| distance_folder_filename | hdfs_balanced_5k | 1.659 | 4.297 | 19.4 | 47.9 |
-| distance_folder_filename | bgl_split_10 | 0.123 | 0.173 | 0.323 | 0.431 |
-| distance_folder_content | hadoop_renamed | 0.881 | 1.412 | 7.916 | 15.4 |
-| distance_folder_content | hdfs_balanced_5k | 1.814 | 3.960 | 20.1 | 41.5 |
-| distance_folder_content | bgl_split_10 | 5.805 | 11.5 | 56.0 | 147.7 |
-| distance_file_content | hadoop_renamed | 0.775 | 1.621 | 8.271 | 16.9 |
-| distance_file_content | hdfs_balanced_5k | 0.019 | 0.025 | 0.021 | 0.023 |
-| distance_file_content | bgl_split_10 | 0.034 | 0.052 | 0.167 | 0.275 |
+| distance_folder_filename | hadoop_renamed | 0.033 | 0.106 | 0.330 | 0.698 |
+| distance_folder_filename | hdfs_balanced_5k | 1.750 | 3.175 | 16.7 | 34.1 |
+| distance_folder_filename | bgl_split_10 | 0.108 | 0.145 | 0.369 | 0.674 |
+| distance_folder_filename (threshold=False) | hadoop_renamed | 0.035 | 0.070 | 0.311 | 0.662 |
+| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 1.609 | 3.234 | 17.0 | 34.2 |
+| distance_folder_filename (threshold=False) | bgl_split_10 | 0.108 | 0.134 | 0.283 | 0.432 |
+| distance_folder_content | hadoop_renamed | 0.116 | 0.266 | 1.148 | 2.238 |
+| distance_folder_content | hdfs_balanced_5k | 1.292 | 3.040 | 13.5 | 28.2 |
+| distance_folder_content | bgl_split_10 | 0.833 | 1.368 | 6.531 | 18.9 |
+| distance_folder_content (threshold=False) | hadoop_renamed | 0.110 | 0.203 | 1.012 | 2.063 |
+| distance_folder_content (threshold=False) | hdfs_balanced_5k | 1.336 | 2.586 | 13.7 | 28.2 |
+| distance_folder_content (threshold=False) | bgl_split_10 | 0.558 | 0.955 | 4.312 | 11.9 |
+| distance_file_content | hadoop_renamed | 0.359 | 0.842 | 2.954 | 7.494 |
+| distance_file_content | hdfs_balanced_5k | 0.020 | 0.019 | 0.021 | 0.023 |
+| distance_file_content | bgl_split_10 | 0.049 | 0.057 | 0.188 | 0.383 |
+| distance_file_content (threshold=False) | hadoop_renamed | 0.234 | 0.538 | 2.593 | 6.230 |
+| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.023 | 0.019 | 0.021 | 0.025 |
+| distance_file_content (threshold=False) | bgl_split_10 | 0.047 | 0.063 | 0.136 | 0.255 |
 | distance_line_content | hadoop_renamed | 0.101 | 0.121 | 0.194 | 0.367 |
 | distance_line_content | hdfs_balanced_5k | 0.034 | 0.036 | 0.062 | 0.063 |
 | distance_line_content | bgl_split_10 | 0.069 | 0.085 | 0.250 | 0.449 |
@@ -94,18 +103,30 @@ Tables A1-A4 are **cold** (first call, nothing cached). Tables B1-B4 are the sam
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename | hadoop_renamed | 0.214 | 0.218 | 0.199 | 0.233 |
-| anomaly_folder_filename | hdfs_balanced_5k | 0.159 | 0.173 | 0.194 | 0.260 |
-| anomaly_folder_filename | bgl_split_10 | 0.242 | 0.343 | 0.931 | 1.559 |
-| anomaly_folder_content | hadoop_renamed | 0.213 | 0.230 | 0.363 | 0.786 |
-| anomaly_folder_content | hdfs_balanced_5k | 0.161 | 0.178 | 0.314 | 0.528 |
-| anomaly_folder_content | bgl_split_10 | 0.318 | 0.544 | 1.865 | 8.044 |
-| anomaly_file_content | hadoop_renamed | err | 2.572 | 2.404 | 3.285 |
-| anomaly_file_content | hdfs_balanced_5k | 0.021 | 0.022 | 0.028 | 0.036 |
-| anomaly_file_content | bgl_split_10 | 0.032 | 0.041 | 0.100 | 0.261 |
-| anomaly_line_content | hadoop_renamed | 0.584 | 0.329 | 0.379 | 0.389 |
-| anomaly_line_content | hdfs_balanced_5k | 0.017 | 0.016 | 0.026 | 0.032 |
-| anomaly_line_content | bgl_split_10 | 0.032 | 0.056 | 0.150 | 0.269 |
+| anomaly_folder_filename | hadoop_renamed | 0.441 | 0.913 | 1.739 | 2.938 |
+| anomaly_folder_filename | hdfs_balanced_5k | 1.461 | 1.541 | 1.726 | 2.156 |
+| anomaly_folder_filename | bgl_split_10 | 1.800 | 2.273 | 5.619 | 10.3 |
+| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.148 | 0.153 | 0.207 | 0.218 |
+| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.132 | 0.152 | 0.178 | 0.201 |
+| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.207 | 0.274 | 0.735 | 1.346 |
+| anomaly_folder_content | hadoop_renamed | 0.501 | 1.075 | 3.426 | 7.911 |
+| anomaly_folder_content | hdfs_balanced_5k | 1.537 | 1.705 | 2.786 | 4.104 |
+| anomaly_folder_content | bgl_split_10 | 2.537 | 4.090 | 18.8 | 69.8 |
+| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.194 | 0.194 | 0.330 | 0.719 |
+| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.170 | 0.170 | 0.291 | 0.420 |
+| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.322 | 0.502 | 1.844 | 8.938 |
+| anomaly_file_content | hadoop_renamed | err | 12.7 | 24.3 | 32.4 |
+| anomaly_file_content | hdfs_balanced_5k | 0.018 | 0.020 | 0.023 | 0.041 |
+| anomaly_file_content | bgl_split_10 | 0.029 | 0.044 | 0.114 | 0.177 |
+| anomaly_file_content (threshold=False) | hadoop_renamed | err | 2.072 | 2.324 | 3.039 |
+| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.020 | 0.021 | 0.021 | 0.035 |
+| anomaly_file_content (threshold=False) | bgl_split_10 | 0.029 | 0.038 | 0.144 | 0.272 |
+| anomaly_line_content | hadoop_renamed | 0.622 | 1.833 | 1.699 | 1.945 |
+| anomaly_line_content | hdfs_balanced_5k | 0.015 | 0.016 | 0.019 | 0.028 |
+| anomaly_line_content | bgl_split_10 | 0.030 | 0.041 | 0.131 | 0.262 |
+| anomaly_line_content (threshold=False) | hadoop_renamed | 0.219 | 0.447 | 0.240 | 0.267 |
+| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.017 | 0.015 | 0.018 | 0.029 |
+| anomaly_line_content (threshold=False) | bgl_split_10 | 0.029 | 0.042 | 0.131 | 0.279 |
 
 ## Table A4 -- Plot tools
 
@@ -197,15 +218,24 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_filename | hadoop_renamed | 0.061 | 0.102 | 0.323 | 0.786 |
-| distance_folder_filename | hdfs_balanced_5k | 1.629 | 3.754 | 19.1 | 38.4 |
-| distance_folder_filename | bgl_split_10 | 0.115 | 0.145 | 0.282 | 0.447 |
-| distance_folder_content | hadoop_renamed | 0.668 | 1.383 | 8.024 | 16.0 |
-| distance_folder_content | hdfs_balanced_5k | 1.838 | 4.051 | 19.4 | 43.1 |
-| distance_folder_content | bgl_split_10 | 5.896 | 10.6 | 55.0 | 155.1 |
-| distance_file_content | hadoop_renamed | 0.912 | 1.665 | 7.704 | 16.7 |
-| distance_file_content | hdfs_balanced_5k | 0.015 | 0.019 | 0.019 | 0.022 |
-| distance_file_content | bgl_split_10 | 0.032 | 0.050 | 0.162 | 0.273 |
+| distance_folder_filename | hadoop_renamed | 0.032 | 0.078 | 0.312 | 0.657 |
+| distance_folder_filename | hdfs_balanced_5k | 1.619 | 3.218 | 18.1 | 35.3 |
+| distance_folder_filename | bgl_split_10 | 0.112 | 0.138 | 0.272 | 0.404 |
+| distance_folder_filename (threshold=False) | hadoop_renamed | 0.038 | 0.072 | 0.303 | 0.683 |
+| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 1.649 | 3.245 | 16.9 | 33.9 |
+| distance_folder_filename (threshold=False) | bgl_split_10 | 0.103 | 0.132 | 0.283 | 0.394 |
+| distance_folder_content | hadoop_renamed | 0.111 | 0.182 | 0.959 | 2.199 |
+| distance_folder_content | hdfs_balanced_5k | 1.362 | 2.736 | 13.4 | 30.1 |
+| distance_folder_content | bgl_split_10 | 0.578 | 0.953 | 4.346 | 12.4 |
+| distance_folder_content (threshold=False) | hadoop_renamed | 0.108 | 0.189 | 0.990 | 2.058 |
+| distance_folder_content (threshold=False) | hdfs_balanced_5k | 1.337 | 2.646 | 13.3 | 29.1 |
+| distance_folder_content (threshold=False) | bgl_split_10 | 0.572 | 0.999 | 4.294 | 11.8 |
+| distance_file_content | hadoop_renamed | 0.256 | 0.829 | 3.023 | 6.496 |
+| distance_file_content | hdfs_balanced_5k | 0.019 | 0.018 | 0.022 | 0.024 |
+| distance_file_content | bgl_split_10 | 0.044 | 0.060 | 0.167 | 0.280 |
+| distance_file_content (threshold=False) | hadoop_renamed | 0.236 | 0.524 | 2.532 | 5.548 |
+| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.022 | 0.021 | 0.022 | 0.027 |
+| distance_file_content (threshold=False) | bgl_split_10 | 0.043 | 0.063 | 0.148 | 0.248 |
 | distance_line_content | hadoop_renamed | 0.101 | 0.090 | 0.205 | 0.358 |
 | distance_line_content | hdfs_balanced_5k | 0.037 | 0.042 | 0.063 | 0.069 |
 | distance_line_content | bgl_split_10 | 0.065 | 0.080 | 0.289 | 0.361 |
@@ -214,18 +244,30 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename | hadoop_renamed | 0.159 | 0.186 | 0.162 | 0.200 |
-| anomaly_folder_filename | hdfs_balanced_5k | 0.144 | 0.148 | 0.177 | 0.225 |
-| anomaly_folder_filename | bgl_split_10 | 0.205 | 0.293 | 0.856 | 1.433 |
-| anomaly_folder_content | hadoop_renamed | 0.198 | 0.223 | 0.345 | 0.687 |
-| anomaly_folder_content | hdfs_balanced_5k | 0.156 | 0.177 | 0.305 | 0.443 |
-| anomaly_folder_content | bgl_split_10 | 0.306 | 0.501 | 1.677 | 6.760 |
-| anomaly_file_content | hadoop_renamed | err | 2.543 | 2.472 | 3.045 |
-| anomaly_file_content | hdfs_balanced_5k | 0.021 | 0.019 | 0.029 | 0.039 |
-| anomaly_file_content | bgl_split_10 | 0.030 | 0.045 | 0.137 | 0.263 |
-| anomaly_line_content | hadoop_renamed | 0.470 | 0.250 | 0.283 | 0.282 |
-| anomaly_line_content | hdfs_balanced_5k | 0.017 | 0.017 | 0.023 | 0.033 |
-| anomaly_line_content | bgl_split_10 | 0.034 | 0.056 | 0.155 | 0.261 |
+| anomaly_folder_filename | hadoop_renamed | 0.163 | 0.178 | 0.183 | 0.317 |
+| anomaly_folder_filename | hdfs_balanced_5k | 0.142 | 0.152 | 0.175 | 0.238 |
+| anomaly_folder_filename | bgl_split_10 | 0.224 | 0.304 | 0.797 | 1.531 |
+| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.135 | 0.148 | 0.158 | 0.282 |
+| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.129 | 0.150 | 0.163 | 0.207 |
+| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.213 | 0.278 | 0.755 | 1.346 |
+| anomaly_folder_content | hadoop_renamed | 0.205 | 0.218 | 0.326 | 0.754 |
+| anomaly_folder_content | hdfs_balanced_5k | 0.160 | 0.180 | 0.278 | 0.417 |
+| anomaly_folder_content | bgl_split_10 | 0.321 | 0.518 | 2.136 | 7.508 |
+| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.190 | 0.203 | 0.311 | 0.718 |
+| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.156 | 0.178 | 0.270 | 0.401 |
+| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.302 | 0.477 | 1.829 | 7.820 |
+| anomaly_file_content | hadoop_renamed | err | 11.2 | 24.8 | 30.3 |
+| anomaly_file_content | hdfs_balanced_5k | 0.019 | 0.021 | 0.021 | 0.041 |
+| anomaly_file_content | bgl_split_10 | 0.025 | 0.034 | 0.107 | 0.277 |
+| anomaly_file_content (threshold=False) | hadoop_renamed | err | 2.090 | 2.339 | 2.922 |
+| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.018 | 0.022 | 0.023 | 0.033 |
+| anomaly_file_content (threshold=False) | bgl_split_10 | 0.031 | 0.039 | 0.158 | 0.288 |
+| anomaly_line_content | hadoop_renamed | 0.225 | 0.493 | 0.248 | 0.307 |
+| anomaly_line_content | hdfs_balanced_5k | 0.015 | 0.015 | 0.017 | 0.027 |
+| anomaly_line_content | bgl_split_10 | 0.027 | 0.036 | 0.123 | 0.297 |
+| anomaly_line_content (threshold=False) | hadoop_renamed | 0.236 | 0.485 | 0.244 | 0.288 |
+| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.017 | 0.015 | 0.019 | 0.027 |
+| anomaly_line_content (threshold=False) | bgl_split_10 | 0.031 | 0.043 | 0.128 | 0.296 |
 
 ## Table B4 -- Plot tools
 
@@ -257,7 +299,7 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 
 # Detailed breakdowns (per detector / per measure)
 
-The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with all four measures, and `sequence_line_event_prediction` with both order detectors, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair.
+The tables above run every anomaly tool with all four detectors, `distance_folder_content`/`distance_file_content` with their three default measures (cosine, jaccard, containment; compression is opt-in), and `sequence_line_event_prediction` with both order detectors, at once; `distance_line_content` defaults to its coarse pair (Prefix + Exact) in one pass. Part C/D below break the same figure down per detector / per measure run in isolation (`detectors=["<name>"]` / `measures=["<name>"]`), so the cost of narrowing either is visible on its own rather than folded into the combined call -- `distance_line_content` included, run once per bucket measure (Exact, Prefix, Minhash) so they can be compared directly. `distance_folder_filename` (jaccard/overlap distance over file names only) is not broken down further -- it computes one measure, not a default pair. The anomaly rows pass `threshold=False`, so they show one detector's own cost without the extra fits of the clean range; the distance rows keep the default clean range.
 
 # Part C -- cold (first call)
 
@@ -318,18 +360,18 @@ The tables above run every anomaly tool with all four detectors, `distance_folde
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_content (cosine) | hadoop_renamed | 0.121 | 0.296 | 1.228 | 3.681 |
-| distance_folder_content (cosine) | hdfs_balanced_5k | 1.713 | 2.905 | 14.6 | 29.8 |
-| distance_folder_content (cosine) | bgl_split_10 | 0.861 | 1.418 | 5.690 | 21.0 |
-| distance_folder_content (jaccard) | hadoop_renamed | 0.122 | 0.603 | 1.566 | 4.287 |
-| distance_folder_content (jaccard) | hdfs_balanced_5k | 1.747 | 3.279 | 16.8 | 35.1 |
-| distance_folder_content (jaccard) | bgl_split_10 | 0.774 | 1.255 | 5.571 | 18.5 |
-| distance_folder_content (compression) | hadoop_renamed | 0.713 | 3.382 | 14.6 | 19.3 |
-| distance_folder_content (compression) | hdfs_balanced_5k | 1.590 | 3.359 | 16.8 | 32.8 |
-| distance_folder_content (compression) | bgl_split_10 | 7.818 | 14.7 | 80.1 | 209.1 |
-| distance_folder_content (containment) | hadoop_renamed | 0.106 | 0.441 | 1.408 | 2.766 |
-| distance_folder_content (containment) | hdfs_balanced_5k | 1.219 | 2.483 | 13.5 | 27.5 |
-| distance_folder_content (containment) | bgl_split_10 | 0.716 | 1.381 | 6.927 | 16.7 |
+| distance_folder_content (cosine) | hadoop_renamed | 0.087 | 0.311 | 1.074 | 3.050 |
+| distance_folder_content (cosine) | hdfs_balanced_5k | 0.942 | 1.775 | 8.873 | 19.6 |
+| distance_folder_content (cosine) | bgl_split_10 | 0.746 | 1.482 | 7.341 | 23.6 |
+| distance_folder_content (jaccard) | hadoop_renamed | 0.107 | 0.344 | 1.087 | 2.249 |
+| distance_folder_content (jaccard) | hdfs_balanced_5k | 1.114 | 2.062 | 11.6 | 22.5 |
+| distance_folder_content (jaccard) | bgl_split_10 | 0.730 | 1.513 | 6.393 | 25.1 |
+| distance_folder_content (compression) | hadoop_renamed | 1.072 | 7.989 | 28.5 | 37.6 |
+| distance_folder_content (compression) | hdfs_balanced_5k | 1.109 | 2.126 | 10.8 | 21.6 |
+| distance_folder_content (compression) | bgl_split_10 | 24.6 | 46.8 | 275.1 | 905.8 |
+| distance_folder_content (containment) | hadoop_renamed | 0.101 | 0.265 | 1.122 | 2.100 |
+| distance_folder_content (containment) | hdfs_balanced_5k | 0.757 | 1.443 | 7.882 | 17.1 |
+| distance_folder_content (containment) | bgl_split_10 | 0.732 | 1.310 | 6.143 | 19.7 |
 | distance_file_content (cosine) | hadoop_renamed | 0.240 | 0.801 | 2.345 | 7.382 |
 | distance_file_content (cosine) | hdfs_balanced_5k | 0.026 | 0.026 | 0.029 | 0.032 |
 | distance_file_content (cosine) | bgl_split_10 | 0.055 | 0.062 | 0.225 | 0.540 |
@@ -457,18 +499,18 @@ A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `distance_line_content`
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_content (cosine) | hadoop_renamed | 0.114 | 0.310 | 1.229 | 3.510 |
-| distance_folder_content (cosine) | hdfs_balanced_5k | 1.433 | 2.841 | 14.3 | 30.9 |
-| distance_folder_content (cosine) | bgl_split_10 | 0.696 | 1.702 | 5.619 | 17.6 |
-| distance_folder_content (jaccard) | hadoop_renamed | 0.127 | 0.478 | 1.255 | 4.086 |
-| distance_folder_content (jaccard) | hdfs_balanced_5k | 1.701 | 3.179 | 16.6 | 34.8 |
-| distance_folder_content (jaccard) | bgl_split_10 | 0.825 | 1.160 | 5.653 | 16.7 |
-| distance_folder_content (compression) | hadoop_renamed | 0.708 | 1.936 | 14.9 | 20.3 |
-| distance_folder_content (compression) | hdfs_balanced_5k | 1.515 | 3.207 | 16.2 | 32.6 |
-| distance_folder_content (compression) | bgl_split_10 | 8.572 | 15.5 | 96.5 | 225.0 |
-| distance_folder_content (containment) | hadoop_renamed | 0.121 | 0.374 | 1.431 | 2.953 |
-| distance_folder_content (containment) | hdfs_balanced_5k | 1.216 | 2.686 | 12.9 | 26.0 |
-| distance_folder_content (containment) | bgl_split_10 | 0.714 | 1.251 | 5.905 | 16.4 |
+| distance_folder_content (cosine) | hadoop_renamed | 0.091 | 0.186 | 0.915 | 1.943 |
+| distance_folder_content (cosine) | hdfs_balanced_5k | 0.880 | 1.774 | 9.749 | 18.9 |
+| distance_folder_content (cosine) | bgl_split_10 | 0.542 | 1.042 | 4.416 | 12.7 |
+| distance_folder_content (jaccard) | hadoop_renamed | 0.109 | 0.246 | 0.928 | 2.012 |
+| distance_folder_content (jaccard) | hdfs_balanced_5k | 1.040 | 2.064 | 10.6 | 23.1 |
+| distance_folder_content (jaccard) | bgl_split_10 | 0.560 | 1.208 | 4.625 | 13.3 |
+| distance_folder_content (compression) | hadoop_renamed | 1.738 | 1.956 | 9.820 | 20.2 |
+| distance_folder_content (compression) | hdfs_balanced_5k | 0.965 | 2.138 | 10.2 | 21.5 |
+| distance_folder_content (compression) | bgl_split_10 | 5.361 | 9.848 | 50.5 | 139.3 |
+| distance_folder_content (containment) | hadoop_renamed | 0.099 | 0.168 | 0.898 | 1.876 |
+| distance_folder_content (containment) | hdfs_balanced_5k | 0.732 | 1.496 | 8.084 | 16.3 |
+| distance_folder_content (containment) | bgl_split_10 | 0.617 | 0.941 | 4.298 | 12.2 |
 | distance_file_content (cosine) | hadoop_renamed | 0.260 | 0.968 | 2.473 | 7.492 |
 | distance_file_content (cosine) | hdfs_balanced_5k | 0.023 | 0.021 | 0.026 | 0.031 |
 | distance_file_content (cosine) | bgl_split_10 | 0.054 | 0.065 | 0.189 | 0.374 |
@@ -524,3 +566,32 @@ measurement date.
   committed -- the sequence rows re-measured with `Parse-Drain` pre-built, and the parse itself
   broken out into its own rows, so no analysis row is charged for it. Supersedes the first
   sequence measurement of 2026-09-22, where NEP absorbed the parse (see the `**` note).
+- All `distance_folder_content` rows (Table A2/B2/C2/D2), including the new
+  `distance_folder_content (threshold=False)` row: 2026-09-30, not yet committed. Re-measured
+  after two changes, so they are not comparable with the older rows around them:
+  - compression became opt-in (`bfcfb6f`), so the combined call runs cosine, jaccard and
+    containment only. Most of the drop from the previous figures (e.g. 147.7s -> 18.9s on
+    `bgl_split_10` at 100%) is that.
+  - the call now also returns `clean_range` by default: how much the baseline folders differ
+    from each other, from a sample of at most 10 of them (45 pairs). The
+    `threshold=False` row is the same call without it; the gap between the two rows is the
+    range's cost. Warm calls reuse a range cached in the session, which is why the cold-warm gap
+    widened on `bgl_split_10`.
+  - One OOM kill on `distance_folder_content (cosine)` at `bgl_split_10` 100% (the first cell
+    after opening that log root) did not reproduce on a re-run; the re-run's figures are shown.
+- The `distance_folder_filename`, `distance_file_content` and four `anomaly_*` rows (Table
+  A2/B2/A3/B3), each with a new `(threshold=False)` row: 2026-09-30, not yet committed. All of
+  them now return a clean range by default; the `(threshold=False)` row is the same call without
+  it, so the gap between the two is the range's cost. `distance_file_content` also no longer
+  includes compression (`bfcfb6f`).
+  - distance tools: pairwise distances between at most 10 sampled baseline folders, per file
+    for `distance_file_content`. Costs little beyond the call itself.
+  - anomaly tools: each of up to 10 sampled baseline folders is scored like a target against
+    the others, so up to 10 extra model fits -- per file for `anomaly_file_content` and
+    `anomaly_line_content`. These rows score one target against all others, which is the
+    costliest case; with `target_folder="ALL"` the fits the call already made are reused. Warm
+    calls reuse the range cached in the session.
+  - `anomaly_folder_content` at `bgl_split_10` 100% was OOM-killed once with the range on and
+    measured 69.8s / 10.5 GB on the re-run shown, against 8.9s / 5.3 GB without it.
+  - The per-detector anomaly rows (Table C1/D1) were not re-measured; the benchmark now runs them
+    with `threshold=False`, which is what they measured before the range existed.

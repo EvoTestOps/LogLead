@@ -203,9 +203,9 @@ def smaller_call_advice(record):
             f"refit four detectors per target -- name one target log folder, or a "
             f'"Prefix*" subset, and repeat it.'
         )
-    if args.get("comparison_folders") == "ALL" and folders and folders > 50:
+    if args.get("baseline_folders") == "ALL" and folders and folders > 50:
         tips.append(
-            f'comparison_folders="ALL" was {folders} log folders; a named subset or a '
+            f'baseline_folders="ALL" was {folders} log folders; a named subset or a '
             f'"Prefix*" wildcard compares against fewer.'
         )
     content_format = args.get("content_format")
@@ -233,7 +233,7 @@ def smaller_call_advice(record):
     if not tips:
         tips.append(
             "Narrow whatever was widest -- one target instead of \"ALL\", fewer "
-            "comparison log folders, a cheaper content_format -- or split the log root "
+            "baseline log folders, a cheaper content_format -- or split the log root "
             "into smaller pieces."
         )
     return tips

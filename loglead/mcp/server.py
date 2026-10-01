@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 mcp = _Server("loglead", instructions="""\
 Compares log folders (test runs, deployments, nodes -- any set of logs that
-belong together) to find which one looks wrong, with no labels required.
+belong together) to find which one looks wrong.
 Start with peek_log_root to see what is on disk without loading it -- it also
 says when a path is one big log file rather than a set of log folders, which
 split_log_file turns into slices you can compare. Then open_log_root, and drill
@@ -58,25 +58,24 @@ you want to mask things like IP addresses. If you are searching for security ano
 want to keep IP addresses. Masking too much or too little will cause problems. 
 
 2) Then work top down.
-Top-level approaches are statistical plots and machine learning approaches. The intended path is: folder/file/line, and in tools,
-plot_* first followed by distance_* or anomaly_* functions.
+Top-level approaches are statistical machine learning approaches. The intended path is: folder/file/line, and in tools,
+distance_* or anomaly_* functions. Both distance and anomaly functions return a threshold_score, 
+if you pass clean baseline.
 First, look at the folder level to see which folder is the outlier, then the same at the file
 level within that folder to see which file is the outlier, then at the line
 level within that file to see which lines are the outliers. It is recommended
 to run line-level anomaly detection and look at lines that have high
-anomaly scores. Finally, only after all statistics-based approaches have been
-tried, resort to functions read_log_lines or search_log_lines to look at the specific
-lines that the narrowing surfaced. 
+anomaly scores.
 
 3) Try to find point anomalies. For them, try distance_line_content
 that does fuzzy diff and anomaly_line_content. new_tokens is a statistics step too: it lists the words a log folder has that
-comparison folders never have, and filter_log_lines(new_tokens_vs=..., only_new=True)
+baseline folders never have, and filter_log_lines(new_tokens_vs=..., only_new=True)
 shows the lines they are on. read_bucket_lines opens a distance_line_content bucket
 and shows every line in it.
 
 4) Remember to search for both point anomalies and distributional pattern anomalies.
 For order anomalies -- familiar lines skipped, repeated, or out of sequence -- use
-sequence_line_event_prediction, which learns event order from the comparison folders.
+sequence_line_event_prediction, which learns event order from the baseline folders.
 
 5) Try relaxing the mask as well and remasking with it. Too tight mask can miss anomalies.
 
@@ -766,7 +765,7 @@ def set_folder_names(
 
     Keeping the folder name as a suffix makes two other things work:
     `group_by_indices=[0, 1]` on the plot tools groups by `PageRank_MachineDown`,
-    and `comparison_folders` accepts wildcards like `"PageRank_Normal*"`.
+    and `baseline_folders` accepts wildcards like `"PageRank_Normal*"`.
 
     Nothing is re-read or re-parsed -- every column computed so far is kept.
 
@@ -867,7 +866,7 @@ def filter_log_lines(
     """Read log lines annotated with their new tokens. Use this to find suspicious
     lines in a log folder, or to see the evidence behind a new_tokens result.
 
-    Each line lists its new tokens: words that occur in none of the comparison
+    Each line lists its new tokens: words that occur in none of the baseline
     log folders. Pass only_new to return just the lines that have new tokens --
     useful for finding suspicious lines if you have set a proper masking.
 
@@ -877,16 +876,16 @@ def filter_log_lines(
         session_id: Handle from open_log_root.
         folder: Log folder name.
         file_name: File name, relative to its log folder.
-        new_tokens_vs: Comparison log folders -- "ALL", a list, an int N, or
+        new_tokens_vs: Baseline log folders -- "ALL", a list, an int N, or
             "Prefix*". Point it at known-good folders when you have them: a word
-            that also occurs in a comparison folder is not new. Words come from
+            that also occurs in a baseline folder is not new. Words come from
             the masked text when the session is masked.
         offset: First line to return, 0-based. With only_new, counted among the
             lines that have new tokens.
         limit: How many lines (capped at 500).
         masked: Return the masked text instead of the raw message.
         only_new: Return only lines with at least one new token.
-        match_file_name: Compare against the same-named file in the comparison
+        match_file_name: Compare against the same-named file in the baseline
             folders only, rather than all their files.
     """
     session = STORE.get(session_id)
@@ -907,13 +906,13 @@ def filter_log_lines(
         "offset": offset,
     }
 
-    _, comparison = log_root.prepare_folders(session.df, folder, new_tokens_vs)
+    _, baseline = log_root.prepare_folders(session.df, folder, new_tokens_vs)
     vocab = vocabulary.baseline_vocabulary(
-        session.df, comparison, field, match_file_name, session.cached_vocabulary
+        session.df, baseline, field, match_file_name, session.cached_vocabulary
     )
     if match_file_name and vocab.filter(pl.col("file_name") == file_name).height == 0:
         raise ValueError(
-            f"No comparison log folder has a file named {file_name!r}. Leave "
+            f"No baseline log folder has a file named {file_name!r}. Leave "
             "match_file_name unset to compare against all their files."
         )
     annotated = vocabulary.annotate(selected, vocab, field)
@@ -921,7 +920,7 @@ def filter_log_lines(
     window = ((has_new if only_new else annotated)
               .slice(offset, limit).select(["line_number", column, "new_tokens"]))
     result.update({
-        "n_comparison_folders": len(comparison),
+        "n_baseline_folders": len(baseline),
         "lines_with_new_tokens": has_new.height,
         "baseline_vocabulary_size": vocab.height,
     })
@@ -998,14 +997,14 @@ def search_log_lines(
 def new_tokens(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     match_file_name: bool = False,
     mask: bool = True,
     content_format: str = "Words",
     max_rows: int = 25,
 ) -> dict:
-    """List the tokens a log folder has that the comparison folders never have.
+    """List the tokens a log folder has that the baseline folders never have.
 
     A new token is either something that went differently -- an error message,
     an event the others never logged -- or an id, path or number the mask
@@ -1020,13 +1019,13 @@ def new_tokens(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name.
-        comparison_folders: The baseline -- "ALL", a list, an int N, or
+        baseline_folders: The baseline -- "ALL", a list, an int N, or
             "Prefix*". Point it at known-good folders when you have them: a
-            failure that also happens in a comparison folder puts its words in
+            failure that also happens in a baseline folder puts its words in
             the baseline, and they are no longer new.
         target_files: "ALL", a list, an int N, or a "name*" wildcard.
         match_file_name: Judge each file against the same-named file in the
-            comparison folders only. Files no comparison folder has are skipped.
+            baseline folders only. Files no baseline folder has are skipped.
         mask: Take tokens from the masked text.
         content_format: "Words", "3grams", or "Parse-<Algorithm>". With a parser
             each line is one token, its event type, so the rows are new message
@@ -1038,39 +1037,39 @@ def new_tokens(
     _, field = session.ensure_content(mask, content_format)
     session.flush()
     table, info = vocabulary.new_token_table(
-        session.df, target_folder, comparison_folders, target_files, field,
+        session.df, target_folder, baseline_folders, target_files, field,
         match_file_name, session.cached_vocabulary,
     )
     level = 3 if match_file_name else 2
     artifact = _write(session, table, "new", level, target_folder=target_folder,
-                      comparison_folder="Many", mask=mask, content_format=content_format)
+                      baseline_folder="Many", mask=mask, content_format=content_format)
 
-    n_comparison = len(info["comparison_folders"])
+    n_baseline = len(info["baseline_folders"])
     notes = [
-        f"A token is new when none of the {n_comparison} comparison log folders has it, so "
-        "a failure that also occurs in a comparison folder is not new. Point "
-        "comparison_folders at known-good log folders when you have them.",
+        f"A token is new when none of the {n_baseline} baseline log folders has it, so "
+        "a failure that also occurs in a baseline folder is not new. Point "
+        "baseline_folders at known-good log folders when you have them.",
         "Tokens that are ids, paths or numbers are gaps in the mask rather than findings: "
         "register_mask_pattern (base= the current pattern), then remask_log_root.",
         f'See them in context with read_log_lines(session_id="{session_id}", '
         f'folder="{target_folder}", file_name=<file_name>, '
-        f"new_tokens_vs={json.dumps(comparison_folders)}, only_new=True"
+        f"new_tokens_vs={json.dumps(baseline_folders)}, only_new=True"
         + (", match_file_name=True)." if match_file_name else ")."),
     ]
     if table.height == 0:
         notes.insert(0, "Nothing new: every token of the target also occurs in the "
-                        "comparison log folders.")
+                        "baseline log folders.")
     if info["skipped_files"]:
-        notes.append(f"{len(info['skipped_files'])} target file(s) skipped: no comparison "
+        notes.append(f"{len(info['skipped_files'])} target file(s) skipped: no baseline "
                      "log folder has a file of that name.")
     return formatting.result(
         session, "new_tokens", level,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "target_files": target_files, "match_file_name": match_file_name, "mask": mask,
          "content_format": content_format},
         table, artifact, max_rows, sort_by=["count"], notes=notes,
         extra={
-            "n_comparison_folders": n_comparison,
+            "n_baseline_folders": n_baseline,
             "n_target_files": len(info["target_files"]),
             "skipped_files": info["skipped_files"][:20],
             "n_lines": info["n_lines"],
@@ -1233,6 +1232,78 @@ _DISTANCE_SINGLE_MEASURE_NOTE = (
 )
 
 
+_CLEAN_RANGE_NOTE = (
+    "threshold_score above 1 means the target differs from the baseline folders "
+    "more than any baseline folder differs from the others; 0 means as much as "
+    "a typical one or less. clean_min/clean_mid/clean_max are the min, median and "
+    "max of each baseline folder's median distance to the other baseline folders, "
+    "and threshold_score = max(0, (target - clean_mid) / (clean_max - clean_mid)), "
+    "with target the target's median distance to them. This is a clean baseline only if the "
+    "baseline folders are known-clean runs. If every target you check lands "
+    "inside the clean range, either at least one baseline folder is not really "
+    "clean and stretches clean_max, or the targets really are normal; both are "
+    "possible, so check which. The per-comparison distances are not inline; "
+    "query_result on result_id returns them."
+)
+
+_NO_CLEAN_RANGE_NOTE = (
+    "No clean_range: it needs at least {minimum} baseline folders, {n} given. "
+    "Pass 3 or more known-clean runs as baseline_folders to get one."
+)
+
+_FILE_CLEAN_RANGE_NOTE = (
+    "Each file has its own clean range, from the baseline folders that have that "
+    "file, and threshold_score compares the target's copy of that file with theirs. A "
+    "file with fewer than 3 such folders has no clean_range row."
+)
+
+_CLEAN_SAMPLE_NOTE = (
+    "clean_range comes from {sampled} of the {n} baseline folders, evenly spaced "
+    "in name order; threshold_score still uses the target's distance to all {n}. "
+    "Pass only known-clean runs as baseline_folders for a range that reflects "
+    "clean variation."
+)
+
+
+def _clean_range_notes(clean, n_baseline):
+    notes = [_CLEAN_RANGE_NOTE]
+    if n_baseline > distance.MAX_CLEAN_FOLDERS:
+        notes.append(_CLEAN_SAMPLE_NOTE.format(sampled=distance.MAX_CLEAN_FOLDERS,
+                                               n=n_baseline))
+    flat = clean.filter(pl.col("threshold_score").is_null())["measure"].unique(
+        maintain_order=True).to_list()
+    if flat:
+        notes.append(
+            f"threshold_score is null for {', '.join(flat)}: clean_max equals clean_mid "
+            "there, so the baseline folders give no spread to scale by."
+        )
+    return notes
+
+
+def _distance_result(session, analysis, level, params, results, artifact, max_rows, sort_by,
+                     notes, clean, n_baseline, extra_notes=()):
+    """The distance result envelope: rows, or with a clean range the clean_range
+    table instead -- per-comparison rows stay queryable through result_id."""
+    if clean is None:
+        return formatting.result(session, analysis, level, params, results, artifact, max_rows,
+                                 sort_by=sort_by, notes=notes)
+    notes = [*notes, *_clean_range_notes(clean, n_baseline), *extra_notes]
+    records = formatting.rows_to_records(clean, clean.height)
+    if "file_name" in clean.columns:
+        ranked = clean.sort("threshold_score", descending=True, nulls_last=True)
+        records = formatting.rows_to_records(ranked, max_rows)
+        if clean.height > len(records):
+            clean_id = session.stash_result(f"{analysis}_clean_range", clean)
+            notes.append(f"Showing {len(records)} of {clean.height} clean_range rows, "
+                         "largest threshold_score first. "
+                         + formatting.query_hint(session.session_id, clean_id, clean,
+                                                 "threshold_score"))
+    payload = formatting.result(session, analysis, level, params, results, artifact, 0,
+                                sort_by=sort_by, notes=notes, extra={"clean_range": records})
+    del payload["rows"]
+    return payload
+
+
 def _distance_notes(measures, *extra):
     """Standing distance guidance, plus a warning if the caller narrowed ``measures``.
 
@@ -1258,7 +1329,8 @@ def _distance_notes(measures, *extra):
 def distance_folder_filename(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
     """Compare log folders by which file names they contain. Never opens a file.
@@ -1269,20 +1341,43 @@ def distance_folder_filename(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
-        comparison_folders: "ALL", a list of names, an int N for the first N,
-            or a "Prefix*" wildcard. The target is always excluded.
+        baseline_folders: The baseline the target is compared against --
+            "ALL", a list of names, an int N for the first N, or a "Prefix*"
+            wildcard. The target is always excluded. Pass known-clean runs here
+            when you have them.
+        threshold: Leave True to learn whether the target is abnormal: the
+            target is compared against baseline and gets a score per measure
+            (threshold_score). Needs 3 or more baseline folders. 0 is a typical
+            baseline folder and 1 the most unusual one, so 1 or lower means
+            within the baseline range and above 1 outside it; 2 means twice as
+            far from typical as the most unusual baseline folder. Around 2 or
+            more is most likely an anomaly; just above 1 may still be normal
+            variation. Set False when you want the closest matches and not how
+            unusual the target is; rows are then returned and nothing extra is
+            computed.
         max_rows: Rows returned inline, largest distance (least similar) first.
-            For the closest matches instead, call query_result on the returned
-            result_id with sort_by="jaccard distance", descending=False.
+            Not used when threshold is True. For the closest matches
+            instead, call query_result on the returned result_id with
+            sort_by="jaccard distance", descending=False.
     """
     session = STORE.get(session_id)
-    results = distance.distance_folder_filename(session.df, target_folder, comparison_folders)
-    artifact = _write(session, results, "dis", 1, target_folder=target_folder, comparison_folder="Many")
-    return formatting.result(
+    results = distance.distance_folder_filename(session.df, target_folder, baseline_folders)
+    artifact = _write(session, results, "dis", 1, target_folder=target_folder, baseline_folder="Many")
+    notes = ["Distances: 1.0 means no file names in common, 0.0 means identical sets."]
+    clean = None
+    if threshold:
+        clean = distance.filename_clean_range(
+            session.df, results["baseline_folder"].to_list(), session.cached_clean_range)
+        if clean is None:
+            notes.append(_NO_CLEAN_RANGE_NOTE.format(minimum=distance.MIN_CLEAN_FOLDERS,
+                                                     n=results.height))
+        else:
+            clean = distance.scale_to_clean_range(results, clean)
+    return _distance_result(
         session, "distance_folder_filename", 1,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders},
-        results, artifact, max_rows, sort_by="jaccard distance",
-        notes=["Distances: 1.0 means no file names in common, 0.0 means identical sets."],
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
+         "threshold": threshold},
+        results, artifact, max_rows, "jaccard distance", notes, clean, results.height,
     )
 
 
@@ -1290,11 +1385,12 @@ def distance_folder_filename(
 def distance_folder_content(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
     measures: Optional[Sequence[str]] = None,
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
     """Compare log folders by their log text content, with several distance measures.
@@ -1302,17 +1398,20 @@ def distance_folder_content(
     The default measures are cosine, jaccard, and containment distance
     (larger = more different); rank_sum/zscore_sum in the result combine them
     scale-free -- prefer rank_sum. Each measure is a pairwise comparison, so
-    cost increases with comparison_folders; all three are cheap (matrix ops on
+    cost increases with baseline_folders; all three are cheap (matrix ops on
     vectors already built). Compression distance (a bz2 pass over the full
     text) is available but off by default: it gets slow as log folders grow
-    and its ranking is less reliable. Containment: unlike the others it is not
-    symmetric -- it scores how much of one side's text is contained in the
-    other's, so target-vs-comparison and comparison-vs-target can differ
-    sharply (e.g. 0 one way, 0.7 the other).
+    and its ranking is less reliable. Containment: 0 when every word of the
+    smaller side also appears in the larger one, so a run that stopped early
+    can score 0 while cosine and jaccard still see a difference. Like cosine
+    and jaccard it is symmetric: swapping target and baseline gives the same
+    value.
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
-        comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
+        baseline_folders: The baseline the target is compared against --
+            "ALL", a list, an int N, or a "Prefix*" wildcard. Pass known-clean
+            runs here when you have them.
         mask: Compare masked text. Requires a session opened with mask=True.
         content_format: "Words", "3grams", "Sklearn" (raw text), or
             "Parse-<Algorithm>" such as "Parse-Tip" or "Parse-Drain".
@@ -1321,27 +1420,50 @@ def distance_folder_content(
             and rank_sum combines them, which is what makes the ranking
             trustworthy. Add "compression" only when explicitly asked for it.
             Compression distance is slow and its ranking is often less reliable.
+        threshold: Leave True to learn whether the target is abnormal: the
+            target is compared against baseline and gets a score per measure
+            (threshold_score). Needs 3 or more baseline folders. 0 is a typical
+            baseline folder and 1 the most unusual one, so 1 or lower means
+            within the baseline range and above 1 outside it; 2 means twice as
+            far from typical as the most unusual baseline folder. Around 2 or
+            more is most likely an anomaly; just above 1 may still be normal
+            variation. Set False when you want the closest matches and not how
+            unusual the target is; rows are then returned and nothing extra is
+            computed.
         max_rows: Rows returned inline, largest distance (least similar) first.
-            For the closest matches instead, call query_result on the returned
-            result_id with sort_by="rank_sum", descending=False.
+            Not used when threshold is True. For the closest matches
+            instead, call query_result on the returned result_id with
+            sort_by="rank_sum", descending=False.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_folder_content(
-        session.df, target_folder, comparison_folders, mask, content_format, vectorizer,
+        session.df, target_folder, baseline_folders, mask, content_format, vectorizer,
         measures,
     )
     session.flush()
     artifact = _write(
-        session, results, "dis", 2, target_folder=target_folder, comparison_folder="Many",
+        session, results, "dis", 2, target_folder=target_folder, baseline_folder="Many",
         mask=mask, content_format=content_format, vectorizer=vectorizer,
     )
-    return formatting.result(
-        session, "distance_folder_content", 2,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
-        results, artifact, max_rows, sort_by=["rank_sum", "cosine"],
-        notes=_distance_notes(measures),
+    params = {"target_folder": target_folder, "baseline_folders": baseline_folders,
+              "mask": mask, "content_format": content_format, "vectorizer": vectorizer,
+              "measures": measures, "threshold": threshold}
+    notes = _distance_notes(measures)
+    clean = None
+    if threshold:
+        clean = distance.clean_range(
+            session.df, results["baseline_folder"].to_list(), mask, content_format,
+            vectorizer, measures, session.cached_clean_range,
+        )
+        if clean is None:
+            notes.append(_NO_CLEAN_RANGE_NOTE.format(minimum=distance.MIN_CLEAN_FOLDERS,
+                                                     n=results.height))
+        else:
+            clean = distance.scale_to_clean_range(results, clean)
+    return _distance_result(
+        session, "distance_folder_content", 2, params, results, artifact, max_rows,
+        "rank_sum", notes, clean, results.height,
     )
 
 
@@ -1349,12 +1471,13 @@ def distance_folder_content(
 def distance_file_content(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
     measures: Optional[Sequence[str]] = None,
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
     """Compare each file against the same-named file in other log folders.
@@ -1364,18 +1487,21 @@ def distance_file_content(
     The default measures are cosine, jaccard, and containment distance
     (larger = more different); rank_sum/zscore_sum in the result combine them
     scale-free -- prefer rank_sum. Each measure is a pairwise comparison, so
-    cost increases with comparison_folders; all three are cheap (matrix ops on
+    cost increases with baseline_folders; all three are cheap (matrix ops on
     vectors already built). Compression distance (a bz2 pass over the full
     text) is available but off by default: it gets slow as log folders grow
-    and its ranking is less reliable. Containment: unlike the others it is not
-    symmetric -- it scores how much of one side's text is contained in the
-    other's, so target-vs-comparison and comparison-vs-target can differ
-    sharply (e.g. 0 one way, 0.7 the other).
+    and its ranking is less reliable. Containment: 0 when every word of the
+    smaller side also appears in the larger one, so a run that stopped early
+    can score 0 while cosine and jaccard still see a difference. Like cosine
+    and jaccard it is symmetric: swapping target and baseline gives the same
+    value.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
-        comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
+        baseline_folders: The baseline the target is compared against --
+            "ALL", a list, an int N, or a "Prefix*" wildcard. Pass known-clean
+            runs here when you have them.
         target_files: "ALL", a list of file names, an int N, or a "name*" wildcard.
         mask: Compare masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
@@ -1385,34 +1511,56 @@ def distance_file_content(
             trustworthy. Add "compression" only when explicitly asked for it.
             Narrowing this weakens rank_sum; do it only to answer a question
             about one measure.
-        max_rows: Rows returned inline, largest distance (least similar) first.
-            For the closest matches instead, call query_result on the returned
-            result_id with sort_by="zscore_sum", descending=False.
+        threshold: Leave True to learn which files are abnormal: every file
+            is compared against baseline and gets a score per measure
+            (threshold_score). 0 is a typical baseline folder and 1 the most
+            unusual one, so 1 or lower means within the baseline range and
+            above 1 outside it; 2 means twice as far from typical as the most
+            unusual baseline folder. Around 2 or more is most likely an anomaly;
+            just above 1 may still be normal variation. Set False when you want
+            the closest matches and not how unusual the files are; rows are
+            then returned and nothing extra is computed.
+        max_rows: Rows returned inline, largest distance (least similar) first,
+            or with threshold the scores, highest first. For the closest matches
+            instead, call query_result on the returned result_id with
+            sort_by="rank_sum", descending=False.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = distance.distance_file_content(
-        session.df, target_folder, comparison_folders, target_files, mask,
+        session.df, target_folder, baseline_folders, target_files, mask,
         content_format, vectorizer, measures,
     )
     session.flush()
     artifact = _write(
-        session, results, "dis", 3, target_folder=target_folder, comparison_folder="Many",
+        session, results, "dis", 3, target_folder=target_folder, baseline_folder="Many",
         mask=mask, content_format=content_format, vectorizer=vectorizer,
     )
-    return formatting.result(
+    notes = _distance_notes(measures)
+    clean = None
+    n_baseline = (results.group_by("file_name").len()["len"].max()
+                     if results.height else 0)
+    if threshold:
+        clean = distance.file_content_clean_range(
+            session.df, results, mask, content_format, vectorizer, measures,
+            session.cached_clean_range,
+        )
+        if clean is None:
+            notes.append(_NO_CLEAN_RANGE_NOTE.format(minimum=distance.MIN_CLEAN_FOLDERS,
+                                                     n=n_baseline))
+    return _distance_result(
         session, "distance_file_content", 3,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
-         "target_files": target_files, "mask": mask,
-         "content_format": content_format, "vectorizer": vectorizer, "measures": measures},
-        results, artifact, max_rows, sort_by=["zscore_sum", "cosine"],
-        notes=_distance_notes(measures),
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
+         "target_files": target_files, "mask": mask, "content_format": content_format,
+         "vectorizer": vectorizer, "measures": measures, "threshold": threshold},
+        results, artifact, max_rows, "rank_sum", notes, clean, n_baseline,
+        extra_notes=[_FILE_CLEAN_RANGE_NOTE],
     )
 
 
 _LINE_BUCKET_NOTE = (
     "Each row is a group of look-alike lines, not a line. target_only=true "
-    "means no comparison log folder has any line in that bucket, so those are "
+    "means no baseline log folder has any line in that bucket, so those are "
     "the point anomalies; a large delta_pct on a shared bucket is a frequency "
     "shift, which a line-by-line comparison cannot see at all. Rank by the "
     "coarsest measure that flags a bucket: a coarse measure absorbs benign "
@@ -1427,7 +1575,7 @@ _LINE_BUCKET_NOTE = (
 def distance_line_content(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     mask: bool = True,
     content_format: str = "Words",
@@ -1438,9 +1586,9 @@ def distance_line_content(
 ) -> dict:
     """Which kinds of line does this file have that the other do not have?
     Groups / clusters lines by their content (FuzzyDiff). Allows two use cases
-    1) Comparing target vs comparison on log line group frequencies which indicate 
+    1) Comparing target vs baseline on log line group frequencies which indicate 
     execution pattern anomalies  2) Finding groups that mainly appear in target
-    or comparison which both indicate point anomalies, but of different nature.
+    or baseline which both indicate point anomalies, but of different nature.
     Former indicates an extra log line while the latter missing log lines.  
      
     Grouping can be done with different measures, e.g. prefix token match
@@ -1451,8 +1599,9 @@ def distance_line_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Exact log folder name to investigate.
-        comparison_folders: "ALL", a list, an int N, or a "Prefix*" wildcard.
-            These are pooled into one baseline, so widening this makes
+        baseline_folders: The baseline the target is compared against --
+            "ALL", a list, an int N, or a "Prefix*" wildcard. Pass known-clean
+            runs here when you have them. These are pooled into one baseline, so widening this makes
             target_only stricter rather than producing more output.
         target_files: "ALL", a list of file names, an int N, or a "name*" wildcard.
         mask: Must be true. On raw lines nearly every line is distinct, so
@@ -1484,13 +1633,13 @@ def distance_line_content(
     # check there is something to compare before paying for it -- otherwise a log
     # root whose folders share no file name pays in full for an empty result.
     comparable = distance.comparable_files(
-        session.df, target_folder, comparison_folders, target_files
+        session.df, target_folder, baseline_folders, target_files
     )
     if comparable:
         session.ensure_content(mask, content_format)
 
     per_file, summary, session.df = distance.distance_line_content(
-        session.df, target_folder, comparison_folders, target_files, mask,
+        session.df, target_folder, baseline_folders, target_files, mask,
         content_format, measures, prefix_tokens, minhash_rows,
     )
     session.flush()
@@ -1499,7 +1648,7 @@ def distance_line_content(
     for _, file_name, bucket_df in per_file:
         artifact = _write(
             session, bucket_df, "dis", 4, target_folder=target_folder,
-            comparison_folder="Many", mask=mask, file=file_name,
+            baseline_folder="Many", mask=mask, file=file_name,
         )
         files.append({
             "file_name": file_name,
@@ -1511,7 +1660,7 @@ def distance_line_content(
     buckets = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
     return formatting.result(
         session, "distance_line_content", 4,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "target_files": target_files, "mask": mask, "content_format": content_format,
          "measures": measures, "prefix_tokens": prefix_tokens,
          "minhash_rows": minhash_rows},
@@ -1639,6 +1788,113 @@ _SINGLE_DETECTOR_NOTE = (
 )
 
 
+_ANOMALY_CLEAN_RANGE_NOTE = (
+    "Rows with above_clean_max > 0 score higher than every sampled clean run on that many "
+    "detectors; 0 means no detector puts the row outside clean variation. Each sampled "
+    "baseline folder was scored like a target, against the other baseline folders, and "
+    "clean_range gives the min, median and max of those scores per detector. "
+    "<detector>_threshold_score = max(0, (score - clean_mid) / (clean_max - clean_mid)): 0 is "
+    "a typical clean run or lower, above 1 beyond every one. This is a clean baseline "
+    "only if the baseline folders are known-clean runs. If every target you check lands inside the clean range, "
+    "either at least one baseline folder is not really clean and stretches clean_max, or "
+    "the targets really are normal; both are possible, so check which."
+)
+
+_ANOMALY_LINE_CLEAN_RANGE_NOTE = (
+    "Lines with above_clean_max > 0 score higher than any line of a clean run on that many "
+    "detectors. Each sampled baseline folder's copy of the file was scored like the "
+    "target, against the other baseline folders, and each file's clean_range gives the "
+    "min, median and max of those copies' highest line scores per detector. This is a clean "
+    "baseline only if the baseline folders are known-clean runs; if no line of any target "
+    "rises above it, either a baseline folder is not really clean or the targets are "
+    "normal, so check which."
+)
+
+_TARGETS_IN_CLEAN_RANGE_NOTE = (
+    "Some baseline folders are also targets here, so their own rows fall inside the "
+    "clean range by construction; above_clean_max is informative for the other targets."
+)
+
+_ANOMALY_FILE_CLEAN_RANGE_NOTE = (
+    "Each file has its own clean range, from the baseline folders that have that file. "
+    "A file with fewer than 3 such folders has no clean_range and no above_clean_max."
+)
+
+_ANOMALY_CLEAN_SAMPLE_NOTE = (
+    "clean_range comes from {sampled} of the {n} baseline folders, evenly spaced in name "
+    "order, one extra model fit each unless the folder was already scored against the "
+    "others as a target."
+)
+
+def _anomaly_clean_range(session, field, key, target_names, baseline_folders,
+                         baseline_names, detectors, vectorizer, detector_params, scored,
+                         file_name=None, lines=False):
+    """clean_range for one anomaly fit, reusing the scores the call already has."""
+    present = None if file_name is None else anomaly.folders_with_file(session.df, file_name)
+    clean_names = anomaly.clean_folders(baseline_names, target_names, present)
+    known = anomaly.known_scores(session.df, baseline_folders, clean_names, scored, present)
+    clean = anomaly.clean_range(
+        session.df, field, clean_names, file_name, lines, detectors, vectorizer,
+        detector_params, known, session.cached_clean_range, key,
+    )
+    return clean, clean_names
+
+
+def _anomaly_scored_clean_range(session, results, target_folder, baseline_folders, mask,
+                                content_format, detectors, vectorizer, detector_params):
+    """Add above_clean_max and <detector>_threshold_score to a folder- or file-level
+    anomaly result. Returns (results, clean_range records, notes)."""
+    session.df, field = log_root.prepare_content(session.df, mask, content_format)
+    target_names = log_root.resolve_target_folders(session.df, target_folder)
+    baseline_names = log_root.resolve_baseline_folders(session.df, baseline_folders)
+    key = (mask, content_format)
+    if "target_folder" not in results.columns:
+        scored = {name: rows for (name,), rows in
+                  results.partition_by("folder", as_dict=True).items()}
+        clean, clean_names = _anomaly_clean_range(
+            session, field, key, target_names, baseline_folders, baseline_names,
+            detectors, vectorizer, detector_params, scored)
+        if clean is None:
+            return results, None, [_NO_CLEAN_RANGE_NOTE.format(
+                minimum=anomaly.MIN_CLEAN_FOLDERS, n=len(clean_names))]
+        return (anomaly.scale_to_clean_range(results, clean),
+                formatting.rows_to_records(clean, clean.height),
+                _anomaly_clean_notes(clean_names, target_names))
+
+    results = results.with_row_index("_order")
+    frames, cleans, all_clean_names = [], [], set()
+    for (file_name,), rows in results.partition_by("file_name", as_dict=True).items():
+        scored = {name: part for (name,), part in
+                  rows.partition_by("target_folder", as_dict=True).items()}
+        clean, clean_names = _anomaly_clean_range(
+            session, field, key, target_names, baseline_folders, baseline_names,
+            detectors, vectorizer, detector_params, scored, file_name=file_name)
+        if clean is None:
+            frames.append(rows)
+            continue
+        all_clean_names.update(clean_names)
+        frames.append(anomaly.scale_to_clean_range(rows, clean))
+        cleans.append(clean.select(pl.lit(file_name).alias("file_name"), pl.all()))
+    results = pl.concat(frames, how="diagonal_relaxed").sort("_order").drop("_order")
+    if not cleans:
+        return results, None, [_NO_CLEAN_RANGE_NOTE.format(
+            minimum=anomaly.MIN_CLEAN_FOLDERS, n=len(baseline_names))]
+    clean = pl.concat(cleans)
+    return (results, formatting.rows_to_records(clean, clean.height),
+            [*_anomaly_clean_notes(sorted(all_clean_names), target_names),
+             _ANOMALY_FILE_CLEAN_RANGE_NOTE])
+
+
+def _anomaly_clean_notes(clean_names, target_names, line_level=False):
+    notes = [_ANOMALY_LINE_CLEAN_RANGE_NOTE if line_level else _ANOMALY_CLEAN_RANGE_NOTE]
+    if len(clean_names) > anomaly.MAX_CLEAN_FOLDERS:
+        notes.append(_ANOMALY_CLEAN_SAMPLE_NOTE.format(sampled=anomaly.MAX_CLEAN_FOLDERS,
+                                                       n=len(clean_names)))
+    if set(clean_names) & set(target_names):
+        notes.append(_TARGETS_IN_CLEAN_RANGE_NOTE)
+    return notes
+
+
 def _anomaly_notes(detectors, *extra):
     """Standing anomaly guidance, plus a warning if the caller narrowed the detectors.
 
@@ -1665,9 +1921,10 @@ def _anomaly_notes(detectors, *extra):
 def anomaly_folder_filename(
     session_id: str,
     target_folder: FolderSelector = "ALL",
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     detectors: Optional[Sequence[str]] = None,
     detector_params: Optional[dict] = None,
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
     """Train anomaly detection model on log file names.
@@ -1676,30 +1933,48 @@ def anomaly_folder_filename(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
-            Targets outside comparison_folders share one fit, so "Anomaly_*" vs
+            Targets outside baseline_folders share one fit, so "Anomaly_*" vs
             "Normal_*" trains once; a target inside it gets its own fit.
-        comparison_folders: The baseline. "ALL", a list, an int N, or "Prefix*".
+        baseline_folders: The training baseline -- "ALL", a list, an int N, or
+            "Prefix*". Pass known-clean runs here when you have them.
         detectors: Leave unset. All four of ["KMeans", "IsolationForest",
             "RarityDetector", "OOVDetector"] then run and rank_sum combines them,
             which is what makes the ranking trustworthy. Narrowing this weakens
             rank_sum; do it only to answer a question about one detector.
         detector_params: Per-detector overrides, e.g.
             {"KMeans": {"n_clusters": 3}, "RarityDetector": {"threshold": 100}}.
+        threshold: Leave True to learn whether a target is abnormal: every
+            target is compared against baseline and gets a score per detector
+            (<detector>_threshold_score), plus above_clean_max, the number of
+            detectors scoring it above 1. 0 is a typical baseline folder and 1
+            the most unusual one, so 1 or lower means within the baseline range
+            and above 1 outside it; 2 means twice as far from typical as the
+            most unusual baseline folder. Around 2 or more is most likely an
+            anomaly; just above 1 may still be normal variation. Costs one extra
+            model fit per baseline folder, at most 10, none for folders the call
+            already scored against the others (target_folder="ALL"). Set False
+            to skip it.
         max_rows: Rows returned inline.
     """
     session = STORE.get(session_id)
     results, session.df = anomaly.anomaly_folder(
-        session.df, target_folder, comparison_folders, file=True, detectors=detectors,
+        session.df, target_folder, baseline_folders, file=True, detectors=detectors,
         mask=False, detector_params=detector_params,
     )
     session.flush()
-    artifact = _write(session, results, "ano", 1, target_folder="Many", comparison_folder="Many")
+    clean, clean_notes = None, []
+    if threshold and results.height:
+        results, clean, clean_notes = _anomaly_scored_clean_range(
+            session, results, target_folder, baseline_folders, False, "File",
+            detectors, "Count", detector_params)
+    artifact = _write(session, results, "ano", 1, target_folder="Many", baseline_folder="Many")
     return formatting.result(
         session, "anomaly_folder_filename", 1,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
-         "detectors": detectors, "detector_params": detector_params},
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
+         "detectors": detectors, "detector_params": detector_params, "threshold": threshold},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=_anomaly_notes(detectors),
+        notes=_anomaly_notes(detectors, *clean_notes),
+        extra={"clean_range": clean} if clean is not None else None,
     )
 
 
@@ -1707,51 +1982,69 @@ def anomaly_folder_filename(
 def anomaly_folder_content(
     session_id: str,
     target_folder: FolderSelector = "ALL",
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     detectors: Optional[Sequence[str]] = None,
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
     detector_params: Optional[dict] = None,
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
-    """Train anomaly detection models on comparison_folders' log text, then
+    """Train anomaly detection models on baseline_folders' log text, then
     score whole log folders by their log text.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- "ALL", a name, an int N, or "Prefix*".
-            Targets outside comparison_folders share one fit, so "Anomaly_*" vs
+            Targets outside baseline_folders share one fit, so "Anomaly_*" vs
             "Normal_*" trains once; a target inside it gets its own fit.
-        comparison_folders: The training baseline. Point this at known-good folders
-            when you have them".
+        baseline_folders: The training baseline -- "ALL", a list, an int N, or
+            "Prefix*". Pass known-clean runs here when you have them.
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
             when it combines all of them. Narrowing this weakens the ranking.
         mask: Use masked text. Requires a session opened with mask=True.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         detector_params: Per-detector keyword overrides.
+        threshold: Leave True to learn whether a target is abnormal: every
+            target is compared against baseline and gets a score per detector
+            (<detector>_threshold_score), plus above_clean_max, the number of
+            detectors scoring it above 1. 0 is a typical baseline folder and 1
+            the most unusual one, so 1 or lower means within the baseline range
+            and above 1 outside it; 2 means twice as far from typical as the
+            most unusual baseline folder. Around 2 or more is most likely an
+            anomaly; just above 1 may still be normal variation. Costs one extra
+            model fit per baseline folder, at most 10, none for folders the call
+            already scored against the others (target_folder="ALL"). Set False
+            to skip it.
         max_rows: Rows returned inline.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = anomaly.anomaly_folder(
-        session.df, target_folder, comparison_folders, file=False, detectors=detectors,
+        session.df, target_folder, baseline_folders, file=False, detectors=detectors,
         mask=mask, content_format=content_format, vectorizer=vectorizer,
         detector_params=detector_params,
     )
     session.flush()
+    clean, clean_notes = None, []
+    if threshold and results.height:
+        results, clean, clean_notes = _anomaly_scored_clean_range(
+            session, results, target_folder, baseline_folders, mask, content_format,
+            detectors, vectorizer, detector_params)
     artifact = _write(
-        session, results, "ano", 2, target_folder="Many", comparison_folder="Many", mask=mask,
+        session, results, "ano", 2, target_folder="Many", baseline_folder="Many", mask=mask,
         content_format=content_format, vectorizer=vectorizer,
     )
     return formatting.result(
         session, "anomaly_folder_content", 2,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "detectors": detectors, "mask": mask, "content_format": content_format,
-         "vectorizer": vectorizer, "detector_params": detector_params},
+         "vectorizer": vectorizer, "detector_params": detector_params, "threshold": threshold},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=_anomaly_notes(detectors),
+        notes=_anomaly_notes(detectors, *clean_notes),
+        extra={"clean_range": clean} if clean is not None else None,
     )
 
 
@@ -1759,31 +2052,32 @@ def anomaly_folder_content(
 def anomaly_file_content(
     session_id: str,
     target_folder: FolderSelector,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     detectors: Optional[Sequence[str]] = None,
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
     detector_params: Optional[dict] = None,
+    threshold: bool = True,
     max_rows: int = 25,
 ) -> dict:
-    """Train anomaly detection models on comparison_folders' log text, per file,
+    """Train anomaly detection models on baseline_folders' log text, per file,
     then score each file of the target log folder against the same file elsewhere.
 
     Narrows a suspicious log folder down to the file worth reading.
 
     Files are matched by name across log folders: the baseline for security.log
     is the other log folders' security.log, one document each. A target file
-    that no comparison log folder has is skipped, so this level needs log
+    that no baseline log folder has is skipped, so this level needs log
     folders that share file names -- if each log folder holds one uniquely-named
     file, use anomaly_folder_content instead.
 
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
-        comparison_folders: The training baseline. Point this at known-good folders
-            when you have them".
+        baseline_folders: The training baseline -- "ALL", a list, an int N, or
+            "Prefix*". Pass known-clean runs here when you have them.
         target_files: "ALL", a list, an int N, or a "name*" wildcard.
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
             when it combines all of them. Narrowing this weakens the ranking.
@@ -1791,27 +2085,44 @@ def anomaly_file_content(
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         detector_params: Per-detector keyword overrides.
+        threshold: Leave True to learn whether a target is abnormal: every
+            target is compared against baseline and gets a score per detector
+            (<detector>_threshold_score), plus above_clean_max, the number of
+            detectors scoring it above 1. 0 is a typical baseline folder and 1
+            the most unusual one, so 1 or lower means within the baseline range
+            and above 1 outside it; 2 means twice as far from typical as the
+            most unusual baseline folder. Around 2 or more is most likely an
+            anomaly; just above 1 may still be normal variation. Costs one extra
+            model fit per baseline folder, at most 10, none for folders the call
+            already scored against the others (target_folder="ALL"). Set False
+            to skip it.
         max_rows: Rows returned inline.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     results, session.df = anomaly.anomaly_file_content(
-        session.df, target_folder, comparison_folders, target_files, detectors, mask,
+        session.df, target_folder, baseline_folders, target_files, detectors, mask,
         content_format, vectorizer, detector_params,
     )
     session.flush()
+    clean, clean_notes = None, []
+    if threshold and results.height:
+        results, clean, clean_notes = _anomaly_scored_clean_range(
+            session, results, target_folder, baseline_folders, mask, content_format,
+            detectors, vectorizer, detector_params)
     artifact = _write(
-        session, results, "ano", 3, target_folder="Many", comparison_folder="Many", mask=mask,
+        session, results, "ano", 3, target_folder="Many", baseline_folder="Many", mask=mask,
         content_format=content_format, vectorizer=vectorizer,
     )
     return formatting.result(
         session, "anomaly_file_content", 3,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "target_files": target_files, "detectors": detectors, "mask": mask,
          "content_format": content_format, "vectorizer": vectorizer,
-         "detector_params": detector_params},
+         "detector_params": detector_params, "threshold": threshold},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
-        notes=_anomaly_notes(detectors),
+        notes=_anomaly_notes(detectors, *clean_notes),
+        extra={"clean_range": clean} if clean is not None else None,
     )
 
 
@@ -1828,12 +2139,12 @@ def _line_score_files(session, per_file, analysis, short, score_columns, title, 
     for folder_name, file_name, scored in per_file:
         scored = scoring.add_combined_scores(scored, score_columns)
         artifact = _write(
-            session, scored, short, 4, target_folder=folder_name, comparison_folder="Many",
+            session, scored, short, 4, target_folder=folder_name, baseline_folder="Many",
             file=file_name, **name_parts,
         )
         stem = export.build_file_name(
             analysis=f"{short}_plot", level=4, target_folder=folder_name,
-            comparison_folder="Many", file=file_name, **name_parts,
+            baseline_folder="Many", file=file_name, **name_parts,
         )
         plot = export.write_figure(
             visualize.plot_line_scores(
@@ -1869,21 +2180,55 @@ def _line_score_files(session, per_file, analysis, short, score_columns, title, 
     return files
 
 
+def _line_clean_range(session, per_file, target_folder, baseline_folders, mask,
+                      content_format, detectors, vectorizer, detector_params):
+    """Add above_clean_max to every scored line, one clean range per file name.
+    Returns (per_file, clean_range records by file name, notes)."""
+    session.df, field = log_root.prepare_content(session.df, mask, content_format)
+    target_names = log_root.resolve_target_folders(session.df, target_folder)
+    baseline_names = log_root.resolve_baseline_folders(session.df, baseline_folders)
+    ranges, all_clean_names = {}, set()
+    for file_name in dict.fromkeys(file_name for _, file_name, _ in per_file):
+        scored = {name: frame for name, other, frame in per_file if other == file_name}
+        clean, clean_names = _anomaly_clean_range(
+            session, field, (mask, content_format), target_names, baseline_folders,
+            baseline_names, detectors, vectorizer, detector_params, scored,
+            file_name=file_name, lines=True)
+        if clean is not None:
+            ranges[file_name] = clean
+            all_clean_names.update(clean_names)
+    if not ranges:
+        return per_file, {}, [_NO_CLEAN_RANGE_NOTE.format(
+            minimum=anomaly.MIN_CLEAN_FOLDERS, n=len(baseline_names))]
+    per_file = [(name, file_name, anomaly.scale_to_clean_range(frame, ranges[file_name],
+                                                              per_detector=False)
+                 if file_name in ranges else frame)
+                for name, file_name, frame in per_file]
+    notes = _anomaly_clean_notes(sorted(all_clean_names), target_names, line_level=True)
+    if len(ranges) < len({file_name for _, file_name, _ in per_file}):
+        notes.append(_ANOMALY_FILE_CLEAN_RANGE_NOTE)
+    return (per_file,
+            {file_name: formatting.rows_to_records(clean, clean.height)
+             for file_name, clean in ranges.items()},
+            notes)
+
+
 @tool
 def anomaly_line_content(
     session_id: str,
     target_folder: FolderSelector,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     detectors: Optional[Sequence[str]] = None,
     mask: bool = True,
     content_format: str = "Words",
     vectorizer: str = "Count",
     detector_params: Optional[dict] = None,
+    threshold: bool = True,
     max_rows: int = 20,
     sort_by: str = "rank_sum",
 ) -> dict:
-    """Train anomaly detection models on comparison_folders' log text, per line,
+    """Train anomaly detection models on baseline_folders' log text, per line,
     then score every line of a target file, returning the worst with their text.
 
     The end of the drill-down. Each returned row is a real log line with its
@@ -1897,7 +2242,8 @@ def anomaly_line_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
-        comparison_folders: The training baseline.
+        baseline_folders: The training baseline -- "ALL", a list, an int N, or
+            "Prefix*". Pass known-clean runs here when you have them.
         target_files: Which files to score. Narrow this -- one plot and one
             table are produced per file.
         detectors: Leave unset so all four run -- rank_sum is only trustworthy
@@ -1906,6 +2252,12 @@ def anomaly_line_content(
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
         vectorizer: "Count" or "Tfidf".
         detector_params: Per-detector keyword overrides.
+        threshold: Leave True to learn which lines are abnormal: every line
+            is compared against baseline and gets above_clean_max, the number
+            of detectors scoring it above the highest-scoring baseline line.
+            0 means within the baseline range; the more detectors, the more
+            likely an anomaly. Costs one extra model fit per baseline folder,
+            at most 10. Set False to skip it.
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. Keep "rank_sum" -- a single
             detector column such as "RM_pred_ano_proba" ranks by that detector
@@ -1917,10 +2269,15 @@ def anomaly_line_content(
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     per_file, session.df = anomaly.anomaly_line_content(
-        session.df, target_folder, comparison_folders, target_files, detectors, mask,
+        session.df, target_folder, baseline_folders, target_files, detectors, mask,
         content_format, vectorizer, detector_params,
     )
     session.flush()
+    clean_by_file, clean_notes = {}, []
+    if threshold and per_file:
+        per_file, clean_by_file, clean_notes = _line_clean_range(
+            session, per_file, target_folder, baseline_folders, mask, content_format,
+            detectors, vectorizer, detector_params)
 
     files = _line_score_files(
         session, per_file, "anomaly_line_content", "ano", scoring.ANOMALY_COLUMNS,
@@ -1929,20 +2286,25 @@ def anomaly_line_content(
         vectorizer=vectorizer,
     )
 
+    for entry in files:
+        if entry["file_name"] in clean_by_file:
+            entry["clean_range"] = clean_by_file[entry["file_name"]]
+
     return {
         "session_id": session_id,
         "analysis": "anomaly_line_content",
         "level": 4,
-        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        "params": {"target_folder": target_folder, "baseline_folders": baseline_folders,
                    "target_files": target_files, "detectors": detectors, "mask": mask,
                    "content_format": content_format, "vectorizer": vectorizer,
-                   "detector_params": detector_params},
+                   "detector_params": detector_params, "threshold": threshold},
         "n_files": len(files),
         "files": files,
         "notes": _anomaly_notes(
             detectors,
             "A single high line is often noise; a sustained rise in "
             "moving_avg_100_* marks the region where it went wrong.",
+            *clean_notes,
         ),
     }
 
@@ -1977,7 +2339,7 @@ def _sequence_notes(detectors):
 def sequence_line_event_prediction(
     session_id: str,
     target_folder: FolderSelector,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     detectors: Optional[Sequence[str]] = None,
     mask: bool = True,
@@ -1994,7 +2356,7 @@ def sequence_line_event_prediction(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folders to score -- a name, "ALL", an int N, or "Prefix*".
-        comparison_folders: The training baseline.
+        baseline_folders: The training baseline.
         target_files: Which files to score. Narrow this -- one plot and one
             table are produced per file.
         detectors: "NEP" (next event prediction, n-gram) and "LAP" (lookahead
@@ -2014,7 +2376,7 @@ def sequence_line_event_prediction(
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     per_file, session.df = sequence.sequence_line_event_prediction(
-        session.df, target_folder, comparison_folders, target_files, detectors, mask,
+        session.df, target_folder, baseline_folders, target_files, detectors, mask,
         content_format, ngrams, window,
     )
     session.flush()
@@ -2030,7 +2392,7 @@ def sequence_line_event_prediction(
         "session_id": session_id,
         "analysis": "sequence_line_event_prediction",
         "level": 4,
-        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        "params": {"target_folder": target_folder, "baseline_folders": baseline_folders,
                    "target_files": target_files, "detectors": detectors, "mask": mask,
                    "content_format": content_format, "ngrams": ngrams, "window": window},
         "n_files": len(files),
@@ -2073,7 +2435,7 @@ def _plot_result(session, analysis, level, params, points, figures):
             continue
         stem = export.build_file_name(
             analysis=f"{analysis}_{suffix}", level=level,
-            target_folder=params.get("target_folder", ""), comparison_folder="Many",
+            target_folder=params.get("target_folder", ""), baseline_folder="Many",
             mask=params.get("mask", False),
             content_format=params.get("content_format", ""),
             vectorizer=params.get("vectorizer", ""),
@@ -2143,7 +2505,7 @@ def _plot_result(session, analysis, level, params, points, figures):
 def plot_folder_filename(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     random_seed: Optional[int] = 42,
     plots: PlotSelector = visualize.DEFAULT_PLOTS,
@@ -2180,7 +2542,7 @@ def plot_folder_filename(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
-        comparison_folders: Log folders to include. "ALL", a list, an int N, or "Prefix*".
+        baseline_folders: Log folders to include. "ALL", a list, an int N, or "Prefix*".
         group_by_indices: Underscore-separated parts of the folder name to colour
             by, e.g. [0, 1] colours "PageRank_DiskFull_application_1" by
             "PageRank_DiskFull".
@@ -2199,13 +2561,13 @@ def plot_folder_filename(
     """
     session = STORE.get(session_id)
     points, fig_umap, fig_scatter, session.df = visualize.plot_folder(
-        session.df, target_folder, comparison_folders, file=True, random_seed=random_seed,
+        session.df, target_folder, baseline_folders, file=True, random_seed=random_seed,
         group_by_indices=group_by_indices, mask=False, plots=plots,
     )
     session.flush()
     return _plot_result(
         session, "plot_folder_filename", 1,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "group_by_indices": group_by_indices, "random_seed": random_seed,
          "plots": list(plots)},
         points, {"umap": fig_umap, "scatter": fig_scatter},
@@ -2216,7 +2578,7 @@ def plot_folder_filename(
 def plot_folder_content(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     mask: bool = True,
     content_format: str = "Words",
@@ -2256,7 +2618,7 @@ def plot_folder_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
-        comparison_folders: Log folders to include.
+        baseline_folders: Log folders to include.
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
         mask: Use masked text.
         content_format: "Words", "3grams", "Sklearn", or "Parse-<Algorithm>".
@@ -2277,14 +2639,14 @@ def plot_folder_content(
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     points, fig_umap, fig_scatter, session.df = visualize.plot_folder(
-        session.df, target_folder, comparison_folders, file=False, random_seed=random_seed,
+        session.df, target_folder, baseline_folders, file=False, random_seed=random_seed,
         group_by_indices=group_by_indices, mask=mask, content_format=content_format,
         vectorizer=vectorizer, plots=plots,
     )
     session.flush()
     return _plot_result(
         session, "plot_folder_content", 2,
-        {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "group_by_indices": group_by_indices, "mask": mask,
          "content_format": content_format, "vectorizer": vectorizer,
          "random_seed": random_seed, "plots": list(plots)},
@@ -2296,7 +2658,7 @@ def plot_folder_content(
 def plot_file_content(
     session_id: str,
     target_folder: str,
-    comparison_folders: FolderSelector = "ALL",
+    baseline_folders: FolderSelector = "ALL",
     target_files: FileSelector = "ALL",
     group_by_indices: Optional[Sequence[int]] = None,
     mask: bool = True,
@@ -2330,7 +2692,7 @@ def plot_file_content(
     Args:
         session_id: Handle from open_log_root.
         target_folder: Log folder to highlight with a cross marker.
-        comparison_folders: Log folders to include.
+        baseline_folders: Log folders to include.
         target_files: Which files to plot. "ALL", a list, an int N, or a
             wildcard, resolved against the files the target log folder has.
         group_by_indices: Folder-name parts to colour by, e.g. [0, 1].
@@ -2353,7 +2715,7 @@ def plot_file_content(
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
     per_file, session.df = visualize.plot_file_content(
-        session.df, target_folder, comparison_folders, target_files, random_seed,
+        session.df, target_folder, baseline_folders, target_files, random_seed,
         group_by_indices, mask, content_format, vectorizer, plots,
     )
     session.flush()
@@ -2374,7 +2736,7 @@ def plot_file_content(
         "session_id": session_id,
         "analysis": "plot_file_content",
         "level": 3,
-        "params": {"target_folder": target_folder, "comparison_folders": comparison_folders,
+        "params": {"target_folder": target_folder, "baseline_folders": baseline_folders,
                    "target_files": target_files, "mask": mask,
                    "content_format": content_format, "vectorizer": vectorizer,
                    "plots": list(plots)},
@@ -2409,7 +2771,7 @@ _STEP_TOOLS = {
 #: against a default instead of the folder the config asked for.
 _STEP_ARGS = {
     "target_run": "target_folder",
-    "comparison_runs": "comparison_folders",
+    "comparison_runs": "baseline_folders",
 }
 
 #: What a LogDelta step means but does not say. Its plot steps always draw both
