@@ -13,8 +13,10 @@ Each entry lands in `<root_folder>/<name>/` (default `~/Datasets`). Archives are
 unpacking, an existing folder is never re-downloaded, and `download: false` on an entry skips it.
 Prefer that flag over deleting an entry: this file is the record of where each dataset came from.
 
-`datasets.yml` is **download-only**: it carries just `name`, `url`/`urls` (or `local_archive` +
-`source_url`) and `download`. Everything about *reading* a dataset — `log_file`, `labels_file`,
+`datasets.yml` carries what is needed to download a dataset — `name`, `url`/`urls` (or
+`local_archive` + `source_url`) and `download` — plus three descriptive fields the downloader
+ignores: `labels` (`true`/`false`/`partial`), `labeling_level` (`line`, `sequence` or `time-window`) and `paper`,
+the BibTeX key of the introducing paper in [`datasets.bib`](datasets.bib). Everything about *reading* a dataset — `log_file`, `labels_file`,
 `format`, `predictor_cols`, `expected_length` — lives in the `tests/datasets_*.yml` configs instead,
 so a changed test expectation never touches this file. The top-level [`CLAUDE.md`](../CLAUDE.md)
 explains how those configs are split.
@@ -220,7 +222,8 @@ takes `light-oauth2-logs.zip`, the reduced log set the v2 paper's own analysis u
 ## Adding a dataset
 
 Add an entry with `name` plus `url`, `urls` (several files into one folder) or `local_archive` +
-`source_url` (for anything behind a login). `.zip`, `.tar*`, `.gz` and `.7z` are unpacked
+`source_url` (for anything behind a login). Record `labels`, `labeling_level` and `paper` too, adding
+the paper to `datasets.bib`. `.zip`, `.tar*`, `.gz` and `.7z` are unpacked
 automatically and the archive removed; a GitHub tree URL is cloned and the named folder kept;
 anything else is left as the plain file it is. Then add the reading side — `log_file`, `format`,
 `expected_length` and the rest — to the relevant `tests/datasets_*.yml`, and add a section here.

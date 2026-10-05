@@ -1,0 +1,169 @@
+% Papers that introduced the datasets in datasets.yml. Each entry's `paper:` field there names the
+% key(s) here; `note` lists which datasets.yml entries an item covers. Every DOI was resolved via
+% doi.org. Datasets with no introducing paper (nginx_json, security_datasets, logfmt, zeek, iis)
+% have no entry.
+
+@inproceedings{oliner2007supercomputers,
+  author    = {Oliner, Adam and Stearley, Jon},
+  title     = {What Supercomputers Say: A Study of Five System Logs},
+  booktitle = {37th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN'07)},
+  publisher = {IEEE},
+  year      = {2007},
+  pages     = {575--584},
+  doi       = {10.1109/DSN.2007.103},
+  url       = {https://doi.org/10.1109/DSN.2007.103},
+  note      = {Datasets: bgl, liberty, spirit, thunderbird}
+}
+
+@inproceedings{xu2009console,
+  author    = {Xu, Wei and Huang, Ling and Fox, Armando and Patterson, David and Jordan, Michael I.},
+  title     = {Detecting Large-Scale System Problems by Mining Console Logs},
+  booktitle = {Proceedings of the ACM SIGOPS 22nd Symposium on Operating Systems Principles (SOSP '09)},
+  publisher = {ACM},
+  year      = {2009},
+  pages     = {117--132},
+  doi       = {10.1145/1629575.1629587},
+  url       = {https://doi.org/10.1145/1629575.1629587},
+  note      = {Datasets: hdfs}
+}
+
+@inproceedings{lin2016logclustering,
+  author    = {Lin, Qingwei and Zhang, Hongyu and Lou, Jian-Guang and Zhang, Yu and Chen, Xuewei},
+  title     = {Log Clustering Based Problem Identification for Online Service Systems},
+  booktitle = {Proceedings of the 38th International Conference on Software Engineering Companion (ICSE '16)},
+  publisher = {ACM},
+  year      = {2016},
+  pages     = {102--111},
+  doi       = {10.1145/2889160.2889232},
+  url       = {https://doi.org/10.1145/2889160.2889232},
+  note      = {Datasets: hadoop}
+}
+
+@inproceedings{zhu2019logparsing,
+  author    = {Zhu, Jieming and He, Shilin and Liu, Jinyang and He, Pinjia and Xie, Qi and Zheng, Zibin and Lyu, Michael R.},
+  title     = {Tools and Benchmarks for Automated Log Parsing},
+  booktitle = {2019 IEEE/ACM 41st International Conference on Software Engineering: Software Engineering in Practice (ICSE-SEIP)},
+  publisher = {IEEE},
+  year      = {2019},
+  pages     = {121--130},
+  doi       = {10.1109/ICSE-SEIP.2019.00021},
+  url       = {https://doi.org/10.1109/ICSE-SEIP.2019.00021},
+  note      = {Datasets: loghub_csv (the 2,000-line structured samples)}
+}
+
+@inproceedings{zhu2023loghub,
+  author    = {Zhu, Jieming and He, Shilin and He, Pinjia and Liu, Jinyang and Lyu, Michael R.},
+  title     = {Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics},
+  booktitle = {2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE)},
+  publisher = {IEEE},
+  year      = {2023},
+  pages     = {355--366},
+  doi       = {10.1109/ISSRE59848.2023.00071},
+  url       = {https://doi.org/10.1109/ISSRE59848.2023.00071},
+  note      = {Datasets: syslog (Linux, Mac, OpenSSH), loghub_csv. Also the redistributor of bgl, hadoop, hdfs and thunderbird}
+}
+
+@inproceedings{yu2023nezha,
+  author    = {Yu, Guangba and Chen, Pengfei and Li, Yufeng and Chen, Hongyang and Li, Xiaoyun and Zheng, Zibin},
+  title     = {Nezha: Interpretable Fine-Grained Root Causes Analysis for Microservices on Multi-modal Observability Data},
+  booktitle = {Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (ESEC/FSE '23)},
+  publisher = {ACM},
+  year      = {2023},
+  pages     = {553--565},
+  doi       = {10.1145/3611643.3616249},
+  url       = {https://doi.org/10.1145/3611643.3616249},
+  note      = {Datasets: nezha}
+}
+
+@inproceedings{creech2013adfa,
+  author    = {Creech, Gideon and Hu, Jiankun},
+  title     = {Generation of a New IDS Test Dataset: Time to Retire the KDD Collection},
+  booktitle = {2013 IEEE Wireless Communications and Networking Conference (WCNC)},
+  publisher = {IEEE},
+  year      = {2013},
+  pages     = {4487--4492},
+  doi       = {10.1109/WCNC.2013.6555301},
+  url       = {https://doi.org/10.1109/WCNC.2013.6555301},
+  note      = {Datasets: adfa (ADFA-LD)}
+}
+
+@article{ceponis2018awsctd,
+  author    = {{\v{C}}eponis, Dainius and Goranin, Nikolaj},
+  title     = {Towards a Robust Method of Dataset Generation of Malicious Activity for Anomaly-Based {HIDS} Training and Presentation of {AWSCTD} Dataset},
+  journal   = {Baltic Journal of Modern Computing},
+  volume    = {6},
+  number    = {3},
+  pages     = {217--234},
+  year      = {2018},
+  doi       = {10.22364/bjmc.2018.6.3.01},
+  url       = {https://doi.org/10.22364/bjmc.2018.6.3.01},
+  note      = {Datasets: awsctd}
+}
+
+@inproceedings{cotroneo2019openstack,
+  author    = {Cotroneo, Domenico and De Simone, Luigi and Liguori, Pietro and Natella, Roberto and Bidokhti, Nematollah},
+  title     = {How Bad Can a Bug Get? An Empirical Analysis of Software Failures in the {OpenStack} Cloud Computing Platform},
+  booktitle = {Proceedings of the 27th ACM Joint Meeting on European Software Engineering Conference and Symposium on the Foundations of Software Engineering (ESEC/FSE '19)},
+  publisher = {ACM},
+  year      = {2019},
+  pages     = {200--211},
+  doi       = {10.1145/3338906.3338916},
+  url       = {https://doi.org/10.1145/3338906.3338916},
+  note      = {Datasets: openstack (the raw logs; the line labels are from bogatinovski2022clog)}
+}
+
+@inproceedings{bogatinovski2022clog,
+  author    = {Bogatinovski, Jasmin and Nedelkoski, Sasho and Wu, Li and Cardoso, Jorge and Kao, Odej},
+  title     = {Failure Identification from Unstable Log Data using Deep Learning},
+  booktitle = {2022 22nd IEEE International Symposium on Cluster, Cloud and Internet Computing (CCGrid)},
+  publisher = {IEEE},
+  year      = {2022},
+  pages     = {346--355},
+  doi       = {10.1109/CCGrid54584.2022.00044},
+  url       = {https://doi.org/10.1109/CCGrid54584.2022.00044},
+  note      = {Datasets: openstack. Labelled each line of the Cotroneo et al. OpenStack logs; this is the CSV LogLead downloads}
+}
+
+@inproceedings{landauer2024aitads,
+  author    = {Landauer, Max and Skopik, Florian and Wurzenberger, Markus},
+  title     = {Introducing a New Alert Data Set for Multi-Step Attack Analysis},
+  booktitle = {Proceedings of the 17th Cyber Security Experimentation and Test Workshop (CSET 2024)},
+  publisher = {ACM},
+  year      = {2024},
+  pages     = {41--53},
+  doi       = {10.1145/3675741.3675748},
+  url       = {https://doi.org/10.1145/3675741.3675748},
+  note      = {Datasets: ait_ads}
+}
+
+@misc{garcia2020iot23,
+  author    = {Garcia, Sebastian and Parmisano, Agustin and Erquiaga, Maria Jose},
+  title     = {{IoT-23}: A Labeled Dataset with Malicious and Benign {IoT} Network Traffic},
+  publisher = {Zenodo},
+  year      = {2020},
+  doi       = {10.5281/zenodo.4743746},
+  url       = {https://doi.org/10.5281/zenodo.4743746},
+  note      = {Datasets: iot23. Dataset record, no paper}
+}
+
+@misc{zaker2019weblogs,
+  author    = {Zaker, Farzin},
+  title     = {Online Shopping Store - Web Server Logs},
+  publisher = {Harvard Dataverse},
+  year      = {2019},
+  doi       = {10.7910/DVN/3QBYB5},
+  url       = {https://doi.org/10.7910/DVN/3QBYB5},
+  note      = {Datasets: access_log (mirrored on Kaggle as eliasdabbas/web-server-access-logs). Dataset record, no paper}
+}
+
+@inproceedings{bakhtin2025lo2,
+  author    = {Bakhtin, Alexander and Nyyss{\"o}l{\"a}, Jesse and Wang, Yuqing and Ahmad, Noman and Ping, Ke and Esposito, Matteo and M{\"a}ntyl{\"a}, Mika and Taibi, Davide},
+  title     = {{LO2}: Microservice {API} Anomaly Dataset of Logs and Metrics},
+  booktitle = {Proceedings of the 21st International Conference on Predictive Models and Data Analytics in Software Engineering (PROMISE '25)},
+  publisher = {ACM},
+  year      = {2025},
+  pages     = {1--10},
+  doi       = {10.1145/3727582.3728682},
+  url       = {https://doi.org/10.1145/3727582.3728682},
+  note      = {Datasets: lo2. LogLead downloads the v2 data, Zenodo record 18937117, whose page cites this paper}
+}
