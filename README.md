@@ -57,7 +57,7 @@ python RawLoader_NoLabels.py
 Finally, you can try downloading data. The [downloader](https://github.com/EvoTestOps/LogLead/blob/main/downloader/download_data.py) script fetches the public datasets listed in [downloader/datasets.yml](https://github.com/EvoTestOps/LogLead/blob/main/downloader/datasets.yml). See what's on offer, then pick what you want with `--datasets`:
 ```
 uv run downloader/download_data.py --list
-uv run downloader/download_data.py --datasets openstack hdfs
+uv run downloader/download_data.py --datasets openstack-line-labels-22 hdfs
 ```
 `--datasets` is a whitelist: **only** the datasets you name are fetched and every other entry in the
 config is skipped, whatever its `download:` flag says. Conversely a dataset you do name is fetched
@@ -69,7 +69,7 @@ uv run downloader/download_data.py
 ```
 Or with `pip` (after cloning the repo):
 ```
-python downloader/download_data.py --datasets openstack
+python downloader/download_data.py --datasets openstack-line-labels-22
 ```
 If you've cloned the repo and want to run the test suite too, point it at one of the
 [tests/datasets_*.yml](https://github.com/EvoTestOps/LogLead/tree/main/tests) configs instead — e.g.

@@ -89,12 +89,21 @@ datasets:
     paper: ceponis2018awsctd
     url: https://github.com/DjPasco/AWSCTD/raw/master/CSV.7z
     download: true
-  - name: openstack
+  - name: openstack-line-labels-22
     type: parsed-all  # Content + EventId/EventTemplate/ParameterList, date split from time
     labels: true
     labeling_level: line
     paper: [bogatinovski2022clog, cotroneo2019openstack]
     url: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv
+    download: true
+  - name: openstack-seq-labels-19
+    type: raw
+    labels: true
+    labeling_level: sequence  # FAILURE/NO_FAILURE per test round in nova.tsv, cinder.tsv, neutron.tsv
+    paper: cotroneo2019openstack
+    # The trailing file name is only there so the download is saved as a .zip and unpacked;
+    # figshare ignores it.
+    url: https://ndownloader.figshare.com/files/22583342/Fault-Injection-Dataset.zip
     download: true
   - name: nginx_json
     type: raw

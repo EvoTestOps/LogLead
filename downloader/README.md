@@ -30,9 +30,9 @@ explains how those configs are split.
 
 ## Disk space
 
-The full set is **~124 GB unpacked**, and about **6.8 GB of transfer** to get there. Liberty, Spirit
+The full set is **~133 GB unpacked**, and about **7.7 GB of transfer** to get there. Liberty, Spirit
 and Thunderbird account for 97 GB of the unpacked total and LO2 for another 15 GB — set
-`download: false` on those four and the rest fits in 12 GB.
+`download: false` on those four and the rest fits in 21 GB, 8.8 GB of it openstack-seq-labels-19.
 
 Sizes are binary units (MB = MiB, GB = GiB), measured on disk after unpacking; download sizes are
 the servers' `Content-Length`. Line counts are of the log files as downloaded.
@@ -48,6 +48,8 @@ the servers' `Content-Length`. Line counts are of the log files as downloaded.
 | [nezha](#nezha) | 335 MB clone | 2.8 GB | 4,230,907 in the log files |
 | [adfa](#adfa) | 2.3 MB | 8.8 MB | 5,951 traces, 2,747,550 syscall ids |
 | [awsctd](#awsctd) | 9.7 MB | 559 MB | 592,505 traces, 174,847,810 syscall ids |
+| [openstack-line-labels-22](#openstack-line-labels-22) | 78 MB | 78 MB | 217,534 rows + 1 header |
+| [openstack-seq-labels-19](#openstack-seq-labels-19) | 780 MB | 8.8 GB | not counted; 74,235 zip entries |
 | [nginx_json](#nginx_json) | 12 MB | 12 MB | 51,462 |
 | [security_datasets](#security_datasets) | 13 KB | 180 KB | 118 |
 | [ait_ads](#ait_ads) | 92 MB | 2.7 GB | 2,655,821 |
@@ -125,6 +127,26 @@ encoded as integer **ids**, one comma-separated sequence per line, with the malw
 `Clean`) as the last item on the line. No id-to-name mapping is shipped. The 66 CSVs are six overlapping packagings of the same
 material — `AllMalware`, `MalwarePlusClean` and a second copy of each — so the folder as a whole
 holds 174,847,810 syscalls and reading one subfolder is usually what you want. [DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD).
+
+## openstack-seq-labels-19
+
+The original OpenStack failure dataset from Cotroneo et al.'s ESEC/FSE 2019 paper *How Bad Can a
+Bug Get?*: 911 fault-injection tests on OpenStack (439 into Nova, 269 into Cinder, 203 into Neutron).
+Each test runs the same workload twice, `round_1` with the fault injected and `round_2` fault-free,
+and keeps the raw logs of every OpenStack service (nova, cinder, neutron, glance, keystone, heat, …)
+plus the workload's own output and a Zipkin trace. `nova.tsv`, `cinder.tsv` and `neutron.tsv` label
+each round `FAILURE` or `NO_FAILURE` and name the assertion or API error seen, so the labelled unit
+is a test round, not a line. `round_1/trigger_log` records when the injected fault fired. Files
+named `*.bzip2.out` are plain text, already decompressed.
+[figshare 7732268](https://doi.org/10.6084/m9.figshare.7732268.v3) /
+[dessertlab/Fault-Injection-Dataset](https://github.com/dessertlab/Fault-Injection-Dataset).
+
+## openstack-line-labels-22
+
+A single CSV derived from openstack-seq-labels-19 by Bogatinovski et al. (CCGrid 2022): 217,534 log
+lines, already parsed (`Content`, `EventId`, `EventTemplate`, `ParameterList`) and each carrying its
+own `anom_label`. The test id and round outcome columns of the original are kept alongside.
+[tubcloud.tu-berlin.de](https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH).
 
 ## nginx_json
 

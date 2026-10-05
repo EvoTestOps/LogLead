@@ -2,8 +2,8 @@
 # Source: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH
 # There is no bundled OpenStack sample. Like the RawLoader demos, this script reads the data from
 # the single dataset location given by LOG_DATA_PATH (see .env.sample). Download the data with:
-#   uv run downloader/download_data.py --datasets openstack
-# which places OpenStack_data_original.csv into <LOG_DATA_PATH>/openstack/
+#   uv run downloader/download_data.py --datasets openstack-line-labels-22
+# which places OpenStack_data_original.csv into <LOG_DATA_PATH>/openstack-line-labels-22/
 
 # ______________________________________________________________________________
 # Part 1 load libraries and setup paths.
@@ -24,7 +24,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
 # Location of the OpenStack data inside the dataset folder
-openstack_data = os.path.join(full_data or "", "openstack", "OpenStack_data_original.csv")
+openstack_data = os.path.join(full_data or "", "openstack-line-labels-22", "OpenStack_data_original.csv")
 
 # _________________________________________________________________________________
 # Part 2 load data from the dataset folder
@@ -32,7 +32,7 @@ if not os.path.isfile(openstack_data):
     raise FileNotFoundError(
         f"OpenStack data not found at {openstack_data}. Set LOG_DATA_PATH in your .env "
         f"(see .env.sample) and download the data with:\n"
-        f"  uv run downloader/download_data.py --datasets openstack")
+        f"  uv run downloader/download_data.py --datasets openstack-line-labels-22")
 
 df = pl.read_csv(openstack_data)
 print(f"Read OpenStack data. Numbers of events: {len(df)}")

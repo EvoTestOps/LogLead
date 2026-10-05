@@ -477,7 +477,7 @@ def cli():
                 continue
             dataset_labels, dataset_level = label_info(dataset)
             state = '' if dataset.get('download', True) else '  (download: false)'
-            print(f'  {dataset["name"]:<18} type: {dataset.get("type") or "-":<24} '
+            print(f'  {dataset["name"]:<24} type: {dataset.get("type") or "-":<24} '
                   f'labels: {dataset_labels:<8} '
                   f'level: {dataset_level or "-":<11}{state}'.rstrip())
         return
