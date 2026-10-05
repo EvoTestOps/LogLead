@@ -9,6 +9,7 @@ uv run downloader/download_data.py --config tests/datasets_json.yml   # one test
 uv run downloader/download_data.py --location /mnt/big/Datasets       # override root_folder
 uv run downloader/download_data.py --labels true partial              # only labelled datasets
 uv run downloader/download_data.py --labeling-level sequence          # only sequence-labelled ones
+uv run downloader/download_data.py --type raw                         # only datasets with original log lines
 uv run downloader/download_data.py --list --labels true               # preview what a filter selects
 ```
 
@@ -17,9 +18,12 @@ unpacking, an existing folder is never re-downloaded, and `download: false` on a
 Prefer that flag over deleting an entry: this file is the record of where each dataset came from.
 
 `datasets.yml` carries what is needed to download a dataset — `name`, `url`/`urls` (or
-`local_archive` + `source_url`) and `download` — plus three descriptive fields the downloader
-ignores: `labels` (`true`/`false`/`partial`), `labeling_level` (`line`, `sequence` or `time-window`) and `paper`,
-the BibTeX key of the introducing paper in [`datasets.bib`](datasets.bib). Everything about *reading* a dataset — `log_file`, `labels_file`,
+`local_archive` + `source_url`) and `download` — plus descriptive fields that the `--type`,
+`--labels` and `--labeling-level` options filter on: `type` (`raw`, `parsed-all`,
+`parsed-template-id-only` or `parsed-template-only`),
+`labels` (`true`/`false`/`partial`), `labeling_level` (`line`, `sequence` or `time-window`), and
+`paper`, the BibTeX key of the introducing paper in [`datasets.bib`](datasets.bib). Everything about
+*reading* a dataset — `log_file`, `labels_file`,
 `format`, `predictor_cols`, `expected_length` — lives in the `tests/datasets_*.yml` configs instead,
 so a changed test expectation never touches this file. The top-level [`CLAUDE.md`](../CLAUDE.md)
 explains how those configs are split.
@@ -43,14 +47,14 @@ the servers' `Content-Length`. Line counts are of the log files as downloaded.
 | [thunderbird](#liberty-spirit-thunderbird) | 1.9 GB | 29.7 GB | 211,212,192 |
 | [nezha](#nezha) | 335 MB clone | 2.8 GB | 4,230,907 in the log files |
 | [adfa](#adfa) | 2.3 MB | 8.8 MB | 5,951 traces, 2,747,550 syscall ids |
-| [awsctd](#awsctd) | 9.7 MB | 559 MB | 592,505 traces, 174,847,810 syscall names |
+| [awsctd](#awsctd) | 9.7 MB | 559 MB | 592,505 traces, 174,847,810 syscall ids |
 | [nginx_json](#nginx_json) | 12 MB | 12 MB | 51,462 |
 | [security_datasets](#security_datasets) | 13 KB | 180 KB | 118 |
 | [ait_ads](#ait_ads) | 92 MB | 2.7 GB | 2,655,821 |
 | [logfmt](#logfmt) | 22 MB | 22 MB | 56,100 |
 | [syslog](#syslog) | 6.0 MB | 88 MB | 797,996 |
 | [access_log](#access_log) | 267 MB, by hand | 3.3 GB | 10,365,152 |
-| [loghub_csv](#loghub_csv) | 6.1 MB | 6.1 MB | 32,000 rows + 16 headers |
+| [loghub_sample_csv](#loghub_sample_csv) | 6.1 MB | 6.1 MB | 32,000 rows + 16 headers |
 | [zeek](#zeek) | 44 MB | 215 MB | 1,474,104 records + 315 header lines |
 | [iot23](#iot23) | 2.8 MB | 2.8 MB | 23,145 connections + 9 header lines |
 | [iis](#iis) | 16 MB | 16 MB | 55,826 requests + 12 directive lines |
@@ -116,11 +120,11 @@ Those 8.8 MB of ids amount to 2,747,550 individual syscalls.
 
 ## awsctd
 
-AWSCTD, the Attack-Caused Windows System Calls Traces Dataset: 592,505 traces of Windows syscall
-**names**, one comma-separated sequence per line, with the malware family (or `Clean`) as the last
-item on the line. The 66 CSVs are six overlapping packagings of the same material — `AllMalware`,
-`MalwarePlusClean` and a second copy of each — so the folder as a whole holds 174,847,810 syscalls
-and reading one subfolder is usually what you want. [DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD).
+AWSCTD, the Attack-Caused Windows System Calls Traces Dataset: 592,505 traces of Windows syscalls,
+encoded as integer **ids**, one comma-separated sequence per line, with the malware family (or
+`Clean`) as the last item on the line. No id-to-name mapping is shipped. The 66 CSVs are six overlapping packagings of the same
+material — `AllMalware`, `MalwarePlusClean` and a second copy of each — so the folder as a whole
+holds 174,847,810 syscalls and reading one subfolder is usually what you want. [DjPasco/AWSCTD](https://github.com/DjPasco/AWSCTD).
 
 ## nginx_json
 
@@ -175,7 +179,7 @@ Kaggle serves it only to a logged-in account, so there is no URL to fetch: downl
 put the zip where the entry's `local_archive:` points, and re-run — that archive is only read, never
 deleted.
 
-## loghub_csv
+## loghub_sample_csv
 
 The `*_structured.csv` files loghub publishes alongside 16 of its raw logs — Android, Apache, BGL,
 HDFS, Spark, Windows and ten more — each a 2,000-line sample already parsed into columns such as
@@ -225,7 +229,7 @@ takes `light-oauth2-logs.zip`, the reduced log set the v2 paper's own analysis u
 ## Adding a dataset
 
 Add an entry with `name` plus `url`, `urls` (several files into one folder) or `local_archive` +
-`source_url` (for anything behind a login). Record `labels`, `labeling_level` and `paper` too, adding
+`source_url` (for anything behind a login). Record `type`, `labels`, `labeling_level` and `paper` too, adding
 the paper to `datasets.bib`. `.zip`, `.tar*`, `.gz` and `.7z` are unpacked
 automatically and the archive removed; a GitHub tree URL is cloned and the named folder kept;
 anything else is left as the plain file it is. Then add the reading side — `log_file`, `format`,

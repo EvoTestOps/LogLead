@@ -3,6 +3,10 @@ root_folder: '~/Datasets'
 # The single source of truth for *downloading* every public dataset LogLead knows about. Besides the
 # fields download_data.py reads (name, url/urls, local_archive, source_url, download), each entry
 # records facts about the dataset itself, which download_data.py ignores:
+#   type            raw (log lines as the system wrote them), parsed-all (parsed into fields with
+#                   the full message plus its template/event id), parsed-template-id-only (only an
+#                   event id per line, no text) or parsed-template-only (only the template text,
+#                   parameters dropped)
 #   labels          true / false / partial - whether the published dataset carries anomaly labels
 #   labeling_level  line (each log line labelled), sequence (a block, trace, application or test
 #                   case labelled as a whole) or time-window (labels are time intervals, which
@@ -19,42 +23,49 @@ root_folder: '~/Datasets'
 
 datasets:
   - name: bgl
+    type: raw
     labels: true
     labeling_level: line
     paper: oliner2007supercomputers
     url: https://zenodo.org/records/8196385/files/BGL.zip?download=1
     download: true
   - name: hadoop
+    type: raw
     labels: true
     labeling_level: sequence
     paper: lin2016logclustering
     url: https://zenodo.org/records/8196385/files/Hadoop.zip?download=1
     download: true
   - name: hdfs
+    type: raw
     labels: true
     labeling_level: sequence
     paper: xu2009console
     url: https://zenodo.org/records/8196385/files/HDFS_v1.zip?download=1
     download: true
   - name: liberty
+    type: raw
     labels: true
     labeling_level: line
     paper: oliner2007supercomputers
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/liberty2.gz
     download: true
   - name: spirit
+    type: raw
     labels: true
     labeling_level: line
     paper: oliner2007supercomputers
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/spirit2.gz
     download: true
   - name: thunderbird
+    type: raw
     labels: true
     labeling_level: line
     paper: oliner2007supercomputers
     url: http://0b4af6cdc2f0c5998459-c0245c5c937c5dedcca3f1764ecc9b2f.r43.cf2.rackcdn.com/hpc4/tbird2.gz
     download: true
   - name: nezha
+    type: raw  # each container line kept whole in the Log column, pod/trace metadata alongside
     labels: true
     labeling_level: time-window  # fault list gives injection time + pod
     paper: yu2023nezha
@@ -65,32 +76,38 @@ datasets:
   # - name: pro_android
   #   download: true
   - name: adfa
+    type: parsed-template-id-only  # integer syscall ids
     labels: true
     labeling_level: sequence
     paper: creech2013adfa
     url: https://github.com/verazuo/a-labelled-version-of-the-ADFA-LD-dataset/raw/master/ADFA-LD.zip
     download: true
   - name: awsctd
+    type: parsed-template-id-only  # integer syscall ids
     labels: true
     labeling_level: sequence
     paper: ceponis2018awsctd
     url: https://github.com/DjPasco/AWSCTD/raw/master/CSV.7z
     download: true
   - name: openstack
+    type: parsed-all  # Content + EventId/EventTemplate/ParameterList, date split from time
     labels: true
     labeling_level: line
     paper: [bogatinovski2022clog, cotroneo2019openstack]
     url: https://tubcloud.tu-berlin.de/s/wNTbFW5wfWxqpCH/download/OpenStack_data_original.csv
     download: true
   - name: nginx_json
+    type: raw
     labels: false
     url: https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/nginx_json_logs/nginx_json_logs
     download: true
   - name: security_datasets
+    type: raw
     labels: false
     url: https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/credential_access/host/cmd_lsass_memory_dumpert_syscalls.zip
     download: true
   - name: ait_ads
+    type: raw
     labels: true
     labeling_level: time-window  # labels.csv gives attack-phase start/end times
     paper: landauer2024aitads
@@ -99,6 +116,7 @@ datasets:
       - https://zenodo.org/records/8263181/files/labels.csv?download=1
     download: true
   - name: logfmt
+    type: raw
     labels: false
     urls:
       - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/grafana-ruler.txt
@@ -107,6 +125,7 @@ datasets:
       - https://raw.githubusercontent.com/grafana/loki/main/pkg/pattern/drain/testdata/ingester-logfmt.txt
     download: true
   - name: syslog
+    type: raw
     labels: false
     paper: zhu2023loghub
     urls:
@@ -115,12 +134,14 @@ datasets:
       - https://zenodo.org/records/8196385/files/SSH.tar.gz?download=1
     download: true
   - name: access_log
+    type: raw
     labels: false
     paper: zaker2019weblogs
     local_archive: '~/kaggle/archive.zip'
     source_url: https://www.kaggle.com/datasets/eliasdabbas/web-server-access-logs
     download: true
-  - name: loghub_csv
+  - name: loghub_sample_csv
+    type: parsed-all  # Content + EventId/EventTemplate, header fields as columns
     labels: partial  # only the BGL and Thunderbird files carry a Label column
     labeling_level: line
     paper: [zhu2019logparsing, zhu2023loghub]
@@ -143,6 +164,7 @@ datasets:
       - https://raw.githubusercontent.com/logpai/loghub/master/Zookeeper/Zookeeper_2k.log_structured.csv
     download: true
   - name: zeek
+    type: raw
     labels: false
     urls:
       - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/analyzer.log.gz
@@ -182,12 +204,14 @@ datasets:
       - https://raw.githubusercontent.com/brimdata/zed-sample-data/main/zeek-default/x509.log.gz
     download: true
   - name: iot23
+    type: raw
     labels: true
     labeling_level: line
     paper: garcia2020iot23
     url: https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset/IndividualScenarios/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled
     download: true
   - name: iis
+    type: raw
     labels: false
     urls:
       - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/suspicious_behaviour/exchange_2016_iis/exchange_2016_iis.log
@@ -195,6 +219,7 @@ datasets:
       - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1190/pswa/iis_pswaaccess.log
     download: true
   - name: lo2
+    type: raw
     labels: true
     labeling_level: sequence
     paper: bakhtin2025lo2

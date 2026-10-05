@@ -5,7 +5,7 @@ local_copy_folder: '~/Datasets'
 # DelimitedLoader. Five entries covering the three places the column names can come from, since
 # that, rather than the parsing, is what this family makes hard:
 #
-#   a header row      loghub_csv (16 systems, 15 distinct headers) and loghub_bgl (one of them,
+#   a header row      loghub_sample_csv (16 systems, 15 distinct headers) and loghub_bgl (one of them,
 #                     with its labels)
 #   Zeek's '#fields'  zeek (a whole Zeek output directory) and iot23 (one conn.log, labelled)
 #   W3C's '#Fields:'  iis
@@ -27,7 +27,7 @@ datasets:
   # spec. Unlabelled here on purpose, even though two of the files do carry a Label: a frame where
   # 28,000 of 32,000 rows have a null label is not something a supervised detector can use, and
   # loghub_bgl below is that test instead.
-  - name: loghub_csv
+  - name: loghub_sample_csv
     loader: delimited
     format: loghub
     filename_pattern: "*.csv"
@@ -60,7 +60,7 @@ datasets:
 
   # The same shape, one system, labelled: BGL's structured CSV keeps '-' for an ordinary line and
   # the alert category otherwise, 143 of its 2,000 rows being alerts, plus an epoch 'Timestamp'.
-  # Its own entry rather than a file inside loghub_csv above, because a dataset entry is a folder.
+  # Its own entry rather than a file inside loghub_sample_csv above, because a dataset entry is a folder.
   # predictor_cols deliberately mirror the raw-BGL entry in tests/datasets_mid_labels.yml: the same
   # events through a different loader should be predictable from the same fields.
   - name: loghub_bgl
