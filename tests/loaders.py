@@ -70,7 +70,7 @@ def create_correct_loader(dataset_name, data, system=""):
         loader = ADFALoader(filename=default_path)
     elif dataset_name == "awsctd":
         loader = AWSCTDLoader(filename=default_path+"/CSV")
-    elif dataset_name == "lo2":
+    elif dataset_name == "lo2v2":
         # LO2Loader chooses which test cases to read itself, so the entry's keys are just its
         # constructor arguments. single_error_type is the one that matters for a test: without it
         # the loader samples a different error case per run on every call and the row count is not
@@ -84,8 +84,8 @@ def create_correct_loader(dataset_name, data, system=""):
                            single_error_type=data.get('single_error_type'),
                            single_service=data.get('single_service', ''))
     elif dataset_name == "lo2-loader-fixed":
-        # Reads the same unpacked archive as the lo2 entry, so the path is lo2's, not the entry name's.
-        loader = LO2LoaderFixed(filename=os.path.join(full_data_path, "lo2", data.get('folder', '')),
+        # Reads the same unpacked archive as the lo2v2 entry, so the path is lo2v2's, not the entry name's.
+        loader = LO2LoaderFixed(filename=os.path.join(full_data_path, "lo2v2", data.get('folder', '')),
                              test_cases=data.get('test_cases'),
                              services=data.get('services'),
                              continuation_lines=data.get('continuation_lines', 'fill-lastseen'))

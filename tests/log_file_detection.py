@@ -43,7 +43,7 @@ BY_NAME = {
     "nezha": "NezhaLoader",
     "adfa": "ADFALoader",
     "awsctd": "AWSCTDLoader",
-    "lo2": "LO2Loader",
+    "lo2v2": "LO2Loader",
 }
 BY_LOADER_KEY = {
     "access_log": "AccessLogLoader",

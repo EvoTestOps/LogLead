@@ -227,10 +227,18 @@ datasets:
       - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1505.003/wsus-iis.log
       - https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques/T1190/pswa/iis_pswaaccess.log
     download: true
-  - name: lo2
+  - name: lo2v2
+    type: raw
+    labels: true
+    labeling_level: sequence
+    paper: bakhtin2026lo2v2
+    url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1
+    download: true
+  - name: lo2v1
     type: raw
     labels: true
     labeling_level: sequence
     paper: bakhtin2025lo2
-    url: https://zenodo.org/records/18937117/files/light-oauth2-logs.zip?download=1
+    # lo2-sample.zip, not the 46 GB lo2-data.zip (~450 GB unpacked) of all 1,740 runs.
+    url: https://zenodo.org/records/14938118/files/lo2-sample.zip?download=1
     download: true

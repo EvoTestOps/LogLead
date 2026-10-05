@@ -30,9 +30,9 @@ explains how those configs are split.
 
 ## Disk space
 
-The full set is **~133 GB unpacked**, and about **7.7 GB of transfer** to get there. Liberty, Spirit
-and Thunderbird account for 97 GB of the unpacked total and LO2 for another 15 GB — set
-`download: false` on those four and the rest fits in 21 GB, 8.9 GB of it openstack-seq-labels-19.
+The full set is **~150 GB unpacked**, and about **8.7 GB of transfer** to get there. Liberty, Spirit
+and Thunderbird account for 97 GB of the unpacked total and lo2v1 and lo2v2 for another 31 GB — set
+`download: false` on those five and the rest fits in 21 GB, 8.9 GB of it openstack-seq-labels-19.
 
 Sizes are binary units (MB = MiB, GB = GiB), measured on disk after unpacking; download sizes are
 the servers' `Content-Length`. Line counts are of the log files as downloaded.
@@ -60,7 +60,8 @@ the servers' `Content-Length`. Line counts are of the log files as downloaded.
 | [zeek](#zeek) | 44 MB | 215 MB | 1,474,104 records + 315 header lines |
 | [iot23](#iot23) | 2.8 MB | 2.8 MB | 23,145 connections + 9 header lines |
 | [iis](#iis) | 16 MB | 16 MB | 55,826 requests + 12 directive lines |
-| [lo2](#lo2) | 2.7 GB | 15 GB | 103,140,992 |
+| [lo2v2](#lo2v2) | 2.7 GB | 15 GB | 103,140,992 |
+| [lo2v1](#lo2v1) | 1.0 GB | 16.4 GB | not counted; 37,800 log files |
 
 ---
 
@@ -237,16 +238,21 @@ They are W3C extended format, where a `#Fields:` directive names the columns and
 every log rotation, so the column set can change partway through a file. Unlabelled, 55,826 requests.
 [splunk/attack_data](https://github.com/splunk/attack_data).
 
-## lo2
+## lo2v2
 
-LO2v2, logs and metrics from load-testing a [Light-OAuth2](https://github.com/networknt/light-oauth2)
-microservice deployment: 115 runs × ~54 test cases × 7 services, 43,078 log files and 103 million
-lines. A test case named `correct` is normal and every other name is the error injected, so the
-labels live in the directory tree rather than in a file or a column. Use **v2, not
-[v1](https://zenodo.org/records/14938118)** — v1 ran the correct test first in a fixed order, so
-service startup lines leaked into the normal class and inflated F1 from 0.623 to 0.976. This entry
-takes `light-oauth2-logs.zip`, the reduced log set the v2 paper's own analysis used, rather than the
-65.6 GB full record. [Zenodo record 18937117](https://zenodo.org/records/18937117).
+Logs from load-testing a [Light-OAuth2](https://github.com/networknt/light-oauth2) microservice
+deployment: 115 runs of 54 tests each, `correct` plus 53 that each inject one error. The test folder
+name is the label. LogLead downloads `light-oauth2-logs.zip`, a **subset**: only the 7 service logs
+per test, each keeping every 20th line (lines 1, 21, 41, …). The full `LO2v2.zip` (61 GB, ~640 GB unpacked) also has
+the other container logs, metrics and traces. [Zenodo record 18937117](https://zenodo.org/records/18937117).
+
+## lo2v1
+
+The first LO2 release, same setup and labels. Every run executed `correct` first in a fixed order, so
+startup lines leak the label; use it for comparison with lo2v2, not as a benchmark. LogLead downloads
+`lo2-sample.zip`, a **subset**: the first 100 of 1,740 runs, 7 service logs per test, with the first
+100 lines of each log dropped and `correct` logs cut to about 1/6. The full `lo2-data.zip` (43 GB,
+~450 GB unpacked) is untrimmed and has all logs and metrics. [Zenodo record 14938118](https://zenodo.org/records/14938118).
 
 ---
 
