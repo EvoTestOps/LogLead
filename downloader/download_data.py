@@ -333,7 +333,28 @@ def copy_local_dataset(name, source_folder, dest_folder):
     shutil.copytree(source_folder, dest_folder)
 
 
-def main(dest_base_folder, yaml_file, only_datasets=None):
+LABELS_CHOICES = ['true', 'false', 'partial']
+LABELING_LEVEL_CHOICES = ['line', 'sequence', 'time-window']
+
+
+def label_info(dataset):
+    # YAML reads `labels: true` as a bool, so normalise to the CLI's strings. An entry without the
+    # field (the tests/datasets_*.yml configs) is 'unknown' and never matches a --labels filter.
+    labels = dataset.get('labels')
+    labels = 'unknown' if labels is None else str(labels).lower()
+    return labels, dataset.get('labeling_level')
+
+
+def matches_label_filters(dataset, labels=None, labeling_levels=None):
+    dataset_labels, dataset_level = label_info(dataset)
+    if labels is not None and dataset_labels not in labels:
+        return False
+    if labeling_levels is not None and dataset_level not in labeling_levels:
+        return False
+    return True
+
+
+def main(dest_base_folder, yaml_file, only_datasets=None, labels=None, labeling_levels=None):
     """
     Downloads and unzips datasets to the specified base folder.
 
@@ -343,6 +364,10 @@ def main(dest_base_folder, yaml_file, only_datasets=None):
         only_datasets (list): Names of the datasets to fetch. Nothing else is fetched.
             None (the default) falls back to
             the flags: every entry marked `download: true`.
+        labels (list): Keep only entries whose `labels` is one of these ('true', 'false',
+            'partial'). None keeps all.
+        labeling_levels (list): Keep only entries whose `labeling_level` is one of these ('line',
+            'sequence', 'time-window'). None keeps all.
     """
     data = load_datasets(yaml_file)
     root_folder = dest_base_folder if dest_base_folder else os.path.expanduser(data['root_folder'])
@@ -363,9 +388,17 @@ def main(dest_base_folder, yaml_file, only_datasets=None):
         ignored = len(available) - len(only_datasets)
         print(f'Downloading only: {", ".join(sorted(only_datasets))} '
               f'({ignored} other dataset(s) in {yaml_file} ignored).')
+    if labels is not None or labeling_levels is not None:
+        matching = [d['name'] for d in data['datasets']
+                    if matches_label_filters(d, labels, labeling_levels)]
+        print(f'Label filters match: {", ".join(matching) if matching else "nothing"}.')
 
     for dataset in data['datasets']:
         name = dataset['name']
+        if not matches_label_filters(dataset, labels, labeling_levels):
+            if only_datasets is not None and name in only_datasets:
+                print(f'{name} was requested by name but does not match the label filters. Skipping it.')
+            continue
         if only_datasets is not None:
             if name not in only_datasets:
                 continue
@@ -414,17 +447,31 @@ def cli():
     parser.add_argument('--datasets', '--dataset', nargs='+', metavar='NAME', dest='datasets',
                         help='Download only these datasets, by name (e.g. --datasets openstack '
                              'bgl).')
+    parser.add_argument('--labels', nargs='+', choices=LABELS_CHOICES, metavar='VALUE',
+                        help='Download only datasets whose labels field is one of these: '
+                             f'{", ".join(LABELS_CHOICES)} (e.g. --labels true partial).')
+    parser.add_argument('--labeling-level', nargs='+', choices=LABELING_LEVEL_CHOICES,
+                        metavar='LEVEL', dest='labeling_levels',
+                        help='Download only datasets labelled at one of these levels: '
+                             f'{", ".join(LABELING_LEVEL_CHOICES)}. Unlabelled datasets have no '
+                             'level, so this excludes them.')
     parser.add_argument('--list', action='store_true',
-                        help='List the dataset names in the config and exit, downloading nothing.')
+                        help='List the dataset names in the config, with their labels and '
+                             'labeling level, and exit, downloading nothing. Honours --labels and '
+                             '--labeling-level.')
     args = parser.parse_args()
     if args.list:
         data = load_datasets(args.config)
         print(f'Datasets in {args.config}:')
         for dataset in data['datasets']:
+            if not matches_label_filters(dataset, args.labels, args.labeling_levels):
+                continue
+            dataset_labels, dataset_level = label_info(dataset)
             state = '' if dataset.get('download', True) else '  (download: false)'
-            print(f'  {dataset["name"]}{state}')
+            print(f'  {dataset["name"]:<18} labels: {dataset_labels:<8} '
+                  f'level: {dataset_level or "-":<11}{state}'.rstrip())
         return
-    main(args.location, args.config, args.datasets)
+    main(args.location, args.config, args.datasets, args.labels, args.labeling_levels)
 
 if __name__ == '__main__':
     cli()

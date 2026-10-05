@@ -7,6 +7,9 @@
 uv run downloader/download_data.py                                    # everything in datasets.yml
 uv run downloader/download_data.py --config tests/datasets_json.yml   # one test-specific set
 uv run downloader/download_data.py --location /mnt/big/Datasets       # override root_folder
+uv run downloader/download_data.py --labels true partial              # only labelled datasets
+uv run downloader/download_data.py --labeling-level sequence          # only sequence-labelled ones
+uv run downloader/download_data.py --list --labels true               # preview what a filter selects
 ```
 
 Each entry lands in `<root_folder>/<name>/` (default `~/Datasets`). Archives are deleted after
