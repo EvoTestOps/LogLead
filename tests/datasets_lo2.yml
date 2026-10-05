@@ -16,11 +16,11 @@ root_folder: '~/Datasets'
 # 0.623. Do not add LO2v1 back alongside it.
 
 datasets:
-  # LO2v2Loader over the same archive as the lo2 entry below. Listed first on purpose:
+  # LO2LoaderFixed over the same archive as the lo2 entry below. Listed first on purpose:
   # enhancers.py and anomaly_detectors.py find an entry by substring of the parquet name, and
-  # "lo2" is a substring of "lo2v2_lo" too.
-  - name: lo2v2
-    loader: lo2v2
+  # "lo2" is a substring of "lo2-loader-fixed_lo" too.
+  - name: lo2-loader-fixed
+    loader: lo2-loader-fixed
     download: false             # the lo2 entry downloads the archive both entries read
     load: true
     enhance: true

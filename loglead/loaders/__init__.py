@@ -16,10 +16,10 @@ from .supercomputers import ThuSpiLibLoader
 from .syslog import SyslogLoader
 from .raw import RawLoader
 from .lo2 import LO2Loader
-from .lo2v2 import LO2v2Loader
+from .lo2_loader_fixed import LO2LoaderFixed
 
 __all__ = ['AccessLogLoader', 'ADFALoader', 'AutoLoader', 'AWSCTDLoader', 'BGLLoader',
            'DelimitedLoader', 'HadoopLoader', 'HDFSLoader', 'JsonLoader', 'LogfmtLoader',
            'NezhaLoader', 'ProLoader', 'SyslogLoader', 'ThuSpiLibLoader', 'BaseLoader', 'RawLoader',
-           'LO2Loader', 'LO2v2Loader', 'Detection', 'detect_format', 'DEFAULT_MAX_DETECT_FILES',
+           'LO2Loader', 'LO2LoaderFixed', 'Detection', 'detect_format', 'DEFAULT_MAX_DETECT_FILES',
            'name_shape', 'sample_paths']

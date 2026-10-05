@@ -205,7 +205,7 @@ openstack = [
     ("${start}<NUM>${end}", r"(?P<start>[^A-Za-z0-9]|^)\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?P<end>[^A-Za-z0-9]|$)"),
 ]
 
-# light-oauth2: the LO2 and LO2v2 loaders and the MuFaNo runs.
+# light-oauth2: LO2Loader, LO2LoaderFixed and the MuFaNo runs.
 lo2 = [
     ("${start}<ID>${end}", r"(?P<start>\]  |[Cc]ode ?= ?'?)[A-Za-z0-9_-]{22}(?P<end>[^A-Za-z0-9_-]|$)"),
     ("${start}<AUTH>", r"(?P<start>(?:Basic|Bearer) )[A-Za-z0-9+/._~-]*[0-9+/][A-Za-z0-9+/._~-]*=*"),

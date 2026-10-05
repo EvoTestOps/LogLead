@@ -10,7 +10,7 @@ from .base import BaseLoader
 
 logger = logging.getLogger(__name__)
 
-__all__ = ['LO2v2Loader']
+__all__ = ['LO2LoaderFixed']
 
 SERVICES = ("client", "code", "key", "refresh-token", "service", "token", "user")
 
@@ -23,7 +23,7 @@ _EVENT = (r"^(?<time>\d{2}:\d{2}:\d{2}\.\d{3}) \[(?<thread>[^\]]*)\] +(?<correla
           r"(?<level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL) +(?<logger>\S+) +(?<method>\S+) - (?<message>.*)$")
 
 
-class LO2v2Loader(BaseLoader):
+class LO2LoaderFixed(BaseLoader):
     """Reads the LO2v2 Light-OAuth2 logs: run directories, one directory per test case in each, one
     log file per microservice in each test case. A test case named 'correct' is normal and every
     other name is the error that was injected, so test_case is the label - keep it out of features.
@@ -91,7 +91,7 @@ class LO2v2Loader(BaseLoader):
                     if self.services is None or (service and service.group(1) in self.services):
                         files.append(path)
         if wanted_cases is not None and wanted_cases - seen_cases:
-            logger.warning("LO2v2Loader: test case(s) found in no run read: %s",
+            logger.warning("LO2LoaderFixed: test case(s) found in no run read: %s",
                            ", ".join(sorted(wanted_cases - seen_cases)))
         if not files:
             raise ValueError(f"No LO2 log files found under {os.path.abspath(self.filename)} "
@@ -118,7 +118,7 @@ class LO2v2Loader(BaseLoader):
             lf.collect(), line_policy.event_start("parsed", column="m_timestamp"),
             policy=self.continuation_lines, partition_by="file_name")
         self.df = self.df.drop("file_name").with_columns(normal=pl.col("test_case") == "correct")
-        logger.info("LO2v2Loader: %d event(s) from %d file(s).", len(self.df), len(paths))
+        logger.info("LO2LoaderFixed: %d event(s) from %d file(s).", len(self.df), len(paths))
         self.df_seq = self.sequences()
 
     def _path_info(self, paths):
@@ -130,7 +130,7 @@ class LO2v2Loader(BaseLoader):
             run_start=pl.from_epoch(run_dir.str.extract(_RUN_EPOCH).cast(pl.Int64), time_unit="s"),
         )
         if paths["run_start"].null_count():
-            logger.warning("LO2v2Loader: %d run directory name(s) end in no epoch, so their lines "
+            logger.warning("LO2LoaderFixed: %d run directory name(s) end in no epoch, so their lines "
                            "get no date and m_timestamp stays null.", paths["run_start"].null_count())
         key = [pl.col("run"), pl.col("test_case")]
         if self.seq_by == "service":
@@ -160,4 +160,4 @@ class LO2v2Loader(BaseLoader):
     def check_for_nulls_and_non_utf8(self, source=None):
         # Continuation lines have no thread, level or logger, so nulls there are the expected shape.
         self._log_nulls_and_non_utf8(
-            "LO2v2Loader", "stack-trace lines carry no thread, level, logger or method.")
+            "LO2LoaderFixed", "stack-trace lines carry no thread, level, logger or method.")
