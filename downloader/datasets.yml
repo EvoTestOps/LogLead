@@ -99,7 +99,7 @@ datasets:
   - name: openstack-seq-labels-19
     type: raw
     labels: true
-    labeling_level: sequence  # FAILURE/NO_FAILURE per test round in nova.tsv, cinder.tsv, neutron.tsv
+    labeling_level: sequence  # yes/no failure per test round in nova.csv, cinder.csv, neutron.csv
     paper: cotroneo2019openstack
     # The trailing file name is only there so the download is saved as a .zip and unpacked;
     # figshare ignores it.

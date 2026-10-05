@@ -32,7 +32,7 @@ explains how those configs are split.
 
 The full set is **~133 GB unpacked**, and about **7.7 GB of transfer** to get there. Liberty, Spirit
 and Thunderbird account for 97 GB of the unpacked total and LO2 for another 15 GB — set
-`download: false` on those four and the rest fits in 21 GB, 8.8 GB of it openstack-seq-labels-19.
+`download: false` on those four and the rest fits in 21 GB, 8.9 GB of it openstack-seq-labels-19.
 
 Sizes are binary units (MB = MiB, GB = GiB), measured on disk after unpacking; download sizes are
 the servers' `Content-Length`. Line counts are of the log files as downloaded.
@@ -49,7 +49,7 @@ the servers' `Content-Length`. Line counts are of the log files as downloaded.
 | [adfa](#adfa) | 2.3 MB | 8.8 MB | 5,951 traces, 2,747,550 syscall ids |
 | [awsctd](#awsctd) | 9.7 MB | 559 MB | 592,505 traces, 174,847,810 syscall ids |
 | [openstack-line-labels-22](#openstack-line-labels-22) | 78 MB | 78 MB | 217,534 rows + 1 header |
-| [openstack-seq-labels-19](#openstack-seq-labels-19) | 780 MB | 8.8 GB | not counted; 74,235 zip entries |
+| [openstack-seq-labels-19](#openstack-seq-labels-19) | 780 MB | 8.9 GB | 17,483,897 in the service and workload logs |
 | [nginx_json](#nginx_json) | 12 MB | 12 MB | 51,462 |
 | [security_datasets](#security_datasets) | 13 KB | 180 KB | 118 |
 | [ait_ads](#ait_ads) | 92 MB | 2.7 GB | 2,655,821 |
@@ -134,9 +134,11 @@ The original OpenStack failure dataset from Cotroneo et al.'s ESEC/FSE 2019 pape
 Bug Get?*: 911 fault-injection tests on OpenStack (439 into Nova, 269 into Cinder, 203 into Neutron).
 Each test runs the same workload twice, `round_1` with the fault injected and `round_2` fault-free,
 and keeps the raw logs of every OpenStack service (nova, cinder, neutron, glance, keystone, heat, …)
-plus the workload's own output and a Zipkin trace. `nova.tsv`, `cinder.tsv` and `neutron.tsv` label
-each round `FAILURE` or `NO_FAILURE` and name the assertion or API error seen, so the labelled unit
-is a test round, not a line. `round_1/trigger_log` records when the injected fault fired. Files
+plus the workload's own output and a Zipkin trace. `nova.csv`, `cinder.csv` and `neutron.csv` mark
+each test's two rounds `yes`/`no` for failure (`Test,Round_1 Failure,Round_2 Failure`), so the
+labelled unit is a test round, not a line: 480 of the 911 faulty rounds failed, and 36 fault-free
+rounds failed too. The GitHub copy has richer `.tsv` files instead, naming the fault and the
+assertion or API error seen; this figshare zip does not. `round_1/trigger_log` records when the injected fault fired. Files
 named `*.bzip2.out` are plain text, already decompressed.
 [figshare 7732268](https://doi.org/10.6084/m9.figshare.7732268.v3) /
 [dessertlab/Fault-Injection-Dataset](https://github.com/dessertlab/Fault-Injection-Dataset).
