@@ -1105,6 +1105,9 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
              all(f"moving_avg_100_{col}" in table.columns for col in sequence.SEQUENCE_COLUMNS))
     check.ok("rank_sum combines them", "rank_sum" in table.columns)
     original = {col: table[col].mean() for col in sequence.SEQUENCE_COLUMNS}
+    check.eq("each detector's mean score is on the file entry",
+             {f"mean_{col}": entry.get(f"mean_{col}") for col in sequence.SEQUENCE_COLUMNS},
+             {f"mean_{col}": round(original[col], 4) for col in sequence.SEQUENCE_COLUMNS})
 
     # Reversing the file keeps every line and so every bag-of-words score, and
     # breaks only the order -- which is all this tool is meant to see.
@@ -1130,6 +1133,9 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     narrowed = server.sequence_line_event_prediction(
         session_id, target, target_files=[file_name], detectors=["NEP"],
         content_format="Parse-Tip", max_rows=1)
+    check.ok("only the detector that ran gets a mean",
+             "mean_NEP_pred_ano_proba" in narrowed["files"][0]
+             and "mean_LAP_pred_ano_proba" not in narrowed["files"][0])
     check.ok("narrowing the detectors warns and names the missing one",
              any("Only NEP ran" in note and "LAP" in note for note in narrowed["notes"]))
     check.raises("Words is rejected at the tool too", ValueError,

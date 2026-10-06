@@ -2392,6 +2392,10 @@ def sequence_line_event_prediction(
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. "moving_avg_100_NEP_pred_ano_proba"
             finds sustained regions of unexpected order rather than single lines.
+
+    Each file also gets mean_<score column> per detector that ran: a high line
+    can be one unexpected line, the mean tells how much of the file is out of
+    order, for comparing files and targets.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
@@ -2407,6 +2411,10 @@ def sequence_line_event_prediction(
         [sort_by, "rank_sum", *sequence.SEQUENCE_COLUMNS], max_rows, mask=mask,
         content_format=content_format,
     )
+    for entry, (_, _, scored) in zip(files, per_file):
+        entry.update({f"mean_{column}": round(scored.get_column(column).mean(), 4)
+                      for column in sequence.SEQUENCE_COLUMNS
+                      if column in scored.columns and scored.height})
 
     return {
         "session_id": session_id,
