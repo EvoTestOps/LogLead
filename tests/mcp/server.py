@@ -1040,6 +1040,12 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
              len(entry.get("clean_range", [])) == len(anomaly.DETECTORS)
              and all("above_clean_max" in line for line in entry["top_lines"]),
              str(l4["notes"]))
+    lines = server.STORE.get(session_id).get_result(entry["result_id"])[1]
+    expected = {f"{row['detector']}_above_clean_max_pct": round(100.0 * (
+        lines[anomaly.DETECTORS[row["detector"]][1]] > row["clean_max"]).fill_null(False).sum()
+        / lines.height, 2) for row in entry.get("clean_range", [])}
+    check.eq("each detector's above_clean_max_pct is its share of lines above clean_max",
+             {key: entry.get(key) for key in expected}, expected)
     return l2, entry
 
 

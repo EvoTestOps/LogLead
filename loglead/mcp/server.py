@@ -2218,6 +2218,18 @@ def _line_clean_range(session, per_file, target_folder, baseline_folders, mask,
             notes)
 
 
+def _above_clean_max_pct(scored, clean):
+    """Per detector, the percentage of the file's lines scored above clean_max."""
+    pcts = {}
+    for row in clean:
+        column = anomaly.DETECTORS[row["detector"]][1]
+        if column not in scored.columns or row["clean_max"] is None or scored.height == 0:
+            continue
+        above = (scored.get_column(column) > row["clean_max"]).fill_null(False).sum()
+        pcts[f"{row['detector']}_above_clean_max_pct"] = round(100.0 * above / scored.height, 2)
+    return pcts
+
+
 @tool
 def anomaly_line_content(
     session_id: str,
@@ -2261,7 +2273,9 @@ def anomaly_line_content(
             is compared against baseline and gets above_clean_max, the number
             of detectors scoring it above the highest-scoring baseline line.
             0 means within the baseline range; the more detectors, the more
-            likely an anomaly. Costs one extra model fit per baseline folder,
+            likely an anomaly. Each file also gets
+            <detector>_above_clean_max_pct, the percentage of its lines above
+            that detector's clean_max, for comparing files and targets. Costs one extra model fit per baseline folder,
             at most 10. Set False to skip it.
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. Keep "rank_sum" -- a single
@@ -2291,9 +2305,10 @@ def anomaly_line_content(
         vectorizer=vectorizer,
     )
 
-    for entry in files:
+    for entry, (_, _, scored) in zip(files, per_file):
         if entry["file_name"] in clean_by_file:
             entry["clean_range"] = clean_by_file[entry["file_name"]]
+            entry.update(_above_clean_max_pct(scored, entry["clean_range"]))
 
     return {
         "session_id": session_id,
