@@ -588,6 +588,9 @@ def stage_hadoop_new_tokens(check, session_id, target):
              f"{result['new_token_occurrences']} vs {everything['new_token_occurrences']}")
     check.ok("new tokens are found", result["n_rows"] > 0,
              f"{result['n_rows']} tokens on {result['lines_with_new_tokens']} lines")
+    check.eq("lines_with_new_tokens_pct is the share of target lines",
+             result["lines_with_new_tokens_pct"],
+             result["lines_with_new_tokens"] / result["n_lines"] * 100)
     counts = [row["count"] for row in result["rows"]]
     check.ok("rows are sorted by count", counts == sorted(counts, reverse=True))
     table = session.get_result(result["result_id"])[1]

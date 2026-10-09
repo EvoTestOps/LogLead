@@ -1015,8 +1015,10 @@ def new_tokens(
     and remask_log_root remove it.
 
     One row per new token: how often it occurs, on how many lines and files,
-    and the first line it is on. 
-    
+    and the first line it is on. lines_with_new_tokens_pct is the percentage
+    of target lines with a new token: one new token on many lines is a
+    different finding from many new tokens on one line.
+
     Fast even on large log roots, and a repeat call reuses the baseline.
 
     Args:
@@ -1077,6 +1079,8 @@ def new_tokens(
             "skipped_files": info["skipped_files"][:20],
             "n_lines": info["n_lines"],
             "lines_with_new_tokens": info["lines_with_new_tokens"],
+            "lines_with_new_tokens_pct": (info["lines_with_new_tokens"] / info["n_lines"] * 100
+                                          if info["n_lines"] else 0.0),
             "new_token_occurrences": info["new_token_occurrences"],
             "baseline_vocabulary_size": info["baseline_vocabulary_size"],
         },
