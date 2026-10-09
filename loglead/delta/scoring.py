@@ -173,9 +173,10 @@ def range_row(values):
 def threshold_score(value, row):
     """(value - clean_mid) / (clean_max - clean_mid): 0 is a typical clean run,
     below 0 closer than typical, 1 the most extreme one, above 1 beyond any of them.
-    Anchored on the median rather than clean_min because the min comes from a
-    single folder and is noisy. None when clean_max equals clean_mid: there is no
-    spread to scale by."""
+    ``value`` is a number or a Polars expression, so one row and a whole score
+    column scale the same way. Anchored on the median rather than clean_min
+    because the min comes from a single folder and is noisy. None when clean_max
+    equals clean_mid: there is no spread to scale by."""
     mid, top = row["clean_mid"], row["clean_max"]
     if value is None or mid is None or top is None or top - mid <= 0:
         return None

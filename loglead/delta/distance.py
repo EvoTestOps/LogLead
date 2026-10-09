@@ -246,13 +246,13 @@ def _range_frame(values, measures):
 
 
 def clean_range(df, baseline_folder_names, mask=True, content_format="Words",
-                vectorizer="Count", measures=None, get_range=None):
+                vectorizer="Count", measures=None, get_range=None, file_name=None):
     """How much clean runs differ from each other, so a target's distance can be
     read against normal variation instead of needing a hand-picked threshold.
 
-    Formed from clean_sample of the baseline folders. get_range(key, build)
-    lets a caller cache ranges across calls. None with fewer than
-    MIN_CLEAN_FOLDERS baseline folders.
+    Formed from clean_sample of the baseline folders, restricted to
+    ``file_name`` when given. get_range(key, build) lets a caller cache ranges
+    across calls. None with fewer than MIN_CLEAN_FOLDERS baseline folders.
     """
     if len(baseline_folder_names) < MIN_CLEAN_FOLDERS:
         return None
@@ -261,14 +261,17 @@ def clean_range(df, baseline_folder_names, mask=True, content_format="Words",
 
     def build():
         prepared, field = log_root.prepare_content(df, mask, content_format)
-        prepared = prepared.filter(pl.col("folder").is_in(names))
+        keep = pl.col("folder").is_in(names)
+        if file_name is not None:
+            keep = keep & (pl.col("file_name") == file_name)
+        prepared = prepared.filter(keep)
         folders = [prepared.filter(pl.col("folder") == name) for name in names]
         return _range_frame(_content_pair_distances(folders, field, measures, vectorizer),
                             measures)
 
     if get_range is None:
         return build()
-    key = ("folder_content", mask, content_format, vectorizer, tuple(measures), tuple(names))
+    key = ("content", file_name, mask, content_format, vectorizer, tuple(measures), tuple(names))
     return get_range(key, build)
 
 
@@ -312,29 +315,15 @@ def file_content_clean_range(df, results, mask=True, content_format="Words",
     same file. A file compared against fewer than MIN_CLEAN_FOLDERS baseline
     folders gets no rows. Returns the scaled table, or None when no file had
     enough baseline folders."""
-    measures = _resolve_measures(measures)
     frames = []
     file_names = results.get_column("file_name").unique().to_list() if results.height else []
     for file_name in sorted(file_names):
         file_results = results.filter(pl.col("file_name") == file_name)
-        baseline_folder_names = file_results.get_column("baseline_folder").to_list()
-        if len(baseline_folder_names) < MIN_CLEAN_FOLDERS:
-            continue
-        names = clean_sample(baseline_folder_names)
-
-        def build(file_name=file_name, names=names):
-            prepared, field = log_root.prepare_content(df, mask, content_format)
-            prepared = prepared.filter(pl.col("folder").is_in(names)
-                                       & (pl.col("file_name") == file_name))
-            folders = [prepared.filter(pl.col("folder") == name) for name in names]
-            return _range_frame(_content_pair_distances(folders, field, measures, vectorizer),
-                                measures)
-
-        key = ("file_content", file_name, mask, content_format, vectorizer, tuple(measures),
-               tuple(names))
-        clean = build() if get_range is None else get_range(key, build)
-        frames.append(scale_to_clean_range(file_results, clean)
-                      .select(pl.lit(file_name).alias("file_name"), pl.all()))
+        clean = clean_range(df, file_results.get_column("baseline_folder").to_list(), mask,
+                            content_format, vectorizer, measures, get_range, file_name)
+        if clean is not None:
+            frames.append(scale_to_clean_range(file_results, clean)
+                          .select(pl.lit(file_name).alias("file_name"), pl.all()))
     return pl.concat(frames) if frames else None
 
 

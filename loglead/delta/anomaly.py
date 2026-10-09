@@ -420,22 +420,36 @@ def known_scores(df, baseline_folders, clean_names, scored, present=None):
     return known
 
 
+def _ranged_columns(results, clean):
+    """(detector, score column, row) per clean range row that applies to ``results``."""
+    for row in clean:
+        column = DETECTORS[row["detector"]][1]
+        if column in results.columns and row["clean_max"] is not None:
+            yield row["detector"], column, row
+
+
 def scale_to_clean_range(results, clean, per_detector=True):
     """Add ``above_clean_max`` -- how many detectors score the row above the
     highest score any sampled clean run got -- and, with ``per_detector``,
-    ``<detector>_threshold_score`` per detector, as scoring.threshold_score defines it."""
-    ranges = {row["detector"]: row for row in clean.iter_rows(named=True)}
+    ``<detector>_threshold_score`` per detector from scoring.threshold_score."""
     above, scaled = [], []
-    for name, row in ranges.items():
-        column = DETECTORS[name][1]
-        if column not in results.columns or row["clean_max"] is None:
-            continue
+    for name, column, row in _ranged_columns(results, clean.iter_rows(named=True)):
         above.append((pl.col(column) > row["clean_max"]).fill_null(False).cast(pl.Int64))
         if per_detector:
-            mid, top = row["clean_mid"], row["clean_max"]
-            value = ((pl.col(column) - mid) / (top - mid)
-                     if top - mid > 0 else pl.lit(None, dtype=pl.Float64))
-            scaled.append(value.cast(pl.Float64).alias(f"{name}_threshold_score"))
+            value = scoring.threshold_score(pl.col(column), row)
+            value = pl.lit(None, dtype=pl.Float64) if value is None else value.cast(pl.Float64)
+            scaled.append(value.alias(f"{name}_threshold_score"))
     if not above:
         return results
     return results.with_columns(*scaled, pl.sum_horizontal(above).alias("above_clean_max"))
+
+
+def above_clean_max_pct(scored, clean):
+    """Per detector, the percentage of ``scored``'s lines above clean_max, as
+    ``<detector>_above_clean_max_pct``. ``clean`` is clean range rows as dicts."""
+    if scored.height == 0:
+        return {}
+    return {f"{name}_above_clean_max_pct": round(
+                100.0 * (scored.get_column(column) > row["clean_max"]).fill_null(False).sum()
+                / scored.height, 2)
+            for name, column, row in _ranged_columns(scored, clean)}

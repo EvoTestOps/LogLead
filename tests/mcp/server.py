@@ -8,7 +8,7 @@ the exit code is non-zero if anything failed.
 Run it with::
 
     uv run tests/mcp/server.py                     # everything
-    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect, crash, multi_root
+    uv run tests/mcp/server.py --only hadoop       # one stage: data, hadoop, hdfs, split, detect, crash, multi_root, threshold
     uv run tests/mcp/server.py --regenerate        # rebuild the log roots first
     uv run tests/mcp/server.py --keep-artifacts    # keep the tables and plots written
 
@@ -1997,6 +1997,64 @@ def stage_multi_root(check, workdir):
         server.STORE = previous
 
 
+def stage_threshold(check, workdir):
+    """threshold_score below 0: a target more typical than a typical clean run.
+
+    Synthetic, and in the default set like split/detect/crash/multi_root: whether
+    the score is floored is a property of the scaling, not of any corpus, and a
+    real corpus only lands below the clean median by chance.
+
+    Every baseline folder holds the same common lines plus words no other folder
+    has, a different number of them per folder so the clean range has a spread.
+    The extra lines reuse the common words around the unique one: a word every
+    baseline folder shares but the target lacks would pull the target away.
+    The target holds only the common lines, so it is closer to each baseline
+    folder than they are to each other, and has no words the baseline lacks.
+    """
+    check.section("18. threshold_score below 0 (synthetic)")
+
+    words = iter(["amber", "basil", "cedar", "delta", "ember", "fjord", "garnet", "harbor",
+                  "indigo", "juniper", "kestrel", "lagoon", "marble", "nectar", "orchid",
+                  "pepper", "quartz", "raven", "saffron", "tundra", "umber", "violet",
+                  "willow", "yarrow", "zephyr", "acorn", "birch", "cobalt"])
+    common = [f"2024-01-01 00:00:{line:02d} INFO worker started common step {line}\n"
+              for line in range(20)]
+    root = os.path.join(workdir, "threshold-root")
+    folders = {"target": common}
+    for index in range(6):
+        unique = [f"2024-01-01 00:01:{line:02d} INFO worker started common step "
+                  f"{next(words)}\n" for line in range(index + 1)]
+        folders[f"base_{index}"] = common + unique
+    for name, lines in folders.items():
+        os.makedirs(os.path.join(root, name))
+        with open(os.path.join(root, name, "app.log"), "w") as handle:
+            handle.writelines(lines)
+
+    previous = server.STORE
+    server.STORE = SessionStore(cache_dir=os.path.join(workdir, "threshold-cache"),
+                                output_root=os.path.join(workdir, "threshold-output"))
+    baseline = [f"base_{index}" for index in range(6)]
+    try:
+        server.open_log_root(path=root, session_id="threshold", mask=False)
+
+        ranged = server.distance_folder_content("threshold", "target", baseline_folders=baseline,
+                                                mask=False, measures=["cosine"])
+        scaled = {row["measure"]: row["threshold_score"] for row in ranged["clean_range"]}
+        check.ok("a target closer than a typical clean run gets a negative "
+                 "distance threshold_score", scaled["cosine"] < 0, str(scaled))
+
+        scored = server.anomaly_folder_content("threshold", target_folder=["target"],
+                                               baseline_folders=baseline, mask=False,
+                                               detectors=["OOVDetector"])
+        row = scored["rows"][0]
+        check.ok("a target with no unseen words gets a negative anomaly threshold_score",
+                 row.get("OOVDetector_threshold_score") is not None
+                 and row["OOVDetector_threshold_score"] < 0, str(row))
+        check.eq("...and is not above clean_max", row.get("above_clean_max"), 0)
+    finally:
+        server.STORE = previous
+
+
 # --------------------------------------------------------------------------- #
 # Stage 14 -- BGL: the real single-file case, opt-in
 # --------------------------------------------------------------------------- #
@@ -2079,12 +2137,14 @@ def stage_bgl(check, datasets_folder, workdir):
 
 # --------------------------------------------------------------------------- #
 
-STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root", "bgl")
+STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root", "threshold",
+          "bgl")
 
 #: What runs when no --only is given. 'bgl' is out because it needs the 743 MB
 #: loghub download and writes a second copy of it; everything else here runs on
 #: data this suite builds for itself.
-DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root")
+DEFAULT_STAGES = ("data", "hadoop", "hdfs", "split", "detect", "crash", "multi_root",
+                  "threshold")
 
 
 def main():
@@ -2140,7 +2200,7 @@ def main():
         run_stage(check, stage_tools, check)
 
         # The two log roots are only built when something is going to read them:
-        # the split, detect and crash stages need no corpus, and `--only split` should
+        # the split, detect, crash and threshold stages need no corpus, and `--only split` should
         # not go looking for one.
         if {"data", "hadoop", "hdfs"} & set(stages):
             # Stage 1 is not optional for the stages below it: they read what it
@@ -2156,6 +2216,8 @@ def main():
             run_stage(check, stage_crash, check, workdir)
         if "multi_root" in stages:
             run_stage(check, stage_multi_root, check, workdir)
+        if "threshold" in stages:
+            run_stage(check, stage_threshold, check, workdir)
         if "bgl" in stages:
             run_stage(check, stage_bgl, check, datasets_folder, workdir)
     finally:
