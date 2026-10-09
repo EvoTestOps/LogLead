@@ -181,3 +181,17 @@ def threshold_score(value, row):
     if value is None or mid is None or top is None or top - mid <= 0:
         return None
     return (value - mid) / (top - mid)
+
+
+def highest_file(per_file, columns):
+    """One row per target_folder: per column, the highest value over its files and,
+    as ``<column>_file_name``, the file that has it. An anomaly can be in one file
+    only, which a mean over the files would hide."""
+    scored = {column: pl.col(column).is_not_null() for column in columns}
+    return per_file.group_by("target_folder", maintain_order=True).agg(
+        expr for column, keep in scored.items() for expr in (
+            pl.col(column).max(),
+            pl.col("file_name").filter(keep)
+            .sort_by(pl.col(column).filter(keep), descending=True).first()
+            .alias(f"{column}_file_name"),
+        ))

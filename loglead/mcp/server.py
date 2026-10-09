@@ -2100,7 +2100,9 @@ def anomaly_file_content(
             anomaly; just above 1 may still be normal variation. Costs one extra
             model fit per baseline folder, at most 10, none for folders the call
             already scored against the others (target_folder="ALL"). Set False
-            to skip it.
+            to skip it. folder_summary then gives one row per target folder:
+            per detector, the highest threshold score over its files and the
+            file that has it, for comparing target folders.
         max_rows: Rows returned inline.
     """
     session = STORE.get(session_id)
@@ -2127,8 +2129,24 @@ def anomaly_file_content(
          "detector_params": detector_params, "threshold": threshold},
         results, artifact, max_rows, sort_by=["rank_sum", "zscore_sum"],
         notes=_anomaly_notes(detectors, *clean_notes),
-        extra={"clean_range": clean} if clean is not None else None,
+        extra={"clean_range": clean,
+               "folder_summary": _folder_summary(
+                   results, [c for c in results.columns if c.endswith("_threshold_score")])}
+        if clean is not None else None,
     )
+
+
+def _folder_summary(per_file, columns):
+    """scoring.highest_file as records. ``per_file`` is a frame or the line tools'
+    per-file entries."""
+    if not columns:
+        return []
+    if not isinstance(per_file, pl.DataFrame):
+        per_file = pl.from_dicts(
+            [{key: entry.get(key) for key in ("target_folder", "file_name", *columns)}
+             for entry in per_file], infer_schema_length=None)
+    summary = scoring.highest_file(per_file, columns)
+    return formatting.rows_to_records(summary, summary.height)
 
 
 def _line_score_files(session, per_file, analysis, short, score_columns, title, sort_by,
@@ -2263,8 +2281,10 @@ def anomaly_line_content(
             0 means within the baseline range; the more detectors, the more
             likely an anomaly. Each file also gets
             <detector>_above_clean_max_pct, the percentage of its lines above
-            that detector's clean_max, for comparing files and targets. Costs one extra model fit per baseline folder,
-            at most 10. Set False to skip it.
+            that detector's clean_max, for comparing files, and folder_summary
+            the highest of those per target folder with the file that has it,
+            for comparing target folders. Costs one extra model fit per baseline
+            folder, at most 10. Set False to skip it.
         max_rows: Top-scoring lines returned per file.
         sort_by: Score column to rank lines by. Keep "rank_sum" -- a single
             detector column such as "RM_pred_ano_proba" ranks by that detector
@@ -2297,6 +2317,8 @@ def anomaly_line_content(
         if entry["file_name"] in clean_by_file:
             entry["clean_range"] = clean_by_file[entry["file_name"]]
             entry.update(anomaly.above_clean_max_pct(scored, entry["clean_range"]))
+    pct_columns = list(dict.fromkeys(key for entry in files for key in entry
+                                     if key.endswith("_above_clean_max_pct")))
 
     return {
         "session_id": session_id,
@@ -2308,6 +2330,7 @@ def anomaly_line_content(
                    "detector_params": detector_params, "threshold": threshold},
         "n_files": len(files),
         "files": files,
+        **({"folder_summary": _folder_summary(files, pct_columns)} if pct_columns else {}),
         "notes": _anomaly_notes(
             detectors,
             "A single high line is often noise; a sustained rise in "
@@ -2383,7 +2406,8 @@ def sequence_line_event_prediction(
 
     Each file also gets mean_<score column> per detector that ran: a high line
     can be one unexpected line, the mean tells how much of the file is out of
-    order, for comparing files and targets.
+    order, for comparing files. folder_summary gives per target folder the
+    highest of those means and the file that has it, for comparing target folders.
     """
     session = STORE.get(session_id)
     session.ensure_content(mask, content_format)
@@ -2413,6 +2437,9 @@ def sequence_line_event_prediction(
                    "content_format": content_format, "ngrams": ngrams, "window": window},
         "n_files": len(files),
         "files": files,
+        "folder_summary": _folder_summary(
+            files, [f"mean_{column}" for column in sequence.SEQUENCE_COLUMNS
+                    if any(f"mean_{column}" in entry for entry in files)]),
         "notes": _sequence_notes(detectors),
     }
 

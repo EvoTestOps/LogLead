@@ -987,6 +987,15 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
              == {row["file_name"] for row in l3["rows"]}
              and all("above_clean_max" in row for row in l3["rows"]), str(l3["notes"]))
     worst_file = l3["rows"][0]["file_name"]
+    summary = l3.get("folder_summary", [])
+    check.eq("folder_summary has one row for the target folder",
+             [row["target_folder"] for row in summary], [target])
+    for column in [c for c in l3["rows"][0] if c.endswith("_threshold_score")]:
+        top = max(row[column] for row in l3["rows"] if row[column] is not None)
+        check.ok(f"folder_summary {column} is the highest over the files, with its file",
+                 summary and summary[0][column] == top
+                 and any(row["file_name"] == summary[0][f"{column}_file_name"]
+                         and row[column] == top for row in l3["rows"]), str(summary))
 
     # anomaly_file_content compares a file with its namesake in the other log
     # folders -- security.log against the other runs' security.log -- which is
@@ -1046,6 +1055,10 @@ def stage_hadoop_anomaly(check, session_id, target, file_name):
         / lines.height, 2) for row in entry.get("clean_range", [])}
     check.eq("each detector's above_clean_max_pct is its share of lines above clean_max",
              {key: entry.get(key) for key in expected}, expected)
+    check.eq("folder_summary gives the file's above_clean_max_pct and names the file",
+             l4.get("folder_summary"),
+             [{"target_folder": target, **{k: v for key in expected for k, v in
+                                          ((key, entry.get(key)), (f"{key}_file_name", worst_file))}}])
     return l2, entry
 
 
@@ -1108,6 +1121,11 @@ def stage_hadoop_sequence(check, session_id, target, file_name):
     check.eq("each detector's mean score is on the file entry",
              {f"mean_{col}": entry.get(f"mean_{col}") for col in sequence.SEQUENCE_COLUMNS},
              {f"mean_{col}": round(original[col], 4) for col in sequence.SEQUENCE_COLUMNS})
+    check.eq("folder_summary gives the file's means and names the file",
+             result.get("folder_summary"),
+             [{"target_folder": target, **{k: v for col in sequence.SEQUENCE_COLUMNS for k, v in
+                                          ((f"mean_{col}", entry.get(f"mean_{col}")),
+                                           (f"mean_{col}_file_name", file_name))}}])
 
     # Reversing the file keeps every line and so every bag-of-words score, and
     # breaks only the order -- which is all this tool is meant to see.
