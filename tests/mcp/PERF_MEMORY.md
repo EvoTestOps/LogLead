@@ -44,140 +44,137 @@ the cell directory to re-measure the grid from scratch.
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| peek_log_root | hadoop_renamed | 0.314 | 0.315 | 0.316 | 0.315 |
-| peek_log_root | hdfs_balanced_5k | 0.316 | 0.316 | 0.318 | 0.320 |
-| peek_log_root | bgl_split_10 | 0.310 | 0.310 | 0.310 | 0.310 |
-| open_log_root | hadoop_renamed | 0.403 | 0.442 | 0.852 | 1.50 |
-| open_log_root | hdfs_balanced_5k | 0.578 | 0.606 | 0.822 | 1.08 |
-| open_log_root | bgl_split_10 | 1.03 | 1.42 | 4.50 | 8.50 |
-| open_log_root (no parsers) | hadoop_renamed | 0.428 | 0.496 | 0.699 | 1.49 |
-| open_log_root (no parsers) | hdfs_balanced_5k | 0.380 | 0.409 | 0.599 | 0.776 |
-| open_log_root (no parsers) | bgl_split_10 | 0.714 | 0.932 | 2.90 | 5.46 |
-| open_log_root (parse tip) | hadoop_renamed | 0.448 | 0.514 | 0.721 | 1.54 |
-| open_log_root (parse tip) | hdfs_balanced_5k | 0.391 | 0.425 | 0.622 | 0.791 |
-| open_log_root (parse tip) | bgl_split_10 | 0.740 | 0.999 | 3.00 | 5.56 |
-| open_log_root (parse drain) | hadoop_renamed | 0.456 | 0.522 | 0.757 | 1.60 |
-| open_log_root (parse drain) | hdfs_balanced_5k | 0.398 | 0.430 | 0.599 | 0.812 |
-| open_log_root (parse drain) | bgl_split_10 | 0.940 | 1.27 | 4.28 | 7.90 |
-| list_log_roots | hadoop_renamed | 0.404 | 0.447 | 0.858 | 1.51 |
-| list_log_roots | hdfs_balanced_5k | 0.579 | 0.608 | 0.830 | 1.10 |
-| list_log_roots | bgl_split_10 | 1.09 | 1.53 | 5.07 | 9.72 |
-| describe_log_root | hadoop_renamed | 0.405 | 0.447 | 0.858 | 1.51 |
-| describe_log_root | hdfs_balanced_5k | 0.579 | 0.609 | 0.830 | 1.10 |
-| describe_log_root | bgl_split_10 | 1.13 | 1.58 | 5.07 | 9.77 |
-| set_folder_names | hadoop_renamed | 0.639 | 0.946 | 1.44 | 2.58 |
-| set_folder_names | hdfs_balanced_5k | 0.773 | 0.841 | 1.29 | 1.62 |
-| set_folder_names | bgl_split_10 | 1.67 | 2.27 | 6.52 | 12.80 |
-| read_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
-| read_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
-| read_log_lines | bgl_split_10 | 1.16 | 1.62 | 5.07 | 9.77 |
-| search_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
-| search_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
-| search_log_lines | bgl_split_10 | 1.16 | 1.62 | 5.08 | 9.78 |
-| read_log_lines (new tokens) | hadoop_renamed | 0.418 | 0.471 | 0.892 | 0.976 |
-| read_log_lines (new tokens) | hdfs_balanced_5k | 0.388 | 0.421 | 0.682 | 0.959 |
-| read_log_lines (new tokens) | bgl_split_10 | 0.488 | 0.669 | 1.79 | 4.80 |
-| new_tokens | hadoop_renamed | 0.421 | 0.480 | 0.901 | 0.999 |
-| new_tokens | hdfs_balanced_5k | 0.391 | 0.426 | 0.686 | 0.963 |
-| new_tokens | bgl_split_10 | 0.503 | 0.681 | 1.88 | 4.92 |
-| query_result | hadoop_renamed | 0.597 | 0.883 | 1.33 | 2.44 |
-| query_result | hdfs_balanced_5k | 0.749 | 0.801 | 1.14 | 1.49 |
-| query_result | bgl_split_10 | 1.42 | 1.96 | 5.93 | 12.30 |
-| split_log_file | hadoop_renamed | 0.318 | 0.319 | 0.320 | 0.326 |
-| split_log_file | hdfs_balanced_5k | 0.317 | 0.318 | 0.319 | 0.322 |
-| split_log_file | bgl_split_10 | 0.313 | 0.313 | 0.330 | 0.330 |
-| close_log_root | hadoop_renamed | 0.665 | 1.00 | 1.51 | 2.73 |
-| close_log_root | hdfs_balanced_5k | 0.783 | 0.857 | 1.36 | 1.68 |
-| close_log_root | bgl_split_10 | 1.70 | 2.30 | 6.53 | 12.88 |
-| run_config | hadoop_renamed | 0.605 | 0.906 | 1.35 | 2.46 |
-| run_config | hdfs_balanced_5k | 0.757 | 0.817 | 1.19 | 1.57 |
-| run_config | bgl_split_10 | 1.52 | 2.11 | 6.38 | 13.13 |
+| peek_log_root | hadoop_renamed | 0.322 | 0.324 | 0.326 | 0.329 |
+| peek_log_root | hdfs_balanced_5k | 0.322 | 0.321 | 0.323 | 0.325 |
+| peek_log_root | bgl_split_10 | 0.324 | 0.323 | 0.324 | 0.325 |
+| open_log_root | hadoop_renamed | 0.503 | 0.554 | 0.829 | 1.59 |
+| open_log_root | hdfs_balanced_5k | 0.411 | 0.445 | 0.786 | 1.11 |
+| open_log_root | bgl_split_10 | 0.850 | 1.18 | 3.98 | 11.26 |
+| open_log_root (no parsers) | hadoop_renamed | 0.510 | 0.549 | 0.828 | 1.61 |
+| open_log_root (no parsers) | hdfs_balanced_5k | 0.414 | 0.453 | 0.739 | 0.935 |
+| open_log_root (no parsers) | bgl_split_10 | 0.842 | 1.21 | 3.62 | 7.06 |
+| open_log_root (parse tip) | hadoop_renamed | 0.514 | 0.549 | 0.849 | 1.58 |
+| open_log_root (parse tip) | hdfs_balanced_5k | 0.416 | 0.455 | 0.684 | 0.927 |
+| open_log_root (parse tip) | bgl_split_10 | 0.862 | 1.19 | 3.59 | 7.02 |
+| open_log_root (parse drain) | hadoop_renamed | 0.524 | 0.558 | 0.849 | 1.61 |
+| open_log_root (parse drain) | hdfs_balanced_5k | 0.419 | 0.461 | 0.678 | 0.943 |
+| open_log_root (parse drain) | bgl_split_10 | 1.03 | 1.46 | 4.52 | 9.08 |
+| list_log_roots | hadoop_renamed | 0.519 | 0.557 | 0.841 | 1.61 |
+| list_log_roots | hdfs_balanced_5k | 0.420 | 0.462 | 0.646 | 0.834 |
+| list_log_roots | bgl_split_10 | 1.04 | 1.40 | 3.40 | 5.67 |
+| describe_log_root | hadoop_renamed | 0.519 | 0.557 | 0.842 | 1.59 |
+| describe_log_root | hdfs_balanced_5k | 0.420 | 0.462 | 0.636 | 0.834 |
+| describe_log_root | bgl_split_10 | 1.00 | 1.29 | 2.39 | 3.77 |
+| set_folder_names | hadoop_renamed | 0.813 | 0.875 | 1.06 | 2.18 |
+| set_folder_names | hdfs_balanced_5k | 0.709 | 0.730 | 0.944 | 1.19 |
+| set_folder_names | bgl_split_10 | 1.15 | 1.44 | 3.54 | 8.28 |
+| read_log_lines | hadoop_renamed | 0.516 | 0.552 | 0.825 | 1.59 |
+| read_log_lines | hdfs_balanced_5k | 0.418 | 0.460 | 0.633 | 0.833 |
+| read_log_lines | bgl_split_10 | 0.961 | 1.11 | 1.96 | 3.71 |
+| search_log_lines | hadoop_renamed | 0.513 | 0.552 | 0.825 | 1.57 |
+| search_log_lines | hdfs_balanced_5k | 0.418 | 0.460 | 0.631 | 0.831 |
+| search_log_lines | bgl_split_10 | 0.961 | 1.07 | 1.96 | 3.83 |
+| filter_log_lines | hadoop_renamed | 0.514 | 0.554 | 0.840 | 1.87 |
+| filter_log_lines | hdfs_balanced_5k | 0.419 | 0.460 | 0.652 | 0.847 |
+| filter_log_lines | bgl_split_10 | 0.919 | 1.04 | 2.17 | 4.70 |
+| new_tokens | hadoop_renamed | 0.511 | 0.537 | 0.820 | 1.56 |
+| new_tokens | hdfs_balanced_5k | 0.417 | 0.457 | 0.634 | 0.825 |
+| new_tokens | bgl_split_10 | 0.823 | 0.867 | 2.14 | 4.66 |
+| query_result | hadoop_renamed | 0.808 | 0.841 | 0.897 | 1.48 |
+| query_result | hdfs_balanced_5k | 0.704 | 0.720 | 0.893 | 1.14 |
+| query_result | bgl_split_10 | 1.03 | 1.17 | 2.60 | 4.86 |
+| split_log_file | hadoop_renamed | 0.328 | 0.333 | 0.339 | 0.345 |
+| split_log_file | hdfs_balanced_5k | 0.323 | 0.323 | 0.324 | 0.327 |
+| split_log_file | bgl_split_10 | 0.339 | 0.336 | 0.361 | 0.356 |
+| close_log_root | hadoop_renamed | 0.845 | 0.924 | 1.14 | 2.21 |
+| close_log_root | hdfs_balanced_5k | 0.723 | 0.759 | 1.03 | 1.27 |
+| close_log_root | bgl_split_10 | 1.16 | 1.39 | 2.68 | 6.20 |
+| run_config | hadoop_renamed | 0.822 | 0.856 | 0.967 | 1.63 |
+| run_config | hdfs_balanced_5k | 0.707 | 0.729 | 0.937 | 1.19 |
+| run_config | bgl_split_10 | 1.13 | 1.41 | 3.63 | 5.85 |
 
 ## Table A2 -- Distance tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_filename | hadoop_renamed | 0.330 | 0.347 | 0.416 | 1.04 |
-| distance_folder_filename | hdfs_balanced_5k | 0.324 | 0.327 | 0.351 | 0.378 |
-| distance_folder_filename | bgl_split_10 | 0.466 | 0.615 | 1.55 | 2.92 |
-| distance_folder_filename (threshold=False) | hadoop_renamed | 0.333 | 0.348 | 0.382 | 0.871 |
-| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 0.326 | 0.329 | 0.352 | 0.377 |
-| distance_folder_filename (threshold=False) | bgl_split_10 | 0.455 | 0.580 | 1.37 | 2.65 |
-| distance_folder_content | hadoop_renamed | 0.344 | 0.364 | 0.430 | 1.04 |
-| distance_folder_content | hdfs_balanced_5k | 0.330 | 0.333 | 0.360 | 0.389 |
-| distance_folder_content | bgl_split_10 | 0.445 | 0.561 | 1.47 | 3.25 |
-| distance_folder_content (threshold=False) | hadoop_renamed | 0.344 | 0.356 | 0.417 | 0.895 |
-| distance_folder_content (threshold=False) | hdfs_balanced_5k | 0.330 | 0.334 | 0.362 | 0.392 |
-| distance_folder_content (threshold=False) | bgl_split_10 | 0.447 | 0.560 | 1.46 | 3.23 |
-| distance_file_content | hadoop_renamed | 0.349 | 0.367 | 0.445 | 2.41 |
-| distance_file_content | hdfs_balanced_5k | 0.326 | 0.329 | 0.354 | 0.379 |
-| distance_file_content | bgl_split_10 | 0.451 | 0.557 | 1.48 | 2.85 |
-| distance_file_content (threshold=False) | hadoop_renamed | 0.358 | 0.374 | 0.473 | 2.34 |
-| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.327 | 0.331 | 0.357 | 0.383 |
-| distance_file_content (threshold=False) | bgl_split_10 | 0.461 | 0.592 | 1.61 | 2.96 |
-| log_line_clustering | hadoop_renamed | 0.361 | 0.402 | 0.598 | 4.31 |
-| log_line_clustering | hdfs_balanced_5k | 0.337 | 0.352 | 0.440 | 0.451 |
-| log_line_clustering | bgl_split_10 | 0.464 | 0.615 | 1.60 | 3.11 |
+| distance_folder_filename | hadoop_renamed | 0.504 | 0.531 | 0.718 | 1.41 |
+| distance_folder_filename | hdfs_balanced_5k | 0.416 | 0.450 | 0.608 | 0.763 |
+| distance_folder_filename | bgl_split_10 | 0.642 | 0.798 | 1.97 | 3.65 |
+| distance_folder_filename (threshold=False) | hadoop_renamed | 0.498 | 0.498 | 0.558 | 1.08 |
+| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 0.391 | 0.409 | 0.513 | 0.623 |
+| distance_folder_filename (threshold=False) | bgl_split_10 | 0.600 | 0.749 | 1.84 | 3.44 |
+| distance_folder_content | hadoop_renamed | 0.492 | 0.489 | 0.561 | 1.22 |
+| distance_folder_content | hdfs_balanced_5k | 0.389 | 0.409 | 0.513 | 0.624 |
+| distance_folder_content | bgl_split_10 | 0.585 | 0.733 | 1.83 | 3.77 |
+| distance_folder_content (threshold=False) | hadoop_renamed | 0.482 | 0.483 | 0.560 | 1.07 |
+| distance_folder_content (threshold=False) | hdfs_balanced_5k | 0.389 | 0.408 | 0.510 | 0.623 |
+| distance_folder_content (threshold=False) | bgl_split_10 | 0.574 | 0.723 | 1.80 | 3.77 |
+| distance_file_content | hadoop_renamed | 0.482 | 0.497 | 0.633 | 2.35 |
+| distance_file_content | hdfs_balanced_5k | 0.389 | 0.409 | 0.514 | 0.629 |
+| distance_file_content | bgl_split_10 | 0.588 | 0.746 | 1.91 | 4.06 |
+| distance_file_content (threshold=False) | hadoop_renamed | 0.490 | 0.499 | 0.639 | 2.29 |
+| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.390 | 0.410 | 0.517 | 0.634 |
+| distance_file_content (threshold=False) | bgl_split_10 | 0.625 | 0.779 | 2.17 | 4.07 |
+| log_line_clustering | hadoop_renamed | 0.490 | 0.496 | 0.578 | 1.81 |
+| log_line_clustering | hdfs_balanced_5k | 0.391 | 0.411 | 0.519 | 0.637 |
+| log_line_clustering | bgl_split_10 | 0.633 | 0.821 | 2.14 | 4.25 |
 
 ## Table A3 -- Anomaly tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename | hadoop_renamed | 0.357 | 0.380 | 0.521 | 2.05 |
-| anomaly_folder_filename | hdfs_balanced_5k | 0.339 | 0.355 | 0.436 | 0.479 |
-| anomaly_folder_filename | bgl_split_10 | 0.511 | 0.625 | 1.78 | 3.45 |
-| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.350 | 0.382 | 0.476 | 1.38 |
-| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.340 | 0.355 | 0.414 | 0.480 |
-| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.502 | 0.659 | 1.91 | 3.69 |
-| anomaly_folder_content | hadoop_renamed | 0.373 | 0.423 | 0.799 | 3.06 |
-| anomaly_folder_content | hdfs_balanced_5k | 0.357 | 0.384 | 0.537 | 0.707 |
-| anomaly_folder_content | bgl_split_10 | 0.638 | 0.953 | 3.08 | 10.50 |
-| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.378 | 0.447 | 0.713 | 2.56 |
-| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.359 | 0.382 | 0.545 | 0.749 |
-| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.715 | 1.12 | 3.99 | 5.30 |
-| anomaly_file_content | hadoop_renamed | err | 0.458 | 0.709 | 3.28 |
-| anomaly_file_content | hdfs_balanced_5k | 0.357 | 0.378 | 0.527 | 0.725 |
-| anomaly_file_content | bgl_split_10 | 0.617 | 0.856 | 2.50 | 7.43 |
-| anomaly_file_content (threshold=False) | hadoop_renamed | err | 0.410 | 0.612 | 2.15 |
-| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.355 | 0.376 | 0.525 | 0.727 |
-| anomaly_file_content (threshold=False) | bgl_split_10 | 0.603 | 0.826 | 2.48 | 7.43 |
-| anomaly_line_content | hadoop_renamed | 0.395 | 0.463 | 0.511 | 1.04 |
-| anomaly_line_content | hdfs_balanced_5k | 0.355 | 0.375 | 0.516 | 0.727 |
-| anomaly_line_content | bgl_split_10 | 0.586 | 0.812 | 2.46 | 7.42 |
-| anomaly_line_content (threshold=False) | hadoop_renamed | 0.395 | 0.490 | 0.484 | 1.09 |
-| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.354 | 0.374 | 0.514 | 0.717 |
-| anomaly_line_content (threshold=False) | bgl_split_10 | 0.587 | 0.809 | 2.46 | 7.43 |
+| anomaly_folder_filename | hadoop_renamed | 0.482 | 0.489 | 0.587 | 2.15 |
+| anomaly_folder_filename | hdfs_balanced_5k | 0.393 | 0.415 | 0.528 | 0.665 |
+| anomaly_folder_filename | bgl_split_10 | 0.644 | 0.815 | 2.10 | 4.12 |
+| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.475 | 0.483 | 0.575 | 1.54 |
+| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.393 | 0.415 | 0.530 | 0.657 |
+| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.626 | 0.816 | 2.25 | 4.39 |
+| anomaly_folder_content | hadoop_renamed | 0.516 | 0.565 | 1.47 | 3.24 |
+| anomaly_folder_content | hdfs_balanced_5k | 0.414 | 0.456 | 0.721 | 1.14 |
+| anomaly_folder_content | bgl_split_10 | 0.763 | 1.15 | 3.66 | 13.51 |
+| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.556 | 0.621 | 1.55 | 2.55 |
+| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.423 | 0.465 | 0.743 | 1.28 |
+| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.809 | 1.27 | 4.34 | OOM |
+| anomaly_file_content | hadoop_renamed | err | 0.683 | 1.26 | 3.29 |
+| anomaly_file_content | hdfs_balanced_5k | 0.428 | 0.479 | 0.757 | 0.937 |
+| anomaly_file_content | bgl_split_10 | 0.723 | 0.983 | 2.84 | 7.55 |
+| anomaly_file_content (threshold=False) | hadoop_renamed | err | 0.561 | 0.976 | 2.14 |
+| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.428 | 0.477 | 0.757 | 0.855 |
+| anomaly_file_content (threshold=False) | bgl_split_10 | 0.707 | 0.961 | 2.82 | 3.14 |
+| anomaly_line_content | hadoop_renamed | 0.511 | 0.569 | 0.894 | 1.56 |
+| anomaly_line_content | hdfs_balanced_5k | 0.428 | 0.477 | 0.753 | 0.783 |
+| anomaly_line_content | bgl_split_10 | 0.701 | 0.960 | 2.82 | 3.11 |
+| anomaly_line_content (threshold=False) | hadoop_renamed | 0.511 | 0.562 | 0.894 | 1.59 |
+| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.421 | 0.477 | 0.736 | 0.780 |
+| anomaly_line_content (threshold=False) | bgl_split_10 | 0.698 | 0.960 | 2.81 | 3.10 |
 
 ## Table A4 -- Plot tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| plot_folder_filename | hadoop_renamed | 0.571 | 0.595 | 1.25 | 2.31 |
-| plot_folder_filename | hdfs_balanced_5k | 0.627 | 0.672 | 0.991 | 1.31 |
-| plot_folder_filename | bgl_split_10 | 1.27 | 1.82 | 5.73 | 12.61 |
-| plot_folder_content (scatter) | hadoop_renamed | 0.590 | 0.585 | 1.29 | 2.44 |
-| plot_folder_content (scatter) | hdfs_balanced_5k | 0.630 | 0.678 | 1.01 | 1.32 |
-| plot_folder_content (scatter) | bgl_split_10 | 1.31 | 1.90 | 5.98 | 13.24 |
-| plot_folder_content (scatter+umap) | hadoop_renamed | err | 0.915 | 1.38 | 2.53 |
-| plot_folder_content (scatter+umap) | hdfs_balanced_5k | 0.757 | 0.805 | 1.14 | 1.52 |
-| plot_folder_content (scatter+umap) | bgl_split_10 | 1.41 | 1.96 | 6.16 | 13.21 |
-| plot_file_content (scatter) | hadoop_renamed | 0.595 | 0.897 | 1.35 | 2.46 |
-| plot_file_content (scatter) | hdfs_balanced_5k | 0.748 | 0.800 | 1.14 | 1.49 |
-| plot_file_content (scatter) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.28 |
-| plot_file_content (scatter+umap) | hadoop_renamed | err | 0.916 | 1.35 | 2.46 |
-| plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.748 | 0.800 | 1.14 | 1.49 |
-| plot_file_content (scatter+umap) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.29 |
+| plot_folder_filename | hadoop_renamed | 0.555 | 0.582 | 0.905 | 1.84 |
+| plot_folder_filename | hdfs_balanced_5k | 0.453 | 0.504 | 0.756 | 0.786 |
+| plot_folder_filename | bgl_split_10 | 0.711 | 0.975 | 2.91 | 5.32 |
+| plot_folder_content (scatter) | hadoop_renamed | 0.540 | 0.615 | 1.07 | 1.89 |
+| plot_folder_content (scatter) | hdfs_balanced_5k | 0.444 | 0.498 | 0.744 | 0.892 |
+| plot_folder_content (scatter) | bgl_split_10 | 0.791 | 1.10 | 3.30 | 6.98 |
+| plot_folder_content (scatter+umap) | hadoop_renamed | err | 0.812 | 1.11 | 1.92 |
+| plot_folder_content (scatter+umap) | hdfs_balanced_5k | 0.724 | 0.734 | 0.908 | 1.13 |
+| plot_folder_content (scatter+umap) | bgl_split_10 | 0.947 | 1.13 | 3.29 | 7.20 |
+| plot_file_content (scatter) | hadoop_renamed | 0.810 | 0.852 | 1.05 | 1.69 |
+| plot_file_content (scatter) | hdfs_balanced_5k | 0.703 | 0.720 | 0.892 | 1.19 |
+| plot_file_content (scatter) | bgl_split_10 | 1.03 | 1.27 | 2.69 | 5.03 |
+| plot_file_content (scatter+umap) | hadoop_renamed | err | 0.854 | 0.964 | 1.64 |
+| plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.704 | 0.719 | 0.892 | 1.19 |
+| plot_file_content (scatter+umap) | bgl_split_10 | 1.03 | 1.23 | 2.50 | 5.22 |
 
 ## Table A5 -- Sequence tools
 
-Measured with `Parse-Drain` already built; the parse is priced on its own in Table A1/B1. See the
-`**` note after Table C3.
-
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction | hadoop_renamed | 0.461 | 0.520 | 0.775 | 1.84 |
-| sequence_line_event_prediction | hdfs_balanced_5k | 0.399 | 0.432 | 0.568 | 0.744 |
-| sequence_line_event_prediction | bgl_split_10 | 0.955 | 1.24 | 2.96 | 4.60 |
+| sequence_line_event_prediction | hadoop_renamed | 0.531 | 0.560 | 0.895 | 2.02 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.420 | 0.477 | 0.733 | 0.765 |
+| sequence_line_event_prediction | bgl_split_10 | 0.697 | 0.951 | 2.81 | 4.54 |
 
 # Part B -- warm (repeated call)
 
@@ -185,137 +182,137 @@ Measured with `Parse-Drain` already built; the parse is priced on its own in Tab
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| peek_log_root | hadoop_renamed | 0.317 | 0.319 | 0.320 | 0.319 |
-| peek_log_root | hdfs_balanced_5k | 0.317 | 0.318 | 0.319 | 0.321 |
-| peek_log_root | bgl_split_10 | 0.313 | 0.313 | 0.314 | 0.313 |
-| open_log_root | hadoop_renamed | 0.404 | 0.447 | 0.858 | 1.51 |
-| open_log_root | hdfs_balanced_5k | 0.579 | 0.608 | 0.830 | 1.10 |
-| open_log_root | bgl_split_10 | 1.09 | 1.53 | 5.09 | 9.77 |
-| open_log_root (no parsers) | hadoop_renamed | 0.431 | 0.500 | 0.655 | 1.39 |
-| open_log_root (no parsers) | hdfs_balanced_5k | 0.382 | 0.412 | 0.596 | 0.665 |
-| open_log_root (no parsers) | bgl_split_10 | 0.730 | 1.01 | 3.11 | 5.66 |
-| open_log_root (parse tip) | hadoop_renamed | 0.449 | 0.512 | 0.699 | 1.44 |
-| open_log_root (parse tip) | hdfs_balanced_5k | 0.392 | 0.426 | 0.628 | 0.631 |
-| open_log_root (parse tip) | bgl_split_10 | 0.805 | 1.09 | 3.32 | 5.75 |
-| open_log_root (parse drain) | hadoop_renamed | 0.459 | 0.522 | 0.769 | 1.52 |
-| open_log_root (parse drain) | hdfs_balanced_5k | 0.399 | 0.432 | 0.571 | 0.726 |
-| open_log_root (parse drain) | bgl_split_10 | 0.977 | 1.30 | 3.39 | 6.35 |
-| list_log_roots | hadoop_renamed | 0.404 | 0.447 | 0.858 | 1.51 |
-| list_log_roots | hdfs_balanced_5k | 0.579 | 0.609 | 0.830 | 1.10 |
-| list_log_roots | bgl_split_10 | 1.09 | 1.53 | 5.07 | 9.72 |
-| describe_log_root | hadoop_renamed | 0.405 | 0.447 | 0.858 | 1.51 |
-| describe_log_root | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
-| describe_log_root | bgl_split_10 | 1.16 | 1.62 | 5.07 | 9.77 |
-| set_folder_names | hadoop_renamed | 0.662 | 0.993 | 1.50 | 2.71 |
-| set_folder_names | hdfs_balanced_5k | 0.781 | 0.855 | 1.34 | 1.68 |
-| set_folder_names | bgl_split_10 | 1.70 | 2.29 | 6.53 | 12.91 |
-| read_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
-| read_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
-| read_log_lines | bgl_split_10 | 1.16 | 1.62 | 5.07 | 9.77 |
-| search_log_lines | hadoop_renamed | 0.405 | 0.447 | 0.859 | 1.51 |
-| search_log_lines | hdfs_balanced_5k | 0.580 | 0.609 | 0.831 | 1.10 |
-| search_log_lines | bgl_split_10 | 1.16 | 1.63 | 5.08 | 9.79 |
-| read_log_lines (new tokens) | hadoop_renamed | 0.418 | 0.471 | 0.892 | 0.976 |
-| read_log_lines (new tokens) | hdfs_balanced_5k | 0.388 | 0.422 | 0.683 | 0.960 |
-| read_log_lines (new tokens) | bgl_split_10 | 0.492 | 0.673 | 1.84 | 4.88 |
-| new_tokens | hadoop_renamed | 0.421 | 0.481 | 0.901 | 1.00 |
-| new_tokens | hdfs_balanced_5k | 0.391 | 0.426 | 0.686 | 0.963 |
-| new_tokens | bgl_split_10 | 0.504 | 0.682 | 1.89 | 4.93 |
-| query_result | hadoop_renamed | 0.597 | 0.883 | 1.33 | 2.44 |
-| query_result | hdfs_balanced_5k | 0.749 | 0.801 | 1.14 | 1.49 |
-| query_result | bgl_split_10 | 1.42 | 1.96 | 5.93 | 12.30 |
-| split_log_file | hadoop_renamed | 0.318 | 0.319 | 0.320 | 0.319 |
-| split_log_file | hdfs_balanced_5k | 0.317 | 0.318 | 0.319 | 0.322 |
-| split_log_file | bgl_split_10 | 0.313 | 0.313 | 0.314 | 0.313 |
-| close_log_root | hadoop_renamed | 0.665 | 1.00 | 1.51 | 2.73 |
-| close_log_root | hdfs_balanced_5k | 0.783 | 0.857 | 1.36 | 1.68 |
-| close_log_root | bgl_split_10 | 1.70 | 2.30 | 6.53 | 12.88 |
-| run_config | hadoop_renamed | 0.626 | 0.916 | 1.39 | 2.52 |
-| run_config | hdfs_balanced_5k | 0.766 | 0.830 | 1.26 | 1.59 |
-| run_config | bgl_split_10 | 1.64 | 2.26 | 6.54 | 12.92 |
+| peek_log_root | hadoop_renamed | 0.328 | 0.333 | 0.339 | 0.345 |
+| peek_log_root | hdfs_balanced_5k | 0.323 | 0.323 | 0.324 | 0.327 |
+| peek_log_root | bgl_split_10 | 0.339 | 0.337 | 0.345 | 0.340 |
+| open_log_root | hadoop_renamed | 0.505 | 0.553 | 0.782 | 1.43 |
+| open_log_root | hdfs_balanced_5k | 0.412 | 0.447 | 0.755 | 0.925 |
+| open_log_root | bgl_split_10 | 0.879 | 1.25 | 4.21 | 10.98 |
+| open_log_root (no parsers) | hadoop_renamed | 0.509 | 0.548 | 0.763 | 1.45 |
+| open_log_root (no parsers) | hdfs_balanced_5k | 0.416 | 0.455 | 0.638 | 0.748 |
+| open_log_root (no parsers) | bgl_split_10 | 0.861 | 1.24 | 3.74 | 7.10 |
+| open_log_root (parse tip) | hadoop_renamed | 0.510 | 0.551 | 0.756 | 1.44 |
+| open_log_root (parse tip) | hdfs_balanced_5k | 0.418 | 0.457 | 0.639 | 0.783 |
+| open_log_root (parse tip) | bgl_split_10 | 0.888 | 1.24 | 3.96 | 7.49 |
+| open_log_root (parse drain) | hadoop_renamed | 0.524 | 0.560 | 0.841 | 1.62 |
+| open_log_root (parse drain) | hdfs_balanced_5k | 0.421 | 0.463 | 0.647 | 0.846 |
+| open_log_root (parse drain) | bgl_split_10 | 1.07 | 1.50 | 3.83 | 7.50 |
+| list_log_roots | hadoop_renamed | 0.519 | 0.557 | 0.842 | 1.58 |
+| list_log_roots | hdfs_balanced_5k | 0.420 | 0.462 | 0.646 | 0.834 |
+| list_log_roots | bgl_split_10 | 1.03 | 1.36 | 3.25 | 4.87 |
+| describe_log_root | hadoop_renamed | 0.519 | 0.552 | 0.825 | 1.59 |
+| describe_log_root | hdfs_balanced_5k | 0.420 | 0.462 | 0.637 | 0.834 |
+| describe_log_root | bgl_split_10 | 1.00 | 1.22 | 2.17 | 3.78 |
+| set_folder_names | hadoop_renamed | 0.837 | 0.909 | 1.14 | 2.31 |
+| set_folder_names | hdfs_balanced_5k | 0.719 | 0.753 | 1.02 | 1.27 |
+| set_folder_names | bgl_split_10 | 1.19 | 1.46 | 2.97 | 8.16 |
+| read_log_lines | hadoop_renamed | 0.513 | 0.552 | 0.825 | 1.59 |
+| read_log_lines | hdfs_balanced_5k | 0.418 | 0.460 | 0.632 | 0.831 |
+| read_log_lines | bgl_split_10 | 0.961 | 1.07 | 1.91 | 3.71 |
+| search_log_lines | hadoop_renamed | 0.513 | 0.552 | 0.820 | 1.57 |
+| search_log_lines | hdfs_balanced_5k | 0.418 | 0.460 | 0.631 | 0.818 |
+| search_log_lines | bgl_split_10 | 0.944 | 1.05 | 2.01 | 3.90 |
+| filter_log_lines | hadoop_renamed | 0.513 | 0.545 | 0.822 | 1.75 |
+| filter_log_lines | hdfs_balanced_5k | 0.419 | 0.459 | 0.652 | 0.847 |
+| filter_log_lines | bgl_split_10 | 0.894 | 0.982 | 2.10 | 4.70 |
+| new_tokens | hadoop_renamed | 0.509 | 0.537 | 0.797 | 1.56 |
+| new_tokens | hdfs_balanced_5k | 0.417 | 0.457 | 0.634 | 0.823 |
+| new_tokens | bgl_split_10 | 0.762 | 0.850 | 2.17 | 4.64 |
+| query_result | hadoop_renamed | 0.808 | 0.841 | 0.897 | 1.48 |
+| query_result | hdfs_balanced_5k | 0.704 | 0.720 | 0.893 | 1.12 |
+| query_result | bgl_split_10 | 1.03 | 1.17 | 2.58 | 4.86 |
+| split_log_file | hadoop_renamed | 0.328 | 0.333 | 0.339 | 0.345 |
+| split_log_file | hdfs_balanced_5k | 0.323 | 0.323 | 0.324 | 0.327 |
+| split_log_file | bgl_split_10 | 0.339 | 0.336 | 0.344 | 0.339 |
+| close_log_root | hadoop_renamed | 0.845 | 0.924 | 1.14 | 2.21 |
+| close_log_root | hdfs_balanced_5k | 0.723 | 0.759 | 1.03 | 1.27 |
+| close_log_root | bgl_split_10 | 1.16 | 1.39 | 2.68 | 6.20 |
+| run_config | hadoop_renamed | 0.826 | 0.867 | 0.995 | 1.66 |
+| run_config | hdfs_balanced_5k | 0.710 | 0.735 | 0.960 | 1.21 |
+| run_config | bgl_split_10 | 1.18 | 1.50 | 3.89 | 6.07 |
 
 ## Table B2 -- Distance tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_filename | hadoop_renamed | 0.332 | 0.348 | 0.417 | 1.05 |
-| distance_folder_filename | hdfs_balanced_5k | 0.325 | 0.328 | 0.351 | 0.377 |
-| distance_folder_filename | bgl_split_10 | 0.467 | 0.616 | 1.56 | 2.87 |
-| distance_folder_filename (threshold=False) | hadoop_renamed | 0.333 | 0.348 | 0.382 | 0.872 |
-| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 0.326 | 0.329 | 0.353 | 0.378 |
-| distance_folder_filename (threshold=False) | bgl_split_10 | 0.459 | 0.567 | 1.37 | 2.66 |
-| distance_folder_content | hadoop_renamed | 0.344 | 0.364 | 0.432 | 1.04 |
-| distance_folder_content | hdfs_balanced_5k | 0.330 | 0.333 | 0.362 | 0.391 |
-| distance_folder_content | bgl_split_10 | 0.450 | 0.562 | 1.47 | 3.29 |
-| distance_folder_content (threshold=False) | hadoop_renamed | 0.345 | 0.352 | 0.417 | 0.897 |
-| distance_folder_content (threshold=False) | hdfs_balanced_5k | 0.330 | 0.334 | 0.364 | 0.393 |
-| distance_folder_content (threshold=False) | bgl_split_10 | 0.447 | 0.563 | 1.48 | 3.29 |
-| distance_file_content | hadoop_renamed | 0.360 | 0.375 | 0.475 | 2.40 |
-| distance_file_content | hdfs_balanced_5k | 0.327 | 0.330 | 0.356 | 0.383 |
-| distance_file_content | bgl_split_10 | 0.460 | 0.586 | 1.64 | 2.98 |
-| distance_file_content (threshold=False) | hadoop_renamed | 0.362 | 0.379 | 0.473 | 2.49 |
-| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.328 | 0.331 | 0.357 | 0.383 |
-| distance_file_content (threshold=False) | bgl_split_10 | 0.464 | 0.593 | 1.60 | 2.95 |
-| log_line_clustering | hadoop_renamed | 0.361 | 0.402 | 0.607 | 4.32 |
-| log_line_clustering | hdfs_balanced_5k | 0.337 | 0.355 | 0.454 | 0.452 |
-| log_line_clustering | bgl_split_10 | 0.464 | 0.616 | 1.61 | 3.11 |
+| distance_folder_filename | hadoop_renamed | 0.504 | 0.523 | 0.588 | 1.23 |
+| distance_folder_filename | hdfs_balanced_5k | 0.391 | 0.411 | 0.512 | 0.623 |
+| distance_folder_filename | bgl_split_10 | 0.618 | 0.805 | 2.00 | 3.66 |
+| distance_folder_filename (threshold=False) | hadoop_renamed | 0.498 | 0.498 | 0.558 | 1.07 |
+| distance_folder_filename (threshold=False) | hdfs_balanced_5k | 0.390 | 0.409 | 0.513 | 0.624 |
+| distance_folder_filename (threshold=False) | bgl_split_10 | 0.590 | 0.750 | 1.82 | 3.44 |
+| distance_folder_content | hadoop_renamed | 0.490 | 0.485 | 0.562 | 1.22 |
+| distance_folder_content | hdfs_balanced_5k | 0.389 | 0.409 | 0.511 | 0.623 |
+| distance_folder_content | bgl_split_10 | 0.578 | 0.720 | 1.82 | 3.77 |
+| distance_folder_content (threshold=False) | hadoop_renamed | 0.482 | 0.484 | 0.558 | 1.07 |
+| distance_folder_content (threshold=False) | hdfs_balanced_5k | 0.389 | 0.408 | 0.512 | 0.624 |
+| distance_folder_content (threshold=False) | bgl_split_10 | 0.577 | 0.721 | 1.81 | 3.77 |
+| distance_file_content | hadoop_renamed | 0.488 | 0.498 | 0.639 | 2.32 |
+| distance_file_content | hdfs_balanced_5k | 0.390 | 0.410 | 0.516 | 0.633 |
+| distance_file_content | bgl_split_10 | 0.616 | 0.776 | 2.13 | 4.11 |
+| distance_file_content (threshold=False) | hadoop_renamed | 0.492 | 0.505 | 0.640 | 2.41 |
+| distance_file_content (threshold=False) | hdfs_balanced_5k | 0.390 | 0.411 | 0.517 | 0.634 |
+| distance_file_content (threshold=False) | bgl_split_10 | 0.629 | 0.816 | 2.17 | 4.26 |
+| log_line_clustering | hadoop_renamed | 0.486 | 0.496 | 0.579 | 1.79 |
+| log_line_clustering | hdfs_balanced_5k | 0.391 | 0.412 | 0.522 | 0.643 |
+| log_line_clustering | bgl_split_10 | 0.641 | 0.826 | 2.00 | 4.05 |
 
 ## Table B3 -- Anomaly tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename | hadoop_renamed | 0.355 | 0.386 | 0.484 | 1.38 |
-| anomaly_folder_filename | hdfs_balanced_5k | 0.340 | 0.358 | 0.416 | 0.472 |
-| anomaly_folder_filename | bgl_split_10 | 0.498 | 0.651 | 1.85 | 3.62 |
-| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.349 | 0.381 | 0.492 | 1.54 |
-| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.343 | 0.357 | 0.412 | 0.484 |
-| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.521 | 0.695 | 2.06 | 4.04 |
-| anomaly_folder_content | hadoop_renamed | 0.382 | 0.438 | 0.804 | 2.36 |
-| anomaly_folder_content | hdfs_balanced_5k | 0.360 | 0.381 | 0.544 | 0.756 |
-| anomaly_folder_content | bgl_split_10 | 0.704 | 1.12 | 3.19 | 10.26 |
-| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.384 | 0.458 | 0.739 | 3.05 |
-| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.359 | 0.382 | 0.552 | 0.797 |
-| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.684 | 1.06 | 3.22 | 8.75 |
-| anomaly_file_content | hadoop_renamed | err | 0.437 | 0.674 | 2.74 |
-| anomaly_file_content | hdfs_balanced_5k | 0.357 | 0.378 | 0.525 | 0.727 |
-| anomaly_file_content | bgl_split_10 | 0.617 | 0.842 | 2.50 | 7.44 |
-| anomaly_file_content (threshold=False) | hadoop_renamed | err | 0.414 | 0.622 | 1.86 |
-| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.355 | 0.376 | 0.525 | 0.727 |
-| anomaly_file_content (threshold=False) | bgl_split_10 | 0.604 | 0.826 | 2.48 | 7.45 |
-| anomaly_line_content | hadoop_renamed | 0.396 | 0.492 | 0.488 | 1.09 |
-| anomaly_line_content | hdfs_balanced_5k | 0.355 | 0.374 | 0.516 | 0.727 |
-| anomaly_line_content | bgl_split_10 | 0.587 | 0.813 | 2.47 | 7.43 |
-| anomaly_line_content (threshold=False) | hadoop_renamed | 0.395 | 0.530 | 0.487 | 1.09 |
-| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.354 | 0.374 | 0.514 | 0.718 |
-| anomaly_line_content (threshold=False) | bgl_split_10 | 0.580 | 0.805 | 2.48 | 7.43 |
+| anomaly_folder_filename | hadoop_renamed | 0.478 | 0.483 | 0.572 | 1.73 |
+| anomaly_folder_filename | hdfs_balanced_5k | 0.393 | 0.415 | 0.531 | 0.663 |
+| anomaly_folder_filename | bgl_split_10 | 0.619 | 0.801 | 2.18 | 4.24 |
+| anomaly_folder_filename (threshold=False) | hadoop_renamed | 0.475 | 0.483 | 0.576 | 1.54 |
+| anomaly_folder_filename (threshold=False) | hdfs_balanced_5k | 0.393 | 0.415 | 0.530 | 0.659 |
+| anomaly_folder_filename (threshold=False) | bgl_split_10 | 0.635 | 0.827 | 2.39 | 4.68 |
+| anomaly_folder_content | hadoop_renamed | 0.551 | 0.605 | 1.63 | 2.52 |
+| anomaly_folder_content | hdfs_balanced_5k | 0.421 | 0.459 | 0.739 | 1.23 |
+| anomaly_folder_content | bgl_split_10 | 0.802 | 1.24 | 4.24 | 14.59 |
+| anomaly_folder_content (threshold=False) | hadoop_renamed | 0.574 | 0.677 | 1.38 | 3.02 |
+| anomaly_folder_content (threshold=False) | hdfs_balanced_5k | 0.429 | 0.481 | 0.776 | 1.32 |
+| anomaly_folder_content (threshold=False) | bgl_split_10 | 0.806 | 1.19 | 3.51 | OOM |
+| anomaly_file_content | hadoop_renamed | err | 0.595 | 1.19 | 2.67 |
+| anomaly_file_content | hdfs_balanced_5k | 0.428 | 0.478 | 0.757 | 0.937 |
+| anomaly_file_content | bgl_split_10 | 0.721 | 0.965 | 2.84 | 5.65 |
+| anomaly_file_content (threshold=False) | hadoop_renamed | err | 0.581 | 0.993 | 2.16 |
+| anomaly_file_content (threshold=False) | hdfs_balanced_5k | 0.428 | 0.477 | 0.757 | 0.849 |
+| anomaly_file_content (threshold=False) | bgl_split_10 | 0.712 | 0.961 | 2.82 | 3.12 |
+| anomaly_line_content | hadoop_renamed | 0.513 | 0.565 | 0.894 | 1.58 |
+| anomaly_line_content | hdfs_balanced_5k | 0.428 | 0.477 | 0.752 | 0.783 |
+| anomaly_line_content | bgl_split_10 | 0.701 | 0.960 | 2.82 | 3.10 |
+| anomaly_line_content (threshold=False) | hadoop_renamed | 0.522 | 0.561 | 0.893 | 1.59 |
+| anomaly_line_content (threshold=False) | hdfs_balanced_5k | 0.421 | 0.477 | 0.733 | 0.775 |
+| anomaly_line_content (threshold=False) | bgl_split_10 | 0.698 | 0.951 | 2.82 | 3.13 |
 
 ## Table B4 -- Plot tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| plot_folder_filename | hadoop_renamed | 0.586 | 0.596 | 1.25 | 2.31 |
-| plot_folder_filename | hdfs_balanced_5k | 0.647 | 0.681 | 0.995 | 1.29 |
-| plot_folder_filename | bgl_split_10 | 1.30 | 1.84 | 5.61 | 12.62 |
-| plot_folder_content (scatter) | hadoop_renamed | 0.598 | 0.620 | 1.29 | 2.46 |
-| plot_folder_content (scatter) | hdfs_balanced_5k | 0.650 | 0.681 | 1.01 | 1.33 |
-| plot_folder_content (scatter) | bgl_split_10 | 1.33 | 1.91 | 6.12 | 13.23 |
-| plot_folder_content (scatter+umap) | hadoop_renamed | err | 0.916 | 1.38 | 2.56 |
-| plot_folder_content (scatter+umap) | hdfs_balanced_5k | 0.758 | 0.810 | 1.16 | 1.54 |
-| plot_folder_content (scatter+umap) | bgl_split_10 | 1.43 | 2.01 | 6.20 | 13.20 |
-| plot_file_content (scatter) | hadoop_renamed | 0.597 | 0.897 | 1.35 | 2.46 |
-| plot_file_content (scatter) | hdfs_balanced_5k | 0.748 | 0.800 | 1.14 | 1.49 |
-| plot_file_content (scatter) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.29 |
-| plot_file_content (scatter+umap) | hadoop_renamed | err | 0.917 | 1.35 | 2.45 |
-| plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.748 | 0.801 | 1.14 | 1.49 |
-| plot_file_content (scatter+umap) | bgl_split_10 | 1.42 | 1.96 | 5.89 | 12.30 |
+| plot_folder_filename | hadoop_renamed | 0.555 | 0.584 | 0.908 | 1.83 |
+| plot_folder_filename | hdfs_balanced_5k | 0.464 | 0.495 | 0.747 | 0.795 |
+| plot_folder_filename | bgl_split_10 | 0.729 | 0.984 | 2.85 | 4.95 |
+| plot_folder_content (scatter) | hadoop_renamed | 0.560 | 0.630 | 1.06 | 1.93 |
+| plot_folder_content (scatter) | hdfs_balanced_5k | 0.463 | 0.513 | 0.727 | 0.907 |
+| plot_folder_content (scatter) | bgl_split_10 | 0.793 | 1.12 | 3.46 | 6.99 |
+| plot_folder_content (scatter+umap) | hadoop_renamed | err | 0.831 | 1.08 | 1.87 |
+| plot_folder_content (scatter+umap) | hdfs_balanced_5k | 0.740 | 0.737 | 0.971 | 1.33 |
+| plot_folder_content (scatter+umap) | bgl_split_10 | 1.05 | 1.35 | 3.52 | 7.22 |
+| plot_file_content (scatter) | hadoop_renamed | 0.835 | 0.847 | 1.05 | 1.67 |
+| plot_file_content (scatter) | hdfs_balanced_5k | 0.704 | 0.720 | 0.892 | 1.19 |
+| plot_file_content (scatter) | bgl_split_10 | 1.03 | 1.23 | 2.51 | 5.35 |
+| plot_file_content (scatter+umap) | hadoop_renamed | err | 0.867 | 0.936 | 1.57 |
+| plot_file_content (scatter+umap) | hdfs_balanced_5k | 0.704 | 0.720 | 0.892 | 1.19 |
+| plot_file_content (scatter+umap) | bgl_split_10 | 1.03 | 1.23 | 2.49 | 5.37 |
 
 ## Table B5 -- Sequence tools
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction | hadoop_renamed | 0.459 | 0.518 | 0.729 | 1.58 |
-| sequence_line_event_prediction | hdfs_balanced_5k | 0.399 | 0.432 | 0.568 | 0.752 |
-| sequence_line_event_prediction | bgl_split_10 | 0.916 | 1.22 | 2.87 | 3.86 |
+| sequence_line_event_prediction | hadoop_renamed | 0.551 | 0.561 | 0.898 | 2.03 |
+| sequence_line_event_prediction | hdfs_balanced_5k | 0.419 | 0.477 | 0.733 | 0.765 |
+| sequence_line_event_prediction | bgl_split_10 | 0.697 | 0.951 | 2.82 | 4.70 |
 
 # Detailed breakdowns (per detector / per measure)
 
@@ -327,128 +324,103 @@ The tables above run every anomaly tool with all four detectors, `distance_folde
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename (KMeans) | hadoop_renamed | 0.330 | 0.346 | 0.389 | 0.586 |
-| anomaly_folder_filename (KMeans) | hdfs_balanced_5k | 0.326 | 0.333 | 0.382 | 0.440 |
-| anomaly_folder_filename (KMeans) | bgl_split_10 | 0.488 | 0.640 | 1.80 | 3.40 |
-| anomaly_folder_filename (IsolationForest) | hadoop_renamed | 0.395 | 0.484 | 0.819 | 1.78 |
-| anomaly_folder_filename (IsolationForest) | hdfs_balanced_5k | 0.351 | 0.377 | 0.553 | 0.638 |
-| anomaly_folder_filename (IsolationForest) | bgl_split_10 | 0.655 | 1.01 | 3.17 | 10.05 |
-| anomaly_folder_filename (RarityModel) | hadoop_renamed | 0.393 | 0.524 | 0.934 | 1.96 |
-| anomaly_folder_filename (RarityModel) | hdfs_balanced_5k | 0.360 | 0.393 | 0.595 | 0.686 |
-| anomaly_folder_filename (RarityModel) | bgl_split_10 | 0.714 | 1.09 | 3.60 | 13.69 |
-| anomaly_folder_filename (OOVDetector) | hadoop_renamed | 0.427 | 0.556 | 0.973 | 2.43 |
-| anomaly_folder_filename (OOVDetector) | hdfs_balanced_5k | 0.369 | 0.400 | 0.630 | 0.784 |
-| anomaly_folder_filename (OOVDetector) | bgl_split_10 | 0.795 | 1.27 | 4.08 | 15.26 |
-| anomaly_folder_content (KMeans) | hadoop_renamed | 0.354 | 0.392 | 0.692 | 1.24 |
-| anomaly_folder_content (KMeans) | hdfs_balanced_5k | 0.341 | 0.357 | 0.483 | 0.621 |
-| anomaly_folder_content (KMeans) | bgl_split_10 | 0.586 | 0.905 | 2.92 | 7.38 |
-| anomaly_folder_content (IsolationForest) | hadoop_renamed | 0.407 | 0.501 | 0.902 | 1.93 |
-| anomaly_folder_content (IsolationForest) | hdfs_balanced_5k | 0.354 | 0.385 | 0.564 | 0.686 |
-| anomaly_folder_content (IsolationForest) | bgl_split_10 | 0.672 | 1.07 | 3.56 | 12.20 |
-| anomaly_folder_content (RarityModel) | hadoop_renamed | 0.408 | 0.528 | 0.947 | 2.03 |
-| anomaly_folder_content (RarityModel) | hdfs_balanced_5k | 0.364 | 0.394 | 0.602 | 0.726 |
-| anomaly_folder_content (RarityModel) | bgl_split_10 | 0.747 | 1.18 | 4.01 | 14.73 |
-| anomaly_folder_content (OOVDetector) | hadoop_renamed | 0.431 | 0.563 | 0.990 | 2.48 |
-| anomaly_folder_content (OOVDetector) | hdfs_balanced_5k | 0.369 | 0.400 | 0.638 | 0.790 |
-| anomaly_folder_content (OOVDetector) | bgl_split_10 | 0.809 | 1.32 | 4.31 | OOM |
-| anomaly_file_content (KMeans) | hadoop_renamed | err | 0.428 | 0.790 | 1.74 |
-| anomaly_file_content (KMeans) | hdfs_balanced_5k | 0.348 | 0.371 | 0.538 | 0.636 |
-| anomaly_file_content (KMeans) | bgl_split_10 | 0.640 | 1.01 | 3.16 | 10.02 |
-| anomaly_file_content (IsolationForest) | hadoop_renamed | 0.347 | 0.512 | 0.922 | 1.93 |
-| anomaly_file_content (IsolationForest) | hdfs_balanced_5k | 0.360 | 0.390 | 0.588 | 0.684 |
-| anomaly_file_content (IsolationForest) | bgl_split_10 | 0.714 | 1.09 | 3.60 | 13.52 |
-| anomaly_file_content (RarityModel) | hadoop_renamed | 0.420 | 0.546 | 0.977 | 2.43 |
-| anomaly_file_content (RarityModel) | hdfs_balanced_5k | 0.368 | 0.397 | 0.616 | 0.783 |
-| anomaly_file_content (RarityModel) | bgl_split_10 | 0.790 | 1.27 | 4.08 | 15.30 |
-| anomaly_file_content (OOVDetector) | hadoop_renamed | 0.439 | 0.570 | 1.00 | 2.51 |
-| anomaly_file_content (OOVDetector) | hdfs_balanced_5k | 0.370 | 0.400 | 0.655 | 0.767 |
-| anomaly_file_content (OOVDetector) | bgl_split_10 | 0.817 | 1.34 | 4.39 | 3.10 |
-| anomaly_line_content (KMeans) | hadoop_renamed | 0.402 | 0.487 | 0.812 | 1.79 |
-| anomaly_line_content (KMeans) | hdfs_balanced_5k | 0.350 | 0.374 | 0.552 | 0.638 |
-| anomaly_line_content (KMeans) | bgl_split_10 | 0.648 | 1.01 | 3.16 | 10.03 |
-| anomaly_line_content (IsolationForest) | hadoop_renamed | 0.400 | 0.538 | 0.957 | 1.97 |
-| anomaly_line_content (IsolationForest) | hdfs_balanced_5k | 0.360 | 0.390 | 0.588 | 0.686 |
-| anomaly_line_content (IsolationForest) | bgl_split_10 | 0.714 | 1.09 | 3.60 | 13.62 |
-| anomaly_line_content (RarityModel) | hadoop_renamed | 0.440 | 0.559 | 0.982 | 2.45 |
-| anomaly_line_content (RarityModel) | hdfs_balanced_5k | 0.368 | 0.398 | 0.623 | 0.784 |
-| anomaly_line_content (RarityModel) | bgl_split_10 | 0.793 | 1.27 | 4.08 | 15.24 |
-| anomaly_line_content (OOVDetector) | hadoop_renamed | 0.479 | 0.605 | 1.01 | 2.51 |
-| anomaly_line_content (OOVDetector) | hdfs_balanced_5k | 0.370 | 0.400 | 0.656 | 0.767 |
-| anomaly_line_content (OOVDetector) | bgl_split_10 | 0.817 | 1.34 | 4.39 | 3.13 |
+| anomaly_folder_filename (KMeans) | hadoop_renamed | 0.349 | 0.362 | 0.442 | 1.33 |
+| anomaly_folder_filename (KMeans) | hdfs_balanced_5k | 0.343 | 0.348 | 0.382 | 0.424 |
+| anomaly_folder_filename (KMeans) | bgl_split_10 | 0.512 | 0.687 | 1.72 | 3.21 |
+| anomaly_folder_filename (IsolationForest) | hadoop_renamed | 0.424 | 0.458 | 0.548 | 1.46 |
+| anomaly_folder_filename (IsolationForest) | hdfs_balanced_5k | 0.364 | 0.383 | 0.508 | 0.619 |
+| anomaly_folder_filename (IsolationForest) | bgl_split_10 | 0.600 | 0.795 | 2.08 | 7.86 |
+| anomaly_folder_filename (RarityDetector) | hadoop_renamed | 0.443 | 0.467 | 0.516 | 1.58 |
+| anomaly_folder_filename (RarityDetector) | hdfs_balanced_5k | 0.365 | 0.393 | 0.523 | 0.734 |
+| anomaly_folder_filename (RarityDetector) | bgl_split_10 | 0.581 | 0.765 | 2.32 | 8.04 |
+| anomaly_folder_filename (OOVDetector) | hadoop_renamed | 0.475 | 0.504 | 0.612 | 1.65 |
+| anomaly_folder_filename (OOVDetector) | hdfs_balanced_5k | 0.376 | 0.414 | 0.614 | 0.863 |
+| anomaly_folder_filename (OOVDetector) | bgl_split_10 | 0.680 | 0.922 | 3.12 | 12.71 |
+| anomaly_folder_content (KMeans) | hadoop_renamed | 0.380 | 0.413 | 0.656 | 1.58 |
+| anomaly_folder_content (KMeans) | hdfs_balanced_5k | 0.354 | 0.369 | 0.485 | 0.616 |
+| anomaly_folder_content (KMeans) | bgl_split_10 | 0.606 | 0.884 | 2.51 | 5.87 |
+| anomaly_folder_content (IsolationForest) | hadoop_renamed | 0.427 | 0.482 | 0.672 | 1.65 |
+| anomaly_folder_content (IsolationForest) | hdfs_balanced_5k | 0.361 | 0.377 | 0.508 | 0.681 |
+| anomaly_folder_content (IsolationForest) | bgl_split_10 | 0.608 | 0.929 | 3.13 | 7.19 |
+| anomaly_folder_content (RarityDetector) | hadoop_renamed | 0.464 | 0.502 | 0.683 | 1.78 |
+| anomaly_folder_content (RarityDetector) | hdfs_balanced_5k | 0.367 | 0.402 | 0.577 | 0.854 |
+| anomaly_folder_content (RarityDetector) | bgl_split_10 | 0.637 | 0.969 | 3.26 | 10.77 |
+| anomaly_folder_content (OOVDetector) | hadoop_renamed | 0.488 | 0.523 | 0.726 | 1.81 |
+| anomaly_folder_content (OOVDetector) | hdfs_balanced_5k | 0.377 | 0.413 | 0.616 | 0.813 |
+| anomaly_folder_content (OOVDetector) | bgl_split_10 | 0.682 | 0.992 | 3.25 | 11.07 |
+| anomaly_file_content (KMeans) | hadoop_renamed | err | 0.472 | 0.915 | 2.29 |
+| anomaly_file_content (KMeans) | hdfs_balanced_5k | 0.364 | 0.383 | 0.514 | 0.684 |
+| anomaly_file_content (KMeans) | bgl_split_10 | 0.647 | 0.822 | 2.20 | 7.76 |
+| anomaly_file_content (IsolationForest) | hadoop_renamed | 0.469 | 0.541 | 0.945 | 2.38 |
+| anomaly_file_content (IsolationForest) | hdfs_balanced_5k | 0.365 | 0.393 | 0.563 | 0.733 |
+| anomaly_file_content (IsolationForest) | bgl_split_10 | 0.613 | 0.813 | 2.27 | 7.94 |
+| anomaly_file_content (RarityDetector) | hadoop_renamed | 0.497 | 0.569 | 0.986 | 2.49 |
+| anomaly_file_content (RarityDetector) | hdfs_balanced_5k | 0.375 | 0.413 | 0.628 | 0.926 |
+| anomaly_file_content (RarityDetector) | bgl_split_10 | 0.699 | 0.963 | 3.12 | 12.63 |
+| anomaly_file_content (OOVDetector) | hadoop_renamed | 0.526 | 0.582 | 1.00 | 2.46 |
+| anomaly_file_content (OOVDetector) | hdfs_balanced_5k | 0.379 | 0.412 | 0.691 | 0.800 |
+| anomaly_file_content (OOVDetector) | bgl_split_10 | 0.696 | 0.978 | 3.23 | 12.75 |
+| anomaly_line_content (KMeans) | hadoop_renamed | 0.446 | 0.463 | 0.666 | 1.36 |
+| anomaly_line_content (KMeans) | hdfs_balanced_5k | 0.364 | 0.382 | 0.507 | 0.662 |
+| anomaly_line_content (KMeans) | bgl_split_10 | 0.602 | 0.792 | 2.03 | 7.75 |
+| anomaly_line_content (IsolationForest) | hadoop_renamed | 0.447 | 0.470 | 0.543 | 1.17 |
+| anomaly_line_content (IsolationForest) | hdfs_balanced_5k | 0.365 | 0.393 | 0.555 | 0.734 |
+| anomaly_line_content (IsolationForest) | bgl_split_10 | 0.603 | 0.766 | 2.26 | 7.94 |
+| anomaly_line_content (RarityDetector) | hadoop_renamed | 0.497 | 0.518 | 0.683 | 1.40 |
+| anomaly_line_content (RarityDetector) | hdfs_balanced_5k | 0.376 | 0.413 | 0.629 | 0.891 |
+| anomaly_line_content (RarityDetector) | bgl_split_10 | 0.681 | 0.930 | 3.06 | 12.62 |
+| anomaly_line_content (OOVDetector) | hadoop_renamed | 0.511 | 0.525 | 0.658 | 1.58 |
+| anomaly_line_content (OOVDetector) | hdfs_balanced_5k | 0.379 | 0.412 | 0.682 | 0.794 |
+| anomaly_line_content (OOVDetector) | bgl_split_10 | 0.685 | 0.977 | 3.18 | 12.76 |
 
 ## Table C2 -- Distance tools detailed
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_content (cosine) | hadoop_renamed | 0.340 | 0.354 | 0.419 | 1.56 |
-| distance_folder_content (cosine) | hdfs_balanced_5k | 0.328 | 0.330 | 0.352 | 0.381 |
-| distance_folder_content (cosine) | bgl_split_10 | 0.468 | 0.607 | 1.58 | 3.32 |
-| distance_folder_content (jaccard) | hadoop_renamed | 0.342 | 0.366 | 0.419 | 1.02 |
-| distance_folder_content (jaccard) | hdfs_balanced_5k | 0.328 | 0.331 | 0.354 | 0.382 |
-| distance_folder_content (jaccard) | bgl_split_10 | 0.445 | 0.556 | 1.45 | 3.23 |
-| distance_folder_content (compression) | hadoop_renamed | 0.349 | 0.363 | 0.424 | 1.03 |
-| distance_folder_content (compression) | hdfs_balanced_5k | 0.329 | 0.332 | 0.356 | 0.384 |
-| distance_folder_content (compression) | bgl_split_10 | 0.452 | 0.560 | 1.45 | 3.35 |
-| distance_folder_content (containment) | hadoop_renamed | 0.342 | 0.357 | 0.425 | 1.03 |
-| distance_folder_content (containment) | hdfs_balanced_5k | 0.329 | 0.332 | 0.358 | 0.385 |
-| distance_folder_content (containment) | bgl_split_10 | 0.444 | 0.559 | 1.47 | 3.31 |
-| distance_file_content (cosine) | hadoop_renamed | 0.452 | 0.575 | 1.01 | 2.51 |
-| distance_file_content (cosine) | hdfs_balanced_5k | 0.372 | 0.402 | 0.659 | 0.771 |
-| distance_file_content (cosine) | bgl_split_10 | 0.819 | 1.34 | 4.47 | 3.89 |
-| distance_file_content (jaccard) | hadoop_renamed | 0.457 | 0.576 | 1.01 | 2.52 |
-| distance_file_content (jaccard) | hdfs_balanced_5k | 0.372 | 0.402 | 0.661 | 0.772 |
-| distance_file_content (jaccard) | bgl_split_10 | 0.822 | 1.34 | 4.67 | 4.48 |
-| distance_file_content (compression) | hadoop_renamed | 0.470 | 0.584 | 1.02 | 2.50 |
-| distance_file_content (compression) | hdfs_balanced_5k | 0.373 | 0.403 | 0.663 | 0.773 |
-| distance_file_content (compression) | bgl_split_10 | 0.823 | 1.33 | 4.77 | 4.58 |
-| distance_file_content (containment) | hadoop_renamed | 0.476 | 0.584 | 1.02 | 2.50 |
-| distance_file_content (containment) | hdfs_balanced_5k | 0.373 | 0.404 | 0.664 | 0.775 |
-| distance_file_content (containment) | bgl_split_10 | 0.826 | 1.34 | 4.77 | 4.68 |
-| log_line_clustering (Exact) | hadoop_renamed | 0.333 | 0.361 | 0.456 | 2.73 |
-| log_line_clustering (Exact) | hdfs_balanced_5k | 0.324 | 0.333 | 0.383 | 0.430 |
-| log_line_clustering (Exact) | bgl_split_10 | 0.456 | 0.599 | 1.55 | 3.07 |
-| log_line_clustering (Prefix) | hadoop_renamed | 0.336 | 0.380 | 0.504 | 2.83 |
-| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.334 | 0.342 | 0.408 | 0.443 |
-| log_line_clustering (Prefix) | bgl_split_10 | 0.459 | 0.603 | 1.59 | 3.09 |
-| log_line_clustering (Minhash) | hadoop_renamed | 0.348 | 0.394 | 0.577 | 4.22 |
-| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.335 | 0.349 | 0.432 | 0.448 |
-| log_line_clustering (Minhash) | bgl_split_10 | 0.460 | 0.614 | 1.60 | 3.11 |
+| distance_folder_content (cosine) | hadoop_renamed | 0.492 | 0.506 | 0.591 | 1.34 |
+| distance_folder_content (cosine) | hdfs_balanced_5k | 0.379 | 0.405 | 0.675 | 0.779 |
+| distance_folder_content (cosine) | bgl_split_10 | 0.679 | 0.959 | 3.17 | 12.85 |
+| distance_folder_content (jaccard) | hadoop_renamed | 0.472 | 0.484 | 0.556 | 1.46 |
+| distance_folder_content (jaccard) | hdfs_balanced_5k | 0.362 | 0.368 | 0.568 | 0.724 |
+| distance_folder_content (jaccard) | bgl_split_10 | 0.620 | 0.835 | 2.65 | 8.81 |
+| distance_folder_content (compression) | hadoop_renamed | 0.472 | 0.480 | 0.557 | 1.42 |
+| distance_folder_content (compression) | hdfs_balanced_5k | 0.356 | 0.368 | 0.568 | 0.724 |
+| distance_folder_content (compression) | bgl_split_10 | 0.596 | 0.828 | 2.64 | 8.85 |
+| distance_folder_content (containment) | hadoop_renamed | 0.454 | 0.467 | 0.539 | 1.34 |
+| distance_folder_content (containment) | hdfs_balanced_5k | 0.357 | 0.368 | 0.569 | 0.725 |
+| distance_folder_content (containment) | bgl_split_10 | 0.614 | 0.807 | 2.63 | 8.47 |
+| distance_file_content (cosine) | hadoop_renamed | 0.488 | 0.497 | 0.614 | 2.79 |
+| distance_file_content (cosine) | hdfs_balanced_5k | 0.361 | 0.367 | 0.564 | 0.719 |
+| distance_file_content (cosine) | bgl_split_10 | 0.584 | 0.793 | 2.57 | 8.73 |
+| distance_file_content (jaccard) | hadoop_renamed | 0.475 | 0.491 | 0.611 | 2.76 |
+| distance_file_content (jaccard) | hdfs_balanced_5k | 0.355 | 0.367 | 0.564 | 0.720 |
+| distance_file_content (jaccard) | bgl_split_10 | 0.578 | 0.770 | 2.49 | 8.58 |
+| distance_file_content (compression) | hadoop_renamed | 0.457 | 0.481 | 0.613 | 2.78 |
+| distance_file_content (compression) | hdfs_balanced_5k | 0.355 | 0.366 | 0.566 | 0.720 |
+| distance_file_content (compression) | bgl_split_10 | 0.577 | 0.768 | 2.49 | 8.53 |
+| distance_file_content (containment) | hadoop_renamed | 0.458 | 0.480 | 0.613 | 2.78 |
+| distance_file_content (containment) | hdfs_balanced_5k | 0.355 | 0.367 | 0.566 | 0.719 |
+| distance_file_content (containment) | bgl_split_10 | 0.573 | 0.754 | 2.43 | 8.39 |
+| log_line_clustering (Exact) | hadoop_renamed | 0.463 | 0.468 | 0.561 | 1.78 |
+| log_line_clustering (Exact) | hdfs_balanced_5k | 0.357 | 0.369 | 0.571 | 0.726 |
+| log_line_clustering (Exact) | bgl_split_10 | 0.612 | 0.789 | 2.65 | 8.48 |
+| log_line_clustering (Prefix) | hadoop_renamed | 0.458 | 0.463 | 0.551 | 1.63 |
+| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.358 | 0.371 | 0.576 | 0.737 |
+| log_line_clustering (Prefix) | bgl_split_10 | 0.610 | 0.772 | 2.30 | 7.91 |
+| log_line_clustering (Minhash) | hadoop_renamed | 0.467 | 0.489 | 0.631 | 2.82 |
+| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.358 | 0.371 | 0.576 | 0.741 |
+| log_line_clustering (Minhash) | bgl_split_10 | 0.594 | 0.753 | 2.24 | 7.88 |
 
 ## Table C3 -- Sequence tools detailed
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.370 | 0.371 | 0.443 | 1.45 |
-| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.321 | 0.324 | 0.345 | 0.423 |
-| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.439 | 0.555 | 1.38 | 2.33 |
-| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.374 | 0.410 | 0.460 | 1.46 |
-| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.322 | 0.325 | 0.350 | 0.433 |
-| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.440 | 0.552 | 1.25 | 2.08 |
-
-\*\* **Parsing is priced on its own, and the sequence rows no longer absorb it.**
-`sequence_line_event_prediction` defaults to `content_format="Parse-Drain"`, which this grid does
-not pre-parse -- it opens with `parsers=["tip"]`. Until this was fixed, whichever sequence cell ran
-first charged the whole log root's Drain parse to itself, and on `bgl_split_10` at 100% NEP peaked
-at **7.34GB** -- mostly Drain3's own transient template-tree state -- against 4.68GB for cells
-that arrived after the column was built. All three sequence cells now materialize `Parse-Drain`
-*before* the timed call, so none of them carries that spike: NEP now peaks at 2.33GB against LAP's
-2.08GB, which is the honest comparison between the two detectors.
-
-The parsing peak is now its own row. Compare `open_log_root (parse drain)` against
-`open_log_root (no parsers)`: on `bgl_split_10` at 100% that is 7.90GB vs 5.46GB, so Drain needs
-roughly **2.4GB above the bare frame** while it parses. TIP is far cheaper -- 5.56GB, about
-0.1GB over the baseline. Both differences shrink to ~0.1GB on `hadoop_renamed` and
-`hdfs_balanced_5k`.
-
-Read the **cold** column of those three rows only. `parsers` is not part of the parquet cache key
-(`SessionStore._cache_key`), so every variant shares one cache file and `flush` writes whatever it
-parsed into it -- a cached re-attach can be handed a frame an earlier open already parsed. That is
-why all three cold calls pass `refresh=True`, and why their warm column is a re-attach rather than
-a parse. The plain `open_log_root` row is the `parsers=["tip"]` case measured independently.
-
-Rows measured against an already-built representation, and so *not* paying for it: all of Table
-A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `log_line_clustering`'s `Prefix` and
-`Minhash` cold cells (`Words`, as a side effect of `Exact` running first -- see the `*` note).
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.488 | 0.524 | 0.660 | 2.81 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.359 | 0.372 | 0.578 | 0.745 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.591 | 0.732 | 2.24 | 7.83 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.490 | 0.496 | 0.584 | 1.48 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.358 | 0.372 | 0.579 | 0.749 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.588 | 0.724 | 2.21 | 7.78 |
 
 # Part D -- warm (repeated call)
 
@@ -456,154 +428,100 @@ A5/B5/C3/D3 (`Parse-Drain`, deliberately, as above), and `log_line_clustering`'s
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| anomaly_folder_filename (KMeans) | hadoop_renamed | 0.333 | 0.362 | 0.397 | 0.612 |
-| anomaly_folder_filename (KMeans) | hdfs_balanced_5k | 0.333 | 0.345 | 0.412 | 0.465 |
-| anomaly_folder_filename (KMeans) | bgl_split_10 | 0.506 | 0.684 | 1.94 | 3.74 |
-| anomaly_folder_filename (IsolationForest) | hadoop_renamed | 0.396 | 0.485 | 0.835 | 1.79 |
-| anomaly_folder_filename (IsolationForest) | hdfs_balanced_5k | 0.352 | 0.381 | 0.553 | 0.621 |
-| anomaly_folder_filename (IsolationForest) | bgl_split_10 | 0.643 | 0.993 | 3.19 | 10.11 |
-| anomaly_folder_filename (RarityModel) | hadoop_renamed | 0.393 | 0.524 | 0.934 | 1.96 |
-| anomaly_folder_filename (RarityModel) | hdfs_balanced_5k | 0.361 | 0.394 | 0.595 | 0.687 |
-| anomaly_folder_filename (RarityModel) | bgl_split_10 | 0.728 | 1.10 | 3.64 | 13.75 |
-| anomaly_folder_filename (OOVDetector) | hadoop_renamed | 0.427 | 0.560 | 0.974 | 2.43 |
-| anomaly_folder_filename (OOVDetector) | hdfs_balanced_5k | 0.369 | 0.400 | 0.627 | 0.752 |
-| anomaly_folder_filename (OOVDetector) | bgl_split_10 | 0.800 | 1.29 | 4.11 | 15.27 |
-| anomaly_folder_content (KMeans) | hadoop_renamed | 0.368 | 0.425 | 0.762 | 1.75 |
-| anomaly_folder_content (KMeans) | hdfs_balanced_5k | 0.348 | 0.368 | 0.537 | 0.668 |
-| anomaly_folder_content (KMeans) | bgl_split_10 | 0.649 | 1.04 | 3.38 | 10.68 |
-| anomaly_folder_content (IsolationForest) | hadoop_renamed | 0.415 | 0.509 | 0.917 | 1.97 |
-| anomaly_folder_content (IsolationForest) | hdfs_balanced_5k | 0.359 | 0.390 | 0.593 | 0.710 |
-| anomaly_folder_content (IsolationForest) | bgl_split_10 | 0.714 | 1.12 | 3.73 | 13.61 |
-| anomaly_folder_content (RarityModel) | hadoop_renamed | 0.418 | 0.541 | 0.966 | 2.29 |
-| anomaly_folder_content (RarityModel) | hdfs_balanced_5k | 0.366 | 0.397 | 0.616 | 0.794 |
-| anomaly_folder_content (RarityModel) | bgl_split_10 | 0.786 | 1.28 | 4.17 | 15.37 |
-| anomaly_folder_content (OOVDetector) | hadoop_renamed | 0.438 | 0.570 | 1.00 | 2.51 |
-| anomaly_folder_content (OOVDetector) | hdfs_balanced_5k | 0.370 | 0.400 | 0.657 | 0.792 |
-| anomaly_folder_content (OOVDetector) | bgl_split_10 | 0.817 | 1.35 | 4.47 | OOM |
-| anomaly_file_content (KMeans) | hadoop_renamed | err | 0.456 | 0.800 | 1.82 |
-| anomaly_file_content (KMeans) | hdfs_balanced_5k | 0.348 | 0.374 | 0.545 | 0.638 |
-| anomaly_file_content (KMeans) | bgl_split_10 | 0.644 | 1.01 | 3.16 | 10.02 |
-| anomaly_file_content (IsolationForest) | hadoop_renamed | 0.371 | 0.523 | 0.934 | 1.96 |
-| anomaly_file_content (IsolationForest) | hdfs_balanced_5k | 0.360 | 0.390 | 0.588 | 0.685 |
-| anomaly_file_content (IsolationForest) | bgl_split_10 | 0.714 | 1.09 | 3.60 | 13.62 |
-| anomaly_file_content (RarityModel) | hadoop_renamed | 0.425 | 0.550 | 0.978 | 2.44 |
-| anomaly_file_content (RarityModel) | hdfs_balanced_5k | 0.368 | 0.398 | 0.623 | 0.784 |
-| anomaly_file_content (RarityModel) | bgl_split_10 | 0.790 | 1.27 | 4.08 | 15.26 |
-| anomaly_file_content (OOVDetector) | hadoop_renamed | 0.445 | 0.572 | 1.00 | 2.50 |
-| anomaly_file_content (OOVDetector) | hdfs_balanced_5k | 0.370 | 0.400 | 0.656 | 0.767 |
-| anomaly_file_content (OOVDetector) | bgl_split_10 | 0.817 | 1.34 | 4.39 | 3.13 |
-| anomaly_line_content (KMeans) | hadoop_renamed | 0.408 | 0.492 | 0.835 | 1.80 |
-| anomaly_line_content (KMeans) | hdfs_balanced_5k | 0.351 | 0.376 | 0.552 | 0.638 |
-| anomaly_line_content (KMeans) | bgl_split_10 | 0.652 | 1.01 | 3.16 | 10.03 |
-| anomaly_line_content (IsolationForest) | hadoop_renamed | 0.407 | 0.538 | 0.968 | 1.99 |
-| anomaly_line_content (IsolationForest) | hdfs_balanced_5k | 0.360 | 0.392 | 0.595 | 0.686 |
-| anomaly_line_content (IsolationForest) | bgl_split_10 | 0.714 | 1.09 | 3.60 | 13.63 |
-| anomaly_line_content (RarityModel) | hadoop_renamed | 0.436 | 0.589 | 0.983 | 2.46 |
-| anomaly_line_content (RarityModel) | hdfs_balanced_5k | 0.368 | 0.398 | 0.623 | 0.784 |
-| anomaly_line_content (RarityModel) | bgl_split_10 | 0.793 | 1.27 | 4.08 | 15.26 |
-| anomaly_line_content (OOVDetector) | hadoop_renamed | 0.460 | 0.581 | 1.01 | 2.52 |
-| anomaly_line_content (OOVDetector) | hdfs_balanced_5k | 0.370 | 0.400 | 0.656 | 0.767 |
-| anomaly_line_content (OOVDetector) | bgl_split_10 | 0.817 | 1.34 | 4.39 | 3.14 |
+| anomaly_folder_filename (KMeans) | hadoop_renamed | 0.352 | 0.366 | 0.451 | 1.32 |
+| anomaly_folder_filename (KMeans) | hdfs_balanced_5k | 0.345 | 0.351 | 0.391 | 0.440 |
+| anomaly_folder_filename (KMeans) | bgl_split_10 | 0.525 | 0.699 | 1.85 | 3.51 |
+| anomaly_folder_filename (IsolationForest) | hadoop_renamed | 0.420 | 0.450 | 0.524 | 1.44 |
+| anomaly_folder_filename (IsolationForest) | hdfs_balanced_5k | 0.363 | 0.383 | 0.481 | 0.541 |
+| anomaly_folder_filename (IsolationForest) | bgl_split_10 | 0.580 | 0.748 | 2.27 | 7.03 |
+| anomaly_folder_filename (RarityDetector) | hadoop_renamed | 0.444 | 0.468 | 0.523 | 1.59 |
+| anomaly_folder_filename (RarityDetector) | hdfs_balanced_5k | 0.365 | 0.394 | 0.523 | 0.724 |
+| anomaly_folder_filename (RarityDetector) | bgl_split_10 | 0.579 | 0.775 | 2.45 | 8.36 |
+| anomaly_folder_filename (OOVDetector) | hadoop_renamed | 0.475 | 0.502 | 0.604 | 1.62 |
+| anomaly_folder_filename (OOVDetector) | hdfs_balanced_5k | 0.376 | 0.412 | 0.613 | 0.834 |
+| anomaly_folder_filename (OOVDetector) | bgl_split_10 | 0.668 | 0.931 | 3.10 | 12.12 |
+| anomaly_folder_content (KMeans) | hadoop_renamed | 0.416 | 0.472 | 0.863 | 2.05 |
+| anomaly_folder_content (KMeans) | hdfs_balanced_5k | 0.364 | 0.382 | 0.528 | 0.737 |
+| anomaly_folder_content (KMeans) | bgl_split_10 | 0.650 | 0.917 | 3.02 | 9.20 |
+| anomaly_folder_content (IsolationForest) | hadoop_renamed | 0.464 | 0.535 | 0.906 | 2.09 |
+| anomaly_folder_content (IsolationForest) | hdfs_balanced_5k | 0.365 | 0.394 | 0.589 | 0.794 |
+| anomaly_folder_content (IsolationForest) | bgl_split_10 | 0.657 | 1.00 | 3.30 | 9.25 |
+| anomaly_folder_content (RarityDetector) | hadoop_renamed | 0.497 | 0.561 | 0.921 | 2.26 |
+| anomaly_folder_content (RarityDetector) | hdfs_balanced_5k | 0.375 | 0.413 | 0.628 | 0.950 |
+| anomaly_folder_content (RarityDetector) | bgl_split_10 | 0.699 | 1.04 | 3.63 | 14.02 |
+| anomaly_folder_content (OOVDetector) | hadoop_renamed | 0.523 | 0.574 | 0.951 | 2.28 |
+| anomaly_folder_content (OOVDetector) | hdfs_balanced_5k | 0.379 | 0.414 | 0.691 | 0.831 |
+| anomaly_folder_content (OOVDetector) | bgl_split_10 | 0.694 | 1.08 | 3.80 | 14.07 |
+| anomaly_file_content (KMeans) | hadoop_renamed | err | 0.433 | 0.848 | 1.98 |
+| anomaly_file_content (KMeans) | hdfs_balanced_5k | 0.364 | 0.383 | 0.514 | 0.663 |
+| anomaly_file_content (KMeans) | bgl_split_10 | 0.647 | 0.817 | 2.22 | 7.77 |
+| anomaly_file_content (IsolationForest) | hadoop_renamed | 0.429 | 0.484 | 0.627 | 1.75 |
+| anomaly_file_content (IsolationForest) | hdfs_balanced_5k | 0.365 | 0.393 | 0.563 | 0.733 |
+| anomaly_file_content (IsolationForest) | bgl_split_10 | 0.613 | 0.766 | 2.28 | 7.96 |
+| anomaly_file_content (RarityDetector) | hadoop_renamed | 0.484 | 0.556 | 0.894 | 2.21 |
+| anomaly_file_content (RarityDetector) | hdfs_balanced_5k | 0.376 | 0.413 | 0.629 | 0.926 |
+| anomaly_file_content (RarityDetector) | bgl_split_10 | 0.695 | 0.964 | 3.12 | 12.63 |
+| anomaly_file_content (OOVDetector) | hadoop_renamed | 0.508 | 0.549 | 0.895 | 2.19 |
+| anomaly_file_content (OOVDetector) | hdfs_balanced_5k | 0.379 | 0.412 | 0.691 | 0.797 |
+| anomaly_file_content (OOVDetector) | bgl_split_10 | 0.684 | 0.978 | 3.24 | 12.76 |
+| anomaly_line_content (KMeans) | hadoop_renamed | 0.447 | 0.469 | 0.653 | 1.27 |
+| anomaly_line_content (KMeans) | hdfs_balanced_5k | 0.364 | 0.382 | 0.508 | 0.619 |
+| anomaly_line_content (KMeans) | bgl_split_10 | 0.602 | 0.788 | 2.03 | 7.75 |
+| anomaly_line_content (IsolationForest) | hadoop_renamed | 0.459 | 0.470 | 0.524 | 1.19 |
+| anomaly_line_content (IsolationForest) | hdfs_balanced_5k | 0.365 | 0.393 | 0.555 | 0.734 |
+| anomaly_line_content (IsolationForest) | bgl_split_10 | 0.603 | 0.767 | 2.26 | 7.93 |
+| anomaly_line_content (RarityDetector) | hadoop_renamed | 0.511 | 0.517 | 0.674 | 1.39 |
+| anomaly_line_content (RarityDetector) | hdfs_balanced_5k | 0.376 | 0.413 | 0.629 | 0.891 |
+| anomaly_line_content (RarityDetector) | bgl_split_10 | 0.681 | 0.914 | 3.06 | 12.68 |
+| anomaly_line_content (OOVDetector) | hadoop_renamed | 0.506 | 0.526 | 0.632 | 1.56 |
+| anomaly_line_content (OOVDetector) | hdfs_balanced_5k | 0.379 | 0.410 | 0.682 | 0.778 |
+| anomaly_line_content (OOVDetector) | bgl_split_10 | 0.685 | 0.975 | 3.18 | 12.75 |
 
 ## Table D2 -- Distance tools detailed
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| distance_folder_content (cosine) | hadoop_renamed | 0.343 | 0.358 | 0.418 | 1.56 |
-| distance_folder_content (cosine) | hdfs_balanced_5k | 0.328 | 0.330 | 0.353 | 0.380 |
-| distance_folder_content (cosine) | bgl_split_10 | 0.456 | 0.557 | 1.45 | 3.21 |
-| distance_folder_content (jaccard) | hadoop_renamed | 0.343 | 0.360 | 0.420 | 1.02 |
-| distance_folder_content (jaccard) | hdfs_balanced_5k | 0.329 | 0.331 | 0.355 | 0.383 |
-| distance_folder_content (jaccard) | bgl_split_10 | 0.445 | 0.560 | 1.46 | 3.27 |
-| distance_folder_content (compression) | hadoop_renamed | 0.349 | 0.359 | 0.417 | 0.968 |
-| distance_folder_content (compression) | hdfs_balanced_5k | 0.330 | 0.332 | 0.358 | 0.384 |
-| distance_folder_content (compression) | bgl_split_10 | 0.449 | 0.562 | 1.48 | 3.29 |
-| distance_folder_content (containment) | hadoop_renamed | 0.343 | 0.358 | 0.426 | 1.04 |
-| distance_folder_content (containment) | hdfs_balanced_5k | 0.330 | 0.333 | 0.359 | 0.388 |
-| distance_folder_content (containment) | bgl_split_10 | 0.449 | 0.565 | 1.51 | 3.32 |
-| distance_file_content (cosine) | hadoop_renamed | 0.455 | 0.576 | 1.01 | 2.52 |
-| distance_file_content (cosine) | hdfs_balanced_5k | 0.372 | 0.402 | 0.660 | 0.771 |
-| distance_file_content (cosine) | bgl_split_10 | 0.821 | 1.34 | 4.58 | 4.21 |
-| distance_file_content (jaccard) | hadoop_renamed | 0.462 | 0.576 | 1.01 | 2.52 |
-| distance_file_content (jaccard) | hdfs_balanced_5k | 0.372 | 0.402 | 0.661 | 0.772 |
-| distance_file_content (jaccard) | bgl_split_10 | 0.825 | 1.34 | 4.76 | 4.51 |
-| distance_file_content (compression) | hadoop_renamed | 0.476 | 0.584 | 1.02 | 2.50 |
-| distance_file_content (compression) | hdfs_balanced_5k | 0.373 | 0.403 | 0.663 | 0.773 |
-| distance_file_content (compression) | bgl_split_10 | 0.823 | 1.34 | 4.77 | 4.60 |
-| distance_file_content (containment) | hadoop_renamed | 0.476 | 0.584 | 1.02 | 2.51 |
-| distance_file_content (containment) | hdfs_balanced_5k | 0.373 | 0.404 | 0.664 | 0.775 |
-| distance_file_content (containment) | bgl_split_10 | 0.826 | 1.34 | 4.78 | 4.70 |
-| log_line_clustering (Exact) | hadoop_renamed | 0.335 | 0.379 | 0.496 | 2.82 |
-| log_line_clustering (Exact) | hdfs_balanced_5k | 0.332 | 0.342 | 0.408 | 0.443 |
-| log_line_clustering (Exact) | bgl_split_10 | 0.459 | 0.602 | 1.58 | 3.09 |
-| log_line_clustering (Prefix) | hadoop_renamed | 0.337 | 0.388 | 0.528 | 2.86 |
-| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.335 | 0.349 | 0.431 | 0.448 |
-| log_line_clustering (Prefix) | bgl_split_10 | 0.460 | 0.613 | 1.60 | 3.10 |
-| log_line_clustering (Minhash) | hadoop_renamed | 0.361 | 0.402 | 0.589 | 4.30 |
-| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.337 | 0.352 | 0.433 | 0.451 |
-| log_line_clustering (Minhash) | bgl_split_10 | 0.464 | 0.614 | 1.60 | 3.11 |
+| distance_folder_content (cosine) | hadoop_renamed | 0.490 | 0.500 | 0.543 | 1.35 |
+| distance_folder_content (cosine) | hdfs_balanced_5k | 0.361 | 0.366 | 0.561 | 0.714 |
+| distance_folder_content (cosine) | bgl_split_10 | 0.638 | 0.871 | 2.48 | 12.74 |
+| distance_folder_content (jaccard) | hadoop_renamed | 0.472 | 0.484 | 0.541 | 1.34 |
+| distance_folder_content (jaccard) | hdfs_balanced_5k | 0.359 | 0.366 | 0.561 | 0.714 |
+| distance_folder_content (jaccard) | bgl_split_10 | 0.582 | 0.757 | 2.41 | 8.34 |
+| distance_folder_content (compression) | hadoop_renamed | 0.461 | 0.467 | 0.536 | 1.27 |
+| distance_folder_content (compression) | hdfs_balanced_5k | 0.355 | 0.366 | 0.562 | 0.714 |
+| distance_folder_content (compression) | bgl_split_10 | 0.564 | 0.750 | 2.39 | 8.25 |
+| distance_folder_content (containment) | hadoop_renamed | 0.454 | 0.469 | 0.540 | 1.34 |
+| distance_folder_content (containment) | hdfs_balanced_5k | 0.355 | 0.366 | 0.563 | 0.714 |
+| distance_folder_content (containment) | bgl_split_10 | 0.581 | 0.738 | 2.33 | 8.13 |
+| distance_file_content (cosine) | hadoop_renamed | 0.486 | 0.498 | 0.620 | 2.71 |
+| distance_file_content (cosine) | hdfs_balanced_5k | 0.362 | 0.368 | 0.567 | 0.724 |
+| distance_file_content (cosine) | bgl_split_10 | 0.619 | 0.835 | 2.66 | 8.95 |
+| distance_file_content (jaccard) | hadoop_renamed | 0.475 | 0.490 | 0.614 | 2.74 |
+| distance_file_content (jaccard) | hdfs_balanced_5k | 0.356 | 0.368 | 0.568 | 0.724 |
+| distance_file_content (jaccard) | bgl_split_10 | 0.596 | 0.828 | 2.62 | 8.86 |
+| distance_file_content (compression) | hadoop_renamed | 0.460 | 0.480 | 0.612 | 2.78 |
+| distance_file_content (compression) | hdfs_balanced_5k | 0.356 | 0.368 | 0.569 | 0.725 |
+| distance_file_content (compression) | bgl_split_10 | 0.609 | 0.809 | 2.65 | 8.60 |
+| distance_file_content (containment) | hadoop_renamed | 0.467 | 0.481 | 0.617 | 2.75 |
+| distance_file_content (containment) | hdfs_balanced_5k | 0.356 | 0.368 | 0.569 | 0.723 |
+| distance_file_content (containment) | bgl_split_10 | 0.612 | 0.790 | 2.63 | 8.60 |
+| log_line_clustering (Exact) | hadoop_renamed | 0.463 | 0.467 | 0.561 | 1.71 |
+| log_line_clustering (Exact) | hdfs_balanced_5k | 0.358 | 0.370 | 0.575 | 0.734 |
+| log_line_clustering (Exact) | bgl_split_10 | 0.612 | 0.778 | 2.54 | 8.05 |
+| log_line_clustering (Prefix) | hadoop_renamed | 0.458 | 0.463 | 0.550 | 1.63 |
+| log_line_clustering (Prefix) | hdfs_balanced_5k | 0.358 | 0.371 | 0.576 | 0.739 |
+| log_line_clustering (Prefix) | bgl_split_10 | 0.611 | 0.772 | 2.25 | 7.88 |
+| log_line_clustering (Minhash) | hadoop_renamed | 0.479 | 0.517 | 0.668 | 2.82 |
+| log_line_clustering (Minhash) | hdfs_balanced_5k | 0.359 | 0.372 | 0.578 | 0.744 |
+| log_line_clustering (Minhash) | bgl_split_10 | 0.591 | 0.750 | 2.25 | 7.88 |
 
 ## Table D3 -- Sequence tools detailed
 
 | tool | log root | 5% | 10% | 50% | 100% |
 |---|---|---|---|---|---|
-| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.374 | 0.409 | 0.440 | 1.45 |
-| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.321 | 0.325 | 0.349 | 0.433 |
-| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.440 | 0.558 | 1.38 | 2.19 |
-| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.375 | 0.402 | 0.443 | 1.48 |
-| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.322 | 0.326 | 0.352 | 0.437 |
-| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.437 | 0.553 | 1.22 | 2.09 |
-
-# When this data was measured
-
-Taken from git history (`git blame`), not from re-running the grid -- so a group's date is when
-its numbers last *changed* in this file. A cell whose value happened to round the same across two
-runs still carries the older commit, so these dates are a lower bound on freshness, not an exact
-measurement date. Same underlying grid as `PERFORMANCE.md` -- each recorded cell carries both its
-timing and its peak memory -- so the groupings below match that file's, except the shape table,
-which was first written here alongside memory tracking rather than in the original time-only file.
-
-- Log roots shape table: 2026-09-10, `6f0238f` ("Memory measurements added").
-- Tables A1-B4 (base grid: aux/distance/anomaly/plot, combined calls): 2026-09-10, `6f0238f`
-  ("Memory measurements added") through `21235f9` ("Memory measurement improvements") -- except:
-  - `read_log_lines (new tokens)` / `new_tokens` rows (Table A1/B1): 2026-09-11, `f2a5c50`
-    ("Vocabulary analyzer added").
-  - `log_line_clustering` rows (Table A2/B2): 2026-09-13, `475a7ff` ("Benchmark updates").
-- Tables C1-D2 (per-detector / per-measure detail, incl. OOVDetector): 2026-09-10, `0e072ec`
-  ("Distance measures options added") -- except:
-  - `log_line_clustering (Exact/Prefix/Minhash)` rows (Table C2/D2): 2026-09-13, `475a7ff`
-    ("Benchmark updates").
-- Tables A5/B5/C3/D3 (`sequence_line_event_prediction`, NEP + LAP) and the three
-  `open_log_root (no parsers|parse tip|parse drain)` rows in Table A1/B1: 2026-09-23, not yet
-  committed -- the sequence rows re-measured with `Parse-Drain` pre-built, and the parse itself
-  broken out into its own rows, so no analysis row is charged for it. Supersedes the first
-  sequence measurement of 2026-09-22, where NEP absorbed the parse (see the `**` note).
-- All `distance_folder_content` rows (Table A2/B2/C2/D2), including the new
-  `distance_folder_content (threshold=False)` row: 2026-09-30, not yet committed. Re-measured
-  after two changes, so they are not comparable with the older rows around them:
-  - compression became opt-in (`bfcfb6f`), so the combined call runs cosine, jaccard and
-    containment only. Most of the drop from the previous figures (e.g. 147.7s -> 18.9s on
-    `bgl_split_10` at 100%) is that.
-  - the call now also returns `clean_range` by default: how much the baseline folders differ
-    from each other, from a sample of at most 10 of them (45 pairs). The
-    `threshold=False` row is the same call without it; the gap between the two rows is the
-    range's cost. Warm calls reuse a range cached in the session, which is why the cold-warm gap
-    widened on `bgl_split_10`.
-  - One OOM kill on `distance_folder_content (cosine)` at `bgl_split_10` 100% (the first cell
-    after opening that log root) did not reproduce on a re-run; the re-run's figures are shown.
-- The `distance_folder_filename`, `distance_file_content` and four `anomaly_*` rows (Table
-  A2/B2/A3/B3), each with a new `(threshold=False)` row: 2026-09-30, not yet committed. All of
-  them now return a clean range by default; the `(threshold=False)` row is the same call without
-  it, so the gap between the two is the range's cost. `distance_file_content` also no longer
-  includes compression (`bfcfb6f`).
-  - distance tools: pairwise distances between at most 10 sampled baseline folders, per file
-    for `distance_file_content`. Costs little beyond the call itself.
-  - anomaly tools: each of up to 10 sampled baseline folders is scored like a target against
-    the others, so up to 10 extra model fits -- per file for `anomaly_file_content` and
-    `anomaly_line_content`. These rows score one target against all others, which is the
-    costliest case; with `target_folder="ALL"` the fits the call already made are reused. Warm
-    calls reuse the range cached in the session.
-  - `anomaly_folder_content` at `bgl_split_10` 100% was OOM-killed once with the range on and
-    measured 69.8s / 10.5 GB on the re-run shown, against 8.9s / 5.3 GB without it.
-  - The per-detector anomaly rows (Table C1/D1) were not re-measured; the benchmark now runs them
-    with `threshold=False`, which is what they measured before the range existed.
+| sequence_line_event_prediction (NEP) | hadoop_renamed | 0.508 | 0.508 | 0.646 | 1.98 |
+| sequence_line_event_prediction (NEP) | hdfs_balanced_5k | 0.359 | 0.372 | 0.579 | 0.748 |
+| sequence_line_event_prediction (NEP) | bgl_split_10 | 0.591 | 0.735 | 2.23 | 7.83 |
+| sequence_line_event_prediction (LAP) | hadoop_renamed | 0.488 | 0.492 | 0.556 | 1.48 |
+| sequence_line_event_prediction (LAP) | hdfs_balanced_5k | 0.359 | 0.372 | 0.579 | 0.749 |
+| sequence_line_event_prediction (LAP) | bgl_split_10 | 0.573 | 0.732 | 2.21 | 7.78 |
