@@ -123,7 +123,9 @@ def sort_for_preview(df, sort_by, descending=True):
         sort_by = [sort_by]
     for column in sort_by or []:
         if column in df.columns:
-            return df.sort(column, descending=descending, nulls_last=True), column
+            # Stable, so an order the caller already gave survives within ties.
+            return df.sort(column, descending=descending, nulls_last=True,
+                           maintain_order=True), column
     return df, None
 
 

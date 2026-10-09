@@ -820,15 +820,22 @@ def stage_hadoop_distance(check, session_id, target, file_name):
     check.ok("target-only buckets never outnumber all buckets",
              all(row["target_only_buckets"] <= row["buckets"]
                  for row in entry["measures"]))
+    check.ok("baseline-only lines never outnumber the baseline lines",
+             all(row["baseline_only_buckets"] <= row["buckets"]
+                 and row["baseline_only_lines"] <= row["baseline_lines"]
+                 for row in entry["measures"]))
     check.ok("the bucket table was written out", os.path.isfile(entry["artifact"]))
     check.ok("rows are buckets carrying a readable line",
              all("representative_line" in row and "target_only" in row
+                 and "baseline_only" in row
                  for row in l4["rows"]), str(list(l4["rows"][0])))
-    check.ok("target-only buckets sort first",
-             [row["target_only"] for row in l4["rows"]]
-             == sorted((row["target_only"] for row in l4["rows"]), reverse=True))
+    check.ok("target-only buckets sort first, then baseline-only ones",
+             [(row["target_only"], row["baseline_only"]) for row in l4["rows"]]
+             == sorted(((row["target_only"], row["baseline_only"]) for row in l4["rows"]),
+                       reverse=True))
     check.ok("summary carries the distribution distances",
              all("js_divergence" in row and "target_only_mass" in row
+                 and "baseline_only_mass" in row
                  for row in l4["summary"]))
     check.ok("the note explains what a bucket is",
              any("look-alike lines" in note for note in l4["notes"]),

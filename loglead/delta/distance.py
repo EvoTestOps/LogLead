@@ -470,10 +470,13 @@ def _divergences(bucket_df, target_lines, baseline_lines):
         left = np.where(p > 0, p * np.log2(np.divide(p, m, where=m > 0)), 0.0)
         right = np.where(q > 0, q * np.log2(np.divide(q, m, where=m > 0)), 0.0)
     only = bucket_df.get_column("target_only").to_numpy()
+    missing = bucket_df.get_column("baseline_only").to_numpy()
     return {
         "n_buckets": bucket_df.height,
         "n_target_only": int(only.sum()),
         "target_only_mass": float(p[only].sum() * 100),
+        "n_baseline_only": int(missing.sum()),
+        "baseline_only_mass": float(q[missing].sum() * 100),
         "js_divergence": float(0.5 * left.sum() + 0.5 * right.sum()),
         "total_variation": float(0.5 * np.abs(p - q).sum()),
         "target_lines": target_lines,
@@ -544,13 +547,16 @@ def _bucket_histogram(target_df, baseline_df, label, measure):
         .with_columns(
             (pl.col("target_pct") - pl.col("baseline_pct")).alias("delta_pct"),
             (pl.col("baseline_n") == 0).alias("target_only"),
+            (pl.col("target_n") == 0).alias("baseline_only"),
         )
         .select("measure", "bucket", "representative_line",
                 "target_n", "target_pct", "baseline_n", "baseline_pct",
-                "delta_pct", "target_only")
-        # Target-only buckets first, then by how much of the target they hold:
-        # the planted-anomaly bucket outranks the singleton noise floor.
-        .sort(["target_only", "target_n", "delta_pct"], descending=[True, True, True])
+                "delta_pct", "target_only", "baseline_only")
+        # Target-only buckets first, then baseline-only ones, each by how many
+        # lines they hold: the planted-anomaly bucket outranks the singleton
+        # noise floor, and a missing step outranks the shared buckets.
+        .sort(["target_only", "baseline_only", "target_n", "baseline_n", "delta_pct"],
+              descending=True)
     )
     return buckets, _divergences(buckets, n_target, n_baseline)
 
@@ -569,6 +575,8 @@ def log_line_clustering(
 
     The baseline log folders are pooled into one baseline, so ``target_only``
     means "absent from every baseline log folder", not from one of them.
+    ``baseline_only`` is the reverse: lines the target is missing, such as a
+    step that did not run.
 
     :param content_format: the representation to bucket, as elsewhere. ``Prefix``
         and ``Minhash`` read a line's tokens, so they need ``"Words"`` or
@@ -593,6 +601,7 @@ def log_line_clustering(
         ``(target_folder, file_name, bucket_df)``, one entry per file present in
         both the target and at least one baseline log folder; ``summary_df``
         has one row per (file, measure) with ``target_only_mass``,
+        ``baseline_only_mass``,
         ``js_divergence`` and ``total_variation``; ``df`` is the (possibly
         enhanced) input frame, to be kept so a session avoids re-parsing.
     """
@@ -716,9 +725,15 @@ def summarize_line_buckets(bucket_df):
             pl.col("target_n").filter(pl.col("target_only")).sum()
               .alias("target_only_lines"),
             pl.col("target_n").sum().alias("target_lines"),
+            pl.col("baseline_only").sum().alias("baseline_only_buckets"),
+            pl.col("baseline_n").filter(pl.col("baseline_only")).sum()
+              .alias("baseline_only_lines"),
+            pl.col("baseline_n").sum().alias("baseline_lines"),
         )
         .with_columns(
             (pl.col("target_only_lines") / pl.col("target_lines") * 100)
-            .alias("target_only_pct")
+            .alias("target_only_pct"),
+            (pl.col("baseline_only_lines") / pl.col("baseline_lines") * 100)
+            .alias("baseline_only_pct"),
         )
     )

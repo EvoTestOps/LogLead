@@ -1564,8 +1564,10 @@ def distance_file_content(
 _LINE_BUCKET_NOTE = (
     "Each row is a group of look-alike lines, not a line. target_only=true "
     "means no baseline log folder has any line in that bucket, so those are "
-    "the point anomalies; a large delta_pct on a shared bucket is a frequency "
-    "shift, which a line-by-line comparison cannot see at all. Rank by the "
+    "the extra lines; baseline_only=true is the reverse, lines the target is "
+    "missing, such as a step that did not run. A large delta_pct on a shared "
+    "bucket is a frequency shift, which a line-by-line comparison cannot see "
+    "at all. Rank by the "
     "coarsest measure that flags a bucket: a coarse measure absorbs benign "
     "variation and so has a lower false-positive floor, but is blind to "
     "anomalies that differ only late in the line. read_bucket_lines reads the "
@@ -1623,8 +1625,8 @@ def log_line_clustering(
         prefix_tokens: How many leading tokens "Prefix" groups on.
         minhash_rows: Min-hashes per "Minhash" signature. More rows means fewer
             collisions, so finer buckets.
-        max_rows: Rows returned inline, target-only buckets first and largest
-            first within that.
+        max_rows: Rows returned inline: target-only buckets, then baseline-only
+            ones, then the rest, largest first within each.
     """
     session = STORE.get(session_id)
     # Before ensure_content, not after: it rebuilds the content column whenever the
@@ -1660,14 +1662,17 @@ def log_line_clustering(
         })
         frames.append(bucket_df.with_columns(pl.lit(file_name).alias("file_name")))
 
-    buckets = pl.concat(frames, how="vertical_relaxed") if frames else pl.DataFrame()
+    buckets = (pl.concat(frames, how="vertical_relaxed")
+               .sort(["target_only", "baseline_only", "target_n", "baseline_n"],
+                     descending=True)
+               if frames else pl.DataFrame())
     return formatting.result(
         session, "log_line_clustering", 4,
         {"target_folder": target_folder, "baseline_folders": baseline_folders,
          "target_files": target_files, "mask": mask, "content_format": content_format,
          "measures": measures, "prefix_tokens": prefix_tokens,
          "minhash_rows": minhash_rows},
-        buckets, None, max_rows, sort_by=["target_only", "target_n"],
+        buckets, None, max_rows, sort_by="target_only",
         notes=[_LINE_BUCKET_NOTE],
         extra={"n_files": len(files), "files": files,
                "summary": summary.to_dicts() if summary.height else []},
