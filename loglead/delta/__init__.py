@@ -66,8 +66,8 @@ import importlib
 #: do -- ~190MB before :func:`peek_log_root`, whose whole point is being cheap,
 #: had stat'ed a single file. The submodules are named here as strings so that
 #: only the one actually reached is imported; see ``_LAZY_MODULES``.
-_LAZY_MODULES = ("anomaly", "distance", "export", "log_root", "masking", "scoring",
-                 "sequence", "split", "visualize", "vocabulary")
+_LAZY_MODULES = ("anomaly", "distance", "export", "line_clustering", "log_root", "masking",
+                 "scoring", "sequence", "split", "visualize", "vocabulary")
 
 _LAZY_NAMES = {
     "anomaly_file_content": "anomaly",
@@ -85,7 +85,7 @@ _LAZY_NAMES = {
     "resolve_format": "log_root",
     "split_log_file": "split",
     "distance_file_content": "distance",
-    "log_line_clustering": "distance",
+    "log_line_clustering": "line_clustering",
     "distance_folder_content": "distance",
     "distance_folder_filename": "distance",
     "DEFAULT_PLOTS": "visualize",
@@ -115,6 +115,7 @@ __all__ = [
     "log_root",
     "distance",
     "export",
+    "line_clustering",
     "masking",
     "scoring",
     "sequence",

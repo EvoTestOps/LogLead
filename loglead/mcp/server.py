@@ -33,8 +33,8 @@ except ImportError:  # MCP SDK 1.x, where the same class was called FastMCP
     from mcp.server.fastmcp import FastMCP as _Server
     from mcp.server.fastmcp.exceptions import ToolError as _ToolError
 
-from ..delta import (anomaly, distance, export, log_root, masking, scoring, sequence, split,
-                     visualize, vocabulary)
+from ..delta import (anomaly, distance, export, line_clustering, log_root, masking, scoring,
+                     sequence, split, visualize, vocabulary)
 from ..loaders import DEFAULT_MAX_DETECT_FILES
 from . import crash, formatting
 from .session import SessionStore
@@ -1633,17 +1633,17 @@ def log_line_clustering(
     # source changes, so letting a call we are about to reject reach it would leave
     # the session holding tokens built from m_message and silently mismatch every
     # bucket a later mask=True call recomputes.
-    distance.require_bucket_mask(mask)
+    line_clustering.require_bucket_mask(mask)
     # ensure_content materializes the content column over the whole log root, so
     # check there is something to compare before paying for it -- otherwise a log
     # root whose folders share no file name pays in full for an empty result.
-    comparable = distance.comparable_files(
+    comparable = line_clustering.comparable_files(
         session.df, target_folder, baseline_folders, target_files
     )
     if comparable:
         session.ensure_content(mask, content_format)
 
-    per_file, summary, session.df = distance.log_line_clustering(
+    per_file, summary, session.df = line_clustering.log_line_clustering(
         session.df, target_folder, baseline_folders, target_files, mask,
         content_format, measures, prefix_tokens, minhash_rows,
     )
@@ -1657,7 +1657,7 @@ def log_line_clustering(
         )
         files.append({
             "file_name": file_name,
-            "measures": distance.summarize_line_buckets(bucket_df).to_dicts(),
+            "measures": line_clustering.summarize_line_buckets(bucket_df).to_dicts(),
             "artifact": artifact,
         })
         frames.append(bucket_df.with_columns(pl.lit(file_name).alias("file_name")))
@@ -1736,7 +1736,7 @@ def read_bucket_lines(
     # would relabel every line here and report the bucket as empty.
     session.ensure_content(mask, content_format)
 
-    lines, session.df = distance.lines_in_bucket(
+    lines, session.df = line_clustering.lines_in_bucket(
         session.df, folder, file_name, bucket, measure, mask,
         content_format, prefix_tokens, minhash_rows,
     )

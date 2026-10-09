@@ -63,7 +63,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import make_test_data  # noqa: E402  (sits next to this file)
-from loglead.delta import anomaly, distance, sequence, split  # noqa: E402
+from loglead.delta import anomaly, distance, line_clustering, sequence, split  # noqa: E402
 
 try:
     from loglead.mcp import server  # noqa: E402
@@ -449,7 +449,7 @@ GRID_TABLE_TITLES = (("aux", "Auxiliary tools"), ("distance", "Distance tools"),
 #: opt-in ``compression`` keeps its timing row. ``distance_folder_filename`` (jaccard/overlap distance over
 #: file names only) has nothing to isolate -- it computes one measure, not a
 #: default pair. ``log_line_clustering`` isolates its own bucket measures
-#: (``distance.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
+#: (``line_clustering.BUCKET_MEASURES``: Exact/Prefix/Minhash) separately below,
 #: since the default call already runs Prefix+Exact together rather than one
 #: at a time. ``sequence_line_event_prediction`` isolates its two order-based
 #: detectors (``sequence.DEFAULT_DETECTORS``: NEP/LAP) the same way as the
@@ -467,7 +467,7 @@ DETAIL_GRID_ROWS = tuple(
     for tool in DETAIL_DISTANCE_TOOLS for measure in distance.DISTANCE_MEASURES
 ) + tuple(
     ("distance_detail", f"log_line_clustering ({measure})")
-    for measure in distance.BUCKET_MEASURES
+    for measure in line_clustering.BUCKET_MEASURES
 ) + tuple(
     ("sequence_detail", f"{tool} ({detector})")
     for tool in DETAIL_SEQUENCE_TOOLS for detector in sequence.DEFAULT_DETECTORS
@@ -833,7 +833,7 @@ def grid_detail_cells(ctx):
             lambda measure=measure: call(lambda: server.distance_file_content(
                 sid, target, measures=[measure]))))
 
-    for measure in distance.BUCKET_MEASURES:
+    for measure in line_clustering.BUCKET_MEASURES:
         cells.append((
             "distance_detail", f"log_line_clustering ({measure})",
             lambda measure=measure: call(lambda: server.log_line_clustering(
