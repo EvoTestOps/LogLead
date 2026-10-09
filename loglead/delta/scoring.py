@@ -171,13 +171,12 @@ def range_row(values):
 
 
 def threshold_score(value, row):
-    """(value - clean_mid) / (clean_max - clean_mid), floored at 0: 0 is a typical
-    clean run or closer, 1 the most extreme one, above 1 beyond any of them.
+    """(value - clean_mid) / (clean_max - clean_mid): 0 is a typical clean run,
+    below 0 closer than typical, 1 the most extreme one, above 1 beyond any of them.
     Anchored on the median rather than clean_min because the min comes from a
-    single folder and is noisy. Floored because being more similar than a typical
-    clean run says nothing about anomalies. None when clean_max equals clean_mid:
-    there is no spread to scale by."""
+    single folder and is noisy. None when clean_max equals clean_mid: there is no
+    spread to scale by."""
     mid, top = row["clean_mid"], row["clean_max"]
     if value is None or mid is None or top is None or top - mid <= 0:
         return None
-    return max(0.0, (value - mid) / (top - mid))
+    return (value - mid) / (top - mid)

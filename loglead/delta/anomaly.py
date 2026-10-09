@@ -433,7 +433,7 @@ def scale_to_clean_range(results, clean, per_detector=True):
         above.append((pl.col(column) > row["clean_max"]).fill_null(False).cast(pl.Int64))
         if per_detector:
             mid, top = row["clean_mid"], row["clean_max"]
-            value = (((pl.col(column) - mid) / (top - mid)).clip(lower_bound=0)
+            value = ((pl.col(column) - mid) / (top - mid)
                      if top - mid > 0 else pl.lit(None, dtype=pl.Float64))
             scaled.append(value.cast(pl.Float64).alias(f"{name}_threshold_score"))
     if not above:
